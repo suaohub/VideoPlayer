@@ -1,0 +1,94 @@
+/* ============ 主题系统 ============ */
+
+/* 白天主题：浅色、清爽 */
+[data-theme='day'] {
+  --bg-primary: #f5f6fa;
+  --bg-secondary: #ffffff;
+  --bg-toolbar: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #eef0f5;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --border: #e2e5ec;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.1);
+  --focus-ring: #4f46e5;
+}
+
+/* 夜间主题：深色、护眼 */
+[data-theme='night'] {
+  --bg-primary: #0f1117;
+  --bg-secondary: #161922;
+  --bg-toolbar: #1a1e29;
+  --bg-card: #1e222e;
+  --bg-hover: #262b39;
+  --text-primary: #e6e8ec;
+  --text-secondary: #9ca3af;
+  --border: #2a2f3c;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --focus-ring: #818cf8;
+}
+
+/* 浪漫情趣主题：暖色、紫红渐变、柔光 */
+[data-theme='romantic'] {
+  --bg-primary: linear-gradient(135deg, #2d1b3d 0%, #3d1f2e 50%, #4a1f38 100%);
+  --bg-secondary: rgba(60, 30, 55, 0.6);
+  --bg-toolbar: rgba(70, 35, 60, 0.75);
+  --bg-card: rgba(80, 40, 70, 0.5);
+  --bg-hover: rgba(120, 60, 100, 0.5);
+  --text-primary: #ffe8f5;
+  --text-secondary: #d9a8c5;
+  --border: rgba(200, 120, 170, 0.25);
+  --accent: #ff6b9d;
+  --accent-hover: #ff8fb3;
+  --shadow: 0 8px 32px rgba(180, 60, 130, 0.3);
+  --shadow-card: 0 4px 20px rgba(180, 60, 130, 0.25);
+  --focus-ring: #ff6b9d;
+}
+
+/* ============ 全局基础样式 ============ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
