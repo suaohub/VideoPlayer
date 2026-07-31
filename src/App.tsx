@@ -1,10 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import './themes.css';
 import { Video, Tag, Folder, Theme, ImportProgress, VideoFilter } from './types';
+import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { TagBar } from './components/TagBar';
 import { FolderTree } from './components/FolderTree';
 import { VideoGrid } from './components/VideoGrid';
+
+// 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
+export const CARD_MIN = 120;
+export const CARD_MAX = 420;
 
 function App() {
   // 数据
@@ -21,29 +26,38 @@ function App() {
 
   // UI 状态
   const [theme, setTheme] = useState<Theme>('night');
-  const [sidebarMode, setSidebarMode] = useState<'tags' | 'tree'>('tags');
+  const [sidebarMode, setSidebarMode] = useState<'tags' | 'tree' | null>(null);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  // 卡片大小（即瀑布流列宽，px）。越大卡片越大、每行越少。
+  const [cardSize, setCardSize] = useState(220);
 
   // 应用主题到 DOM
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    window.electronAPI.setSetting('theme', theme);
+    api.setSetting('theme', theme);
   }, [theme]);
+
+  // 持久化卡片大小
+  useEffect(() => {
+    api.setSetting('cardSize', String(cardSize));
+  }, [cardSize]);
 
   // 初始化：读取设置 + 加载数据
   useEffect(() => {
     (async () => {
-      const savedTheme = await window.electronAPI.getSetting('theme');
+      const savedTheme = await api.getSetting('theme');
       if (savedTheme) setTheme(savedTheme as Theme);
+      const savedSize = await api.getSetting('cardSize');
+      if (savedSize) setCardSize(Number(savedSize));
       await refreshAll();
     })();
 
     // 导入进度监听
-    window.electronAPI.onImportProgress((data) => {
+    api.onImportProgress((data) => {
       setImportProgress(data);
     });
-    window.electronAPI.onImportDone(() => {
+    api.onImportDone(() => {
       setImporting(false);
       setImportProgress(null);
       refreshAll();
@@ -53,9 +67,9 @@ function App() {
   // 刷新标签、目录、视频总数
   const refreshAll = useCallback(async () => {
     const [t, f, count] = await Promise.all([
-      window.electronAPI.getTags(),
-      window.electronAPI.getFolderTree(),
-      window.electronAPI.getVideoCount(),
+      api.getTags(),
+      api.getFolderTree(),
+      api.getVideoCount(),
     ]);
     setTags(t);
     setFolders(f);
@@ -70,7 +84,7 @@ function App() {
       folderId: selectedFolderId,
       search: search || undefined,
     };
-    const list = await window.electronAPI.getVideos(filter);
+    const list = await api.getVideos(filter);
     setVideos(list);
   }, [selectedTagIds, tagMode, selectedFolderId, search]);
 
@@ -81,11 +95,11 @@ function App() {
 
   // 导入文件夹
   const handleImport = async () => {
-    const { canceled, paths } = await window.electronAPI.selectFolders();
+    const { canceled, paths } = await api.selectFolders();
     if (canceled || paths.length === 0) return;
     setImporting(true);
     setImportProgress(null);
-    await window.electronAPI.importFolders(paths);
+    await api.importFolders(paths);
   };
 
   // 切换标签选中
@@ -121,8 +135,14 @@ function App() {
     });
   };
 
+
   return (
     <>
+      {IS_MOCK && (
+        <div className="mock-banner">
+          UI 预览模式（mock 假数据）— 带真实缩略图的卡片可实际播放，占位卡片仅供布局演示
+        </div>
+      )}
       <Toolbar
         theme={theme}
         onThemeChange={setTheme}
@@ -137,37 +157,46 @@ function App() {
         filteredCount={videos.length}
         importing={importing}
         importProgress={importProgress}
+        cardSize={cardSize}
+        onCardSizeChange={setCardSize}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* 左侧：标签栏 或 目录树 */}
-        <aside style={{
-          width: 260,
-          borderRight: '1px solid var(--border)',
-          background: 'var(--bg-secondary)',
-          overflowY: 'auto',
-          flexShrink: 0,
-        }}>
-          {sidebarMode === 'tags' ? (
-            <TagBar
-              tags={tags}
-              selectedTagIds={selectedTagIds}
-              tagMode={tagMode}
-              onToggleTag={toggleTag}
-              onTagModeChange={setTagMode}
-            />
-          ) : (
-            <FolderTree
-              folders={folders}
-              selectedFolderId={selectedFolderId}
-              onSelectFolder={selectFolder}
-            />
-          )}
-        </aside>
+        {/* 左侧：标签栏 或 目录树（折叠时不渲染） */}
+        {sidebarMode && (
+          <aside style={{
+            width: 260,
+            borderRight: '1px solid var(--border)',
+            background: 'var(--bg-secondary)',
+            overflowY: 'auto',
+            flexShrink: 0,
+          }}>
+            {sidebarMode === 'tags' ? (
+              <TagBar
+                tags={tags}
+                selectedTagIds={selectedTagIds}
+                tagMode={tagMode}
+                onToggleTag={toggleTag}
+                onTagModeChange={setTagMode}
+              />
+            ) : (
+              <FolderTree
+                folders={folders}
+                selectedFolderId={selectedFolderId}
+                onSelectFolder={selectFolder}
+              />
+            )}
+          </aside>
+        )}
 
         {/* 右侧：视频列表 */}
         <main style={{ flex: 1, overflow: 'hidden' }}>
-          <VideoGrid videos={videos} />
+          <VideoGrid
+            videos={videos}
+            cardSize={cardSize}
+            onCardSizeChange={setCardSize}
+            cardSizeRange={[CARD_MIN, CARD_MAX]}
+          />
         </main>
       </div>
     </>

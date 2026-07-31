@@ -6,15 +6,21 @@ interface ToolbarProps {
   onImport: () => void;
   onShuffle: () => void;
   onClearFilter: () => void;
-  sidebarMode: 'tags' | 'tree';
-  onSidebarModeChange: (m: 'tags' | 'tree') => void;
+  sidebarMode: 'tags' | 'tree' | null;
+  onSidebarModeChange: (m: 'tags' | 'tree' | null) => void;
   search: string;
   onSearchChange: (s: string) => void;
   videoCount: number;
   filteredCount: number;
   importing: boolean;
   importProgress: ImportProgress | null;
+  cardSize: number;
+  onCardSizeChange: (n: number) => void;
 }
+
+// 卡片大小滑块范围（列宽 px）
+const CARD_MIN = 120;
+const CARD_MAX = 420;
 
 const THEMES: { value: Theme; label: string; icon: string }[] = [
   { value: 'day', label: '白天', icon: '☀️' },
@@ -27,6 +33,7 @@ export function Toolbar(props: ToolbarProps) {
     theme, onThemeChange, onImport, onShuffle, onClearFilter,
     sidebarMode, onSidebarModeChange, search, onSearchChange,
     videoCount, filteredCount, importing, importProgress,
+    cardSize, onCardSizeChange,
   } = props;
 
   const btnStyle: React.CSSProperties = {
@@ -43,7 +50,7 @@ export function Toolbar(props: ToolbarProps) {
     ...btnStyle,
     background: 'var(--accent)',
     color: '#fff',
-    borderColor: 'var(--accent)',
+    border: '1px solid var(--accent)',
   };
 
   return (
@@ -67,16 +74,16 @@ export function Toolbar(props: ToolbarProps) {
         {importing ? '导入中...' : '📁 导入文件夹'}
       </button>
 
-      {/* 侧栏模式切换 */}
+      {/* 侧栏模式切换（点击已激活的可收起） */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8 }}>
         <button
-          onClick={() => onSidebarModeChange('tags')}
+          onClick={() => onSidebarModeChange(sidebarMode === 'tags' ? null : 'tags')}
           style={sidebarMode === 'tags' ? activeBtnStyle : btnStyle}
         >
           🏷️ 分类标签
         </button>
         <button
-          onClick={() => onSidebarModeChange('tree')}
+          onClick={() => onSidebarModeChange(sidebarMode === 'tree' ? null : 'tree')}
           style={sidebarMode === 'tree' ? activeBtnStyle : btnStyle}
         >
           🗂️ 目录树
@@ -111,8 +118,26 @@ export function Toolbar(props: ToolbarProps) {
         {filteredCount} / {videoCount} 个视频
       </span>
 
+      {/* 卡片大小滑块（无级放大缩小，靠右） */}
+      <div style={{
+        marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8,
+        background: 'var(--bg-primary)', padding: '4px 12px', borderRadius: 8,
+      }}>
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }} title="缩小（每行更多）">▦</span>
+        <input
+          type="range"
+          min={CARD_MIN}
+          max={CARD_MAX}
+          value={cardSize}
+          onChange={(e) => onCardSizeChange(Number(e.target.value))}
+          style={{ width: 120, cursor: 'pointer' }}
+          title="拖动调整卡片大小"
+        />
+        <span style={{ fontSize: 18, color: 'var(--text-secondary)' }} title="放大（每行更少）">▢</span>
+      </div>
+
       {/* 主题切换（靠右） */}
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8 }}>
+      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8 }}>
         {THEMES.map((t) => (
           <button
             key={t.value}

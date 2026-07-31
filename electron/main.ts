@@ -41,8 +41,12 @@ function createWindow() {
   });
 }
 
+// UI 预览模式：跳过数据库初始化（macOS 上 better-sqlite3 崩溃）。
+// 到 Windows 数据库跑通后，把此处改回 false 并同步 src/api.ts 的 USE_MOCK。
+const SKIP_DB = true;
+
 app.whenReady().then(() => {
-  initDatabase(); // 初始化数据库
+  if (!SKIP_DB) initDatabase(); // 初始化数据库
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

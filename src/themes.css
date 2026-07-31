@@ -92,3 +92,20 @@ button {
   font-family: inherit;
   cursor: pointer;
 }
+
+/* 视频卡片悬浮效果 */
+.video-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+}
+
+/* mock 预览模式提示条 */
+.mock-banner {
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 8px;
+  letter-spacing: 0.3px;
+}
