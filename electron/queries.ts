@@ -1,4 +1,6 @@
 import { getDb } from './db';
+import * as path from 'path';
+import { normalizeThumbnailUrl } from './thumbnail';
 
 // 获取所有标签（含每个标签的视频数量）
 export function getAllTags() {
@@ -60,11 +62,11 @@ export function getVideos(filter: VideoFilter = {}) {
       sql += tagIds && tagIds.length > 0 ? '' : ` JOIN folders f ON v.folder_id = f.id`;
       if (!(tagIds && tagIds.length > 0)) {
         conditions.push(`(f.path = ? OR f.path LIKE ?)`);
-        params.push(folder.path, folder.path + '/%');
+        params.push(folder.path, folder.path + path.sep + '%');
       } else {
         // 已 join video_tags 的情况，用子查询判断目录
         conditions.push(`v.folder_id IN (SELECT id FROM folders WHERE path = ? OR path LIKE ?)`);
-        params.push(folder.path, folder.path + '/%');
+        params.push(folder.path, folder.path + path.sep + '%');
       }
     }
   }
@@ -87,13 +89,57 @@ export function getVideos(filter: VideoFilter = {}) {
 
   sql += ` ORDER BY v.added_at DESC`;
 
-  return db.prepare(sql).all(...params);
+  const rows = db.prepare(sql).all(...params) as any[];
+  return rows.map((row) => ({
+    ...row,
+    thumbnail_path: normalizeThumbnailUrl(row.thumbnail_path),
+  }));
 }
 
 // 获取视频总数
 export function getVideoCount(): number {
   const db = getDb();
   return (db.prepare('SELECT COUNT(*) as c FROM videos').get() as { c: number }).c;
+}
+
+// 级联删除目录：删除该目录 + 所有子目录 + 其中的视频记录 + video_tags 关联，
+// 并清理因此变空的标签。返回被删视频的缩略图 URL（供调用方删除文件）。
+// 用子查询而非 IN (id列表)，避免视频过多时超过 SQLite 变量上限（999）。
+export function deleteFolderCascade(folderId: number): { thumbnailUrls: string[]; videoCount: number } {
+  const db = getDb();
+  const folder = db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
+  if (!folder) return { thumbnailUrls: [], videoCount: 0 };
+
+  const like = folder.path + path.sep + '%';
+  const subtreeFilter = `folder_id IN (SELECT id FROM folders WHERE path = ? OR path LIKE ?)`;
+
+  // 删除前先收集缩略图 URL
+  const rows = db.prepare(
+    `SELECT thumbnail_path FROM videos WHERE ${subtreeFilter}`
+  ).all(folder.path, like) as { thumbnail_path: string | null }[];
+  const thumbnailUrls = rows.map((r) => r.thumbnail_path).filter(Boolean) as string[];
+
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM video_tags WHERE video_id IN (SELECT id FROM videos WHERE ${subtreeFilter})`)
+      .run(folder.path, like);
+    db.prepare(`DELETE FROM videos WHERE ${subtreeFilter}`).run(folder.path, like);
+    db.prepare(`DELETE FROM folders WHERE path = ? OR path LIKE ?`).run(folder.path, like);
+    // 清理孤儿标签（不再被任何视频引用）
+    db.prepare(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)`).run();
+  });
+  tx();
+
+  return { thumbnailUrls, videoCount: rows.length };
+}
+
+// 删除标签：仅移除标签本身及其与视频的关联，视频与缩略图保留。
+export function deleteTag(tagId: number): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM video_tags WHERE tag_id = ?').run(tagId);
+    db.prepare('DELETE FROM tags WHERE id = ?').run(tagId);
+  });
+  tx();
 }
 
 // 设置读写

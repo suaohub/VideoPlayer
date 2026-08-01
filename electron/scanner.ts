@@ -1,6 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getDb } from './db';
+import { normalizeThumbnailUrl } from './thumbnail';
+import { enqueueThumbnails, enqueueMissingThumbnails } from './thumbnailQueue';
+
+// 首批优先生成缩略图的数量（首屏尽快出真图，其余静默补）
+const PRIORITY_COUNT = 100;
 
 // 支持的视频扩展名
 const VIDEO_EXTS = new Set([
@@ -18,6 +23,10 @@ export interface ScanResult {
 
 // 扫描进度回调
 export type ProgressCallback = (current: number, total: number, currentFile: string) => void;
+
+export function isVideoFile(filePath: string): boolean {
+  return VIDEO_EXTS.has(path.extname(filePath).toLowerCase());
+}
 
 // 递归收集目录下所有视频文件的路径
 function collectVideoFiles(dir: string, results: string[] = []): string[] {
@@ -80,14 +89,8 @@ function ensureTag(name: string): number {
   return info.lastInsertRowid as number;
 }
 
-// 导入一个文件夹
-export function importFolder(importRootPath: string, onProgress?: ProgressCallback): ScanResult {
+function importVideoFiles(importRootPath: string, videoFiles: string[], onProgress?: ProgressCallback): ScanResult {
   const db = getDb();
-  console.log('[scanner] Importing:', importRootPath);
-
-  // 收集所有视频文件
-  const videoFiles = collectVideoFiles(importRootPath);
-  console.log('[scanner] Found', videoFiles.length, 'video files');
 
   // 建立导入根文件夹记录
   const rootId = ensureFolder(importRootPath, importRootPath, null);
@@ -101,6 +104,7 @@ export function importFolder(importRootPath: string, onProgress?: ProgressCallba
   `);
   const getVideoId = db.prepare('SELECT id FROM videos WHERE path = ?');
   const linkTag = db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)');
+  const importedVideoIds: number[] = [];
 
   // 用事务批量插入，性能更好
   const runImport = db.transaction(() => {
@@ -129,6 +133,7 @@ export function importFolder(importRootPath: string, onProgress?: ProgressCallba
 
       // 获取 video id
       const videoRow = getVideoId.get(filePath) as { id: number };
+      importedVideoIds.push(videoRow.id);
 
       // 扁平化标签：把该文件相对导入根的所有子目录名作为标签
       const relative = path.relative(importRootPath, dir);
@@ -143,6 +148,8 @@ export function importFolder(importRootPath: string, onProgress?: ProgressCallba
   });
 
   runImport();
+  // 缩略图改为后台异步队列生成（非阻塞）：前 PRIORITY_COUNT 个优先出图
+  enqueueThumbnails(importedVideoIds, importedVideoIds.slice(0, PRIORITY_COUNT));
 
   // 统计
   const totalVideos = (db.prepare('SELECT COUNT(*) as c FROM videos').get() as { c: number }).c;
@@ -155,5 +162,64 @@ export function importFolder(importRootPath: string, onProgress?: ProgressCallba
     newVideos,
     folders: folderCount,
     tags: tagCount,
+  };
+}
+
+// 后台异步补齐所有缺缩略图/元数据的视频（非阻塞）。
+// 先把历史遗留的 file:/// 缩略图路径迁移为 thumb:// 协议，再把缺图的入队。
+export function backfillMissingThumbnails() {
+  const db = getDb();
+  const existing = db.prepare(`
+    SELECT id, thumbnail_path FROM videos
+    WHERE thumbnail_path LIKE 'file:///%'
+  `).all() as { id: number; thumbnail_path: string }[];
+  const update = db.prepare('UPDATE videos SET thumbnail_path = ? WHERE id = ?');
+  for (const row of existing) {
+    update.run(normalizeThumbnailUrl(row.thumbnail_path), row.id);
+  }
+  enqueueMissingThumbnails();
+}
+
+// 导入一个文件夹
+export function importFolder(importRootPath: string, onProgress?: ProgressCallback): ScanResult {
+  console.log('[scanner] Importing folder:', importRootPath);
+
+  // 收集所有视频文件
+  const videoFiles = collectVideoFiles(importRootPath);
+  console.log('[scanner] Found', videoFiles.length, 'video files');
+
+  return importVideoFiles(importRootPath, videoFiles, onProgress);
+}
+
+// 导入用户直接选择的视频文件
+export function importFiles(filePaths: string[], onProgress?: ProgressCallback): ScanResult {
+  const videoFiles = filePaths.filter(isVideoFile);
+  console.log('[scanner] Importing files:', videoFiles.length);
+
+  const groups = new Map<string, string[]>();
+  for (const filePath of videoFiles) {
+    const dir = path.dirname(filePath);
+    const files = groups.get(dir) ?? [];
+    files.push(filePath);
+    groups.set(dir, files);
+  }
+
+  let completed = 0;
+  const results: ScanResult[] = [];
+  for (const [dir, files] of groups.entries()) {
+    const result = importVideoFiles(dir, files, (groupCurrent, _groupTotal, file) => {
+      onProgress?.(completed + groupCurrent, videoFiles.length, file);
+    });
+    completed += files.length;
+    results.push(result);
+  }
+
+  const last = results.at(-1);
+  return last ?? {
+    importRootPath: process.cwd(),
+    totalVideos: 0,
+    newVideos: 0,
+    folders: 0,
+    tags: 0,
   };
 }

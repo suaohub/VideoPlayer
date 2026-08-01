@@ -35,9 +35,24 @@ Electron 主进程 (Node/CJS)
 ### mpv 控制机制（已实现）
 
 - 主进程 `spawn` mpv 子进程，带 `--input-ipc-server=<socket>` 开启 JSON IPC
+- socket 按平台区分：Windows 用命名管道 `\\.\pipe\mpv-*`，其它平台用 `/tmp/mpv-socket-*`
 - 主进程连上该 socket，发送命令（`cycle pause`、`seek`、`set_property volume/speed` 等）
-- 通过 `observe_property` 订阅 `time-pos`/`duration`/`pause`，转发给渲染进程更新 UI
+- 通过 `observe_property` 订阅 `time-pos`/`duration`/`pause`/`volume`/`speed`，转发给渲染进程更新 UI（用户用 mpv 原生键位改音量/倍速时，DOM 控制栏也会同步）
 - 通过 `keybind ENTER quit` 让 mpv 内按回车即退出；mpv 退出时主进程把 Electron 窗口拉回前台，实现「回车返回列表」
+
+### 播放策略（重要变更）
+
+早期方案是渲染进程用 HTML5 `<video>` 试播、失败再回退 mpv。因 Chromium 媒体栈解不了 HEVC / 10-bit / MKV / AVI 等（高码率片源常命中），该方案已废弃。
+
+**现在统一走 mpv**（内置 FFmpeg，格式全）：
+- `InternalPlayer.tsx` 挂载即调 `play-video`，mpv 原生窗口嵌入应用内容区
+- 布局为「顶栏（DOM 48px）+ mpv 视频区 + 底部控制栏（DOM 64px）」三段，mpv 窗口几何避开上下两条 DOM 栏，规避 airspace 遮挡
+- 底部控制栏是纯 React/CSS（吃主题变量），复用上面的 IPC 通道
+
+### mpv 窗口嵌入（Windows）
+
+当前用 `SetParent` + `SetWindowPos`（经 PowerShell 调 Win32 API）把独立 mpv 窗口塞进主窗口内容区，随窗口 move/resize 同步几何。可工作。
+> 后续可选清理：改用 mpv 原生 `--wid=<HWND>` 直接嵌入，省掉每次 spawn PowerShell 的开销。
 
 ---
 
@@ -46,20 +61,19 @@ Electron 主进程 (Node/CJS)
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | M0 预研 | mpv 集成、IPC 控制、回车返回列表 | ✅ 完成 |
-| M1 导入分类 | 数据层、扫描、扁平标签、目录树、过滤 UI | 🚧 代码完成，macOS 有 SIGSEGV 待解 |
-| M2 列表 | 缩略图生成队列、瀑布流、虚拟滚动、横竖卡片 | ⬜ 未开始 |
-| M3 播放器 | 全屏控件、三种全屏模式、进度/音量/倍速 UI | ⬜ 未开始 |
-| M4 交互 | 键盘方向导航 + 对角组合键、随机打乱/连播 | ⬜ 未开始 |
+| M1 导入分类 | 数据层、扫描、扁平标签、目录树、过滤 UI | ✅ Windows 上 SQLite 已跑通 |
+| M2 列表 | 缩略图生成（FFmpeg 抽帧）、瀑布流、横竖卡片 | ✅ 完成（虚拟滚动待补） |
+| M3 播放器 | mpv 主力播放 + 底部控制栏（进度/音量/倍速） | 🚧 控制栏完成；三种全屏模式待做 |
+| M4 交互 | 键盘方向导航 + 对角组合键、随机打乱/连播 | ✅ 空间导航 + 打乱完成（连播待补） |
 | M5 打磨 | 悬浮预览、进度记忆、性能优化、异常处理、打包 | ⬜ 未开始 |
 
 ### M0 已完成细节
 
 - Electron + Vite + React + esbuild 工程化
-- mpv 独立窗口播放（macOS 上 `--wid` 无法真正嵌入，退化为独立窗口，见跨平台注意事项）
-- IPC 控制：播放/暂停、seek、音量、倍速
+- mpv 播放 + IPC 控制：播放/暂停、seek、音量、倍速
 - 回车关闭 mpv 并返回列表
 
-### M1 已完成代码（待联调）
+### M1 已完成代码
 
 - `db.ts`：SQLite 表结构（videos/folders/tags/video_tags/settings）
 - `scanner.ts`：递归扫描、目录树与标签入库、导入进度回调
@@ -110,66 +124,46 @@ npm run build && npm start
 ```
 
 ---
-## 五、跨平台注意事项（macOS → Windows 必读）
+## 五、平台与环境说明（Windows 为目标平台）
 
-本项目在 macOS 上起步，但**最终目标平台是 Windows**。以下是切到 Windows 时必须处理的点：
+项目在 macOS 上起步，现已在 **Windows** 上跑通。以下为当前实现状态（旧的「macOS → Windows 必改项」多数已解决）。
 
-### 1. mpv 二进制路径（必改）
+### 1. mpv 二进制路径
 
-`electron/main.ts` 顶部：
+已由 `main.ts` 的 `resolveMpvBin()` 处理：优先 `MPV_BIN` 环境变量 → Windows 默认 `C:\Program Files\MPV Player\mpv.exe` → PATH 里的 `mpv`。无需改代码，装在别处设环境变量即可。
 
-```ts
-const MPV_BIN = '/Users/mr.su/Downloads/mpv.app/Contents/MacOS/mpv';
-```
+### 2. mpv 窗口嵌入
 
-Windows 上改成本机 `mpv.exe` 的绝对路径，例如：
-
-```ts
-const MPV_BIN = 'C:\\tools\\mpv\\mpv.exe';
-```
-
-> 建议后续重构为：优先读配置/环境变量，找不到再回退到内置路径。避免硬编码。
-
-### 2. mpv 窗口嵌入（平台核心差异）
-
-- **Windows**：窗口句柄 HWND 是系统内核对象，跨进程有效。mpv 子进程可用 `--wid=<HWND>` **真正嵌入** Electron 窗口。→ 「App 页面内全屏」「窗口桌面全屏」两种模式在 Windows 上可实现。
-- **macOS**：NSView 是进程内内存指针，跨进程无效，独立 mpv 进程无法用 `--wid` 嵌入，只能弹独立窗口。这是原理限制，不是 bug。
-
-`main.ts` 中已通过 `mainWindow.getNativeWindowHandle()` 读取句柄并传 `--wid`。在 Windows 上应能生效，需实测验证嵌入与 DOM 层级关系。
+Windows 上已实现嵌入：用 `SetParent` + `SetWindowPos`（PowerShell 调 Win32）把 mpv 窗口塞进主窗口内容区，随窗口变化同步几何。
+- **airspace**：原生子窗口永远盖在 Chromium 内容之上，所以控制栏放在 mpv 视频区**外**（底部独立一栏），用 React/CSS 自绘。
+- 后续可选：改用 mpv 原生 `--wid=<HWND>` 省掉 PowerShell 开销。
+- macOS：NSView 跨进程无效，无法嵌入，只能独立窗口（原理限制，非 bug）。
 
 ### 3. socket 路径
 
-`main.ts` 里 IPC socket 用的是 `/tmp/mpv-socket-*`（unix domain socket）。**Windows 上 mpv 的 IPC 用命名管道**，需改为 `\\.\pipe\mpv-socket-xxx` 形式，并且 Node 端 `net.connect` 对命名管道的连接方式也要相应调整。这是 Windows 联调时的必改项。
+已按平台处理：Windows 用命名管道 `\\.\pipe\mpv-*`，其它平台用 `/tmp/mpv-socket-*`。
 
 ### 4. native 模块
 
-`better-sqlite3` 需在 Windows 上重新按第四节方式编译（Windows 需要 Visual Studio Build Tools 提供 MSVC 与 `node-gyp` 依赖）。
+`better-sqlite3` 需针对 Electron ABI 编译（见第四节）。Windows 需要 Visual Studio Build Tools 提供 MSVC 与 `node-gyp` 依赖。**Windows 上已跑通**（早期 macOS 的 SIGSEGV 问题在 Windows 目标平台上不复现）。
 
 ---
 
-## 六、待解问题（当前阻塞）
+## 六、已知遗留 / 待办
 
-### macOS 上 better-sqlite3 SIGSEGV
-
-- **现象**：`app.whenReady` 中调用 `initDatabase()` 打开数据库时，Electron 进程 `SIGSEGV` 崩溃。数据库路径能打印出来，说明崩溃发生在 better-sqlite3 原生模块加载/调用瞬间。
-- **已排除**：CPU 架构不匹配（已确认 `better_sqlite3.node`、Electron 二进制、系统、node 全部为 arm64）。
-- **已做**：用 `--force_build=1` 成功从源码针对 Electron 31.3.1 编译出 `better_sqlite3.node`。
-- **仍崩溃**，怀疑方向（供接手排查）：
-  1. 编译时的 Node headers/NAPI 版本与运行时 Electron 的 V8/NAPI 不完全一致
-  2. `better-sqlite3` v13 + Electron 31 的兼容性组合问题——可尝试降级 better-sqlite3 到与 Electron 31 已知兼容的版本，或升级 Electron
-  3. 改用 `@electron/rebuild` 并确认它真正走了 `force_build`（本项目已装 `@electron/rebuild`）
-  4. 备选：换 `node:sqlite`（Node 22+ 内置）或 `sql.js`（纯 wasm，无原生编译，跨平台零负担），规避原生模块编译问题
-- **建议**：在 Windows 上继续时，优先在目标平台重新编译验证；若仍不稳定，认真评估切到 `sql.js` 或 `node:sqlite`，可彻底摆脱原生模块跨平台编译的麻烦。
+- **虚拟滚动**：当前瀑布流一次性渲染全部卡片，海量视频（数千）下需补虚拟滚动。
+- **三种全屏模式**：目前是「嵌入应用内容区」一种，App 内全屏 / 窗口全屏 / 独立桌面全屏尚未实现。
+- **控制栏焦点**：mpv 获焦时 DOM 控制栏鼠标点击的可靠性需实测（详见 M3）。
+- **增量导入**：`scanner.ts` 按 path `INSERT OR IGNORE` 去重，能识别新增；文件被修改（mtime 变化）暂不更新。
+- **macOS better-sqlite3 SIGSEGV**（历史记录，非当前阻塞）：如需回到 macOS 开发，可评估切 `node:sqlite`（Node 22+ 内置）或 `sql.js`（纯 wasm）规避原生编译。
 
 ---
 
 ## 七、下一步开发建议顺序
 
-1. 在 Windows 上跑通环境（改 MPV_BIN、编译 better-sqlite3 或换 SQLite 方案）
-2. 解决/绕过 SQLite 崩溃，联调 M1 导入→过滤全链路
-3. 验证 Windows 上 `--wid` 真正嵌入，落地三种全屏模式（含 socket 改命名管道）
-4. M2 缩略图生成队列 + 瀑布流虚拟滚动
-5. M3 全屏播放器控件
-6. M4 键盘空间导航（对角组合键）+ 随机播放
-7. M5 打磨与打包（electron-builder，已在 devDependencies）
+1. 实测嵌入播放 + 控制栏交互（点击、resize 对齐、焦点）
+2. 三种全屏模式
+3. 瀑布流虚拟滚动
+4. 播放进度记忆、随机连播
+5. M5 打磨与打包（electron-builder，已在 devDependencies）
 

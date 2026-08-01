@@ -29,40 +29,27 @@ function App() {
   const [sidebarMode, setSidebarMode] = useState<'tags' | 'tree' | null>(null);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [thumbProgress, setThumbProgress] = useState<{ done: number; total: number } | null>(null);
   // 卡片大小（即瀑布流列宽，px）。越大卡片越大、每行越少。
   const [cardSize, setCardSize] = useState(220);
 
-  // 应用主题到 DOM
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    api.setSetting('theme', theme);
-  }, [theme]);
+  // 可移动磁盘检测
+  const [unmountedDrives, setUnmountedDrives] = useState<string[]>([]);
+  const [mountedDrives, setMountedDrives] = useState<string[]>([]);
 
-  // 持久化卡片大小
-  useEffect(() => {
-    api.setSetting('cardSize', String(cardSize));
-  }, [cardSize]);
-
-  // 初始化：读取设置 + 加载数据
-  useEffect(() => {
-    (async () => {
-      const savedTheme = await api.getSetting('theme');
-      if (savedTheme) setTheme(savedTheme as Theme);
-      const savedSize = await api.getSetting('cardSize');
-      if (savedSize) setCardSize(Number(savedSize));
-      await refreshAll();
-    })();
-
-    // 导入进度监听
-    api.onImportProgress((data) => {
-      setImportProgress(data);
-    });
-    api.onImportDone(() => {
-      setImporting(false);
-      setImportProgress(null);
-      refreshAll();
-    });
+  // 定期检测磁盘挂载状态（启动时 + 每30秒一次）
+  const checkDrives = useCallback(async () => {
+    const result = await api.checkRemovableDrives();
+    setMountedDrives(result.mounted);
+    const unmounted = result.drives.filter(d => !result.mounted.includes(d));
+    setUnmountedDrives(unmounted);
   }, []);
+
+  useEffect(() => {
+    checkDrives();
+    const timer = setInterval(checkDrives, 30_000);
+    return () => clearInterval(timer);
+  }, [checkDrives]);
 
   // 刷新标签、目录、视频总数
   const refreshAll = useCallback(async () => {
@@ -88,18 +75,118 @@ function App() {
     setVideos(list);
   }, [selectedTagIds, tagMode, selectedFolderId, search]);
 
+  const refreshVisibleData = useCallback(async () => {
+    await refreshAll();
+    await loadVideos();
+  }, [refreshAll, loadVideos]);
+
+  const loadAllVideos = useCallback(async () => {
+    await refreshAll();
+    const list = await api.getVideos({});
+    setVideos(list);
+  }, [refreshAll]);
+
+  // 应用主题到 DOM + 同步标题栏按钮颜色
+  const TITLEBAR_COLORS: Record<Theme, { color: string; symbolColor: string }> = {
+    day:      { color: '#ffffff', symbolColor: '#1a1a2e' },
+    night:    { color: '#1a1e29', symbolColor: '#e6e8ec' },
+    romantic: { color: '#46233c', symbolColor: '#ffe8f5' },
+  };
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    api.setSetting('theme', theme);
+    api.setTitlebarOverlay(TITLEBAR_COLORS[theme]);
+  }, [theme]);
+
+  // 持久化卡片大小
+  useEffect(() => {
+    api.setSetting('cardSize', String(cardSize));
+  }, [cardSize]);
+
+  // 初始化：读取设置 + 加载数据
+  useEffect(() => {
+    (async () => {
+      const savedTheme = await api.getSetting('theme');
+      if (savedTheme) setTheme(savedTheme as Theme);
+      const savedSize = await api.getSetting('cardSize');
+      if (savedSize) setCardSize(Number(savedSize));
+      await refreshAll();
+      await loadVideos();
+    })();
+  }, [refreshAll, loadVideos]);
+
+  // 导入进度监听
+  useEffect(() => {
+    const offProgress = api.onImportProgress((data) => {
+      setImportProgress(data);
+    });
+    const offDone = api.onImportDone(() => {
+      setImporting(false);
+      setImportProgress(null);
+      loadAllVideos();
+    });
+    return () => {
+      offProgress?.();
+      offDone?.();
+    };
+  }, [loadAllVideos]);
+
+  // 缩略图后台生成：单张就绪时就地替换该卡，避免整体重刷
+  useEffect(() => {
+    const offReady = api.onThumbnailReady((data) => {
+      setVideos((prev) => {
+        const idx = prev.findIndex((v) => v.id === data.id);
+        if (idx < 0) return prev;
+        const next = [...prev];
+        next[idx] = {
+          ...next[idx],
+          thumbnail_path: data.thumbnail_path ?? next[idx].thumbnail_path,
+          duration: data.duration ?? next[idx].duration,
+          width: data.width ?? next[idx].width,
+          height: data.height ?? next[idx].height,
+          aspect_ratio: data.aspect_ratio ?? next[idx].aspect_ratio,
+        };
+        return next;
+      });
+    });
+    const offProgress = api.onThumbnailProgress((data) => {
+      // done === total 视为一轮结束，清掉进度条
+      setThumbProgress(data.total > 0 && data.done < data.total ? data : null);
+    });
+    return () => {
+      offReady?.();
+      offProgress?.();
+    };
+  }, []);
+
   // 过滤条件变化时重新加载
   useEffect(() => {
     loadVideos();
   }, [loadVideos]);
 
-  // 导入文件夹
+  // 导入视频文件或文件夹
   const handleImport = async () => {
-    const { canceled, paths } = await api.selectFolders();
+    const { canceled, kind, paths } = await api.selectImportSource();
     if (canceled || paths.length === 0) return;
     setImporting(true);
     setImportProgress(null);
-    await api.importFolders(paths);
+    try {
+      if (kind === 'files') {
+        await api.importVideoFiles(paths);
+      } else if (kind === 'folders') {
+        await api.importFolders(paths);
+      }
+      setSelectedTagIds([]);
+      setSelectedFolderId(null);
+      setSearch('');
+      await loadAllVideos();
+    } catch (error) {
+      console.error('[import] failed', error);
+      alert(`导入失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setImporting(false);
+      setImportProgress(null);
+    }
   };
 
   // 切换标签选中
@@ -135,6 +222,81 @@ function App() {
     });
   };
 
+  // 全屏播放：直接启动 mpv，不渲染内嵌播放器界面
+  const handlePlay = async (video: Video) => {
+    const result = await api.playVideo(video.path, { alertOnError: true });
+    if (!result.success && result.error) {
+      alert(`播放失败：${result.error}`);
+    }
+  };
+
+  // 清除所有数据（视频、目录、标签、缩略图）
+  const handleClearCache = async () => {
+    if (!confirm('清除所有数据？\n\n这将删除：\n• 所有视频记录和目录\n• 所有标签\n• 所有缩略图文件\n\n主题和界面设置不受影响，视频文件本身不会被删除。')) return;
+    const result = await api.clearCache();
+    if (result.success) {
+      // 清空界面状态
+      setVideos([]);
+      setFolders([]);
+      setTags([]);
+      setVideoCount(0);
+      setSelectedTagIds([]);
+      setSelectedFolderId(null);
+      setSearch('');
+      alert('已清除所有数据，重新导入视频即可恢复。');
+    } else {
+      alert(`清除失败：${result.error}`);
+    }
+  };
+
+  // 删除单个目录（含子目录）：删除视频记录、缩略图、标签关联，保留源文件
+  const handleDeleteFolder = async (folder: Folder) => {
+    if (!confirm(
+      `删除目录「${folder.name}」？\n\n` +
+      `这将删除该目录及其所有子目录下：\n` +
+      `• 视频的导入记录\n` +
+      `• 已生成的缩略图缓存\n` +
+      `• 相关的标签关联（不再被使用的标签会一并清理）\n\n` +
+      `磁盘上的视频文件本身不会被删除，重新导入即可恢复。`
+    )) return;
+    const result = await api.deleteFolder(folder.id);
+    if (result.success) {
+      if (selectedFolderId === folder.id) setSelectedFolderId(null);
+      await refreshVisibleData();
+      alert(`已删除目录「${folder.name}」：清理了 ${result.videoCount ?? 0} 条视频记录、${result.thumbCount ?? 0} 张缩略图。`);
+    } else {
+      alert(`删除失败：${result.error}`);
+    }
+  };
+
+  // 删除单个标签：仅移除标签及其关联，保留视频与缩略图
+  const handleDeleteTag = async (tag: Tag) => {
+    if (!confirm(
+      `删除分类标签「${tag.name}」？\n\n` +
+      `仅移除该标签及其与视频的关联，视频记录、缩略图、目录都会保留。`
+    )) return;
+    const result = await api.deleteTag(tag.id);
+    if (result.success) {
+      setSelectedTagIds((prev) => prev.filter((id) => id !== tag.id));
+      await refreshVisibleData();
+    } else {
+      alert(`删除失败：${result.error}`);
+    }
+  };
+
+  // 过滤掉未挂载磁盘上的视频（前端过滤，避免不必要的数据库查询）
+  const visibleVideos = unmountedDrives.length === 0 ? videos : videos.filter(v => {
+    const drive = v.path.match(/^([A-Za-z]:)/)?.[1]?.toUpperCase();
+    if (!drive) return true; // 非驱动器路径（相对路径等）保留
+    return !unmountedDrives.includes(drive + '\\');
+  });
+
+  // 过滤掉未挂载磁盘上的目录
+  const visibleFolders = unmountedDrives.length === 0 ? folders : folders.filter(f => {
+    const drive = f.path.match(/^([A-Za-z]:)/)?.[1]?.toUpperCase();
+    if (!drive) return true;
+    return !unmountedDrives.includes(drive + '\\');
+  });
 
   return (
     <>
@@ -149,16 +311,19 @@ function App() {
         onImport={handleImport}
         onShuffle={shuffleVideos}
         onClearFilter={clearFilter}
+        onClearCache={handleClearCache}
         sidebarMode={sidebarMode}
         onSidebarModeChange={setSidebarMode}
         search={search}
         onSearchChange={setSearch}
         videoCount={videoCount}
-        filteredCount={videos.length}
+        filteredCount={visibleVideos.length}
         importing={importing}
         importProgress={importProgress}
+        thumbProgress={thumbProgress}
         cardSize={cardSize}
         onCardSizeChange={setCardSize}
+        unmountedDrives={unmountedDrives}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -178,12 +343,14 @@ function App() {
                 tagMode={tagMode}
                 onToggleTag={toggleTag}
                 onTagModeChange={setTagMode}
+                onDeleteTag={handleDeleteTag}
               />
             ) : (
               <FolderTree
-                folders={folders}
+                folders={visibleFolders}
                 selectedFolderId={selectedFolderId}
                 onSelectFolder={selectFolder}
+                onDeleteFolder={handleDeleteFolder}
               />
             )}
           </aside>
@@ -192,10 +359,11 @@ function App() {
         {/* 右侧：视频列表 */}
         <main style={{ flex: 1, overflow: 'hidden' }}>
           <VideoGrid
-            videos={videos}
+            videos={visibleVideos}
             cardSize={cardSize}
             onCardSizeChange={setCardSize}
             cardSizeRange={[CARD_MIN, CARD_MAX]}
+            onPlay={handlePlay}
           />
         </main>
       </div>

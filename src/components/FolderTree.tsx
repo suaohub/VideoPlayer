@@ -5,6 +5,7 @@ interface FolderTreeProps {
   folders: Folder[];
   selectedFolderId: number | null;
   onSelectFolder: (id: number | null) => void;
+  onDeleteFolder: (folder: Folder) => void;
 }
 
 interface TreeNode extends Folder {
@@ -29,19 +30,23 @@ function buildTree(folders: Folder[]): TreeNode[] {
   return roots;
 }
 
-function TreeItem({ node, depth, selectedFolderId, onSelectFolder }: {
+function TreeItem({ node, depth, selectedFolderId, onSelectFolder, onDeleteFolder }: {
   node: TreeNode;
   depth: number;
   selectedFolderId: number | null;
   onSelectFolder: (id: number | null) => void;
+  onDeleteFolder: (folder: Folder) => void;
 }) {
   const [expanded, setExpanded] = useState(depth < 1); // 默认展开第一层
+  const [hover, setHover] = useState(false);
   const hasChildren = node.children.length > 0;
   const selected = selectedFolderId === node.id;
 
   return (
     <div>
       <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -67,9 +72,24 @@ function TreeItem({ node, depth, selectedFolderId, onSelectFolder }: {
           <span style={{ width: 14, display: 'inline-block' }} />
         )}
         <span style={{ opacity: 0.8 }}>📁</span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </span>
+        {hover && (
+          <span
+            onClick={(e) => { e.stopPropagation(); onDeleteFolder(node); }}
+            title="删除该目录及其子目录（视频文件保留，仅删除记录、缩略图、标签关联）"
+            style={{
+              fontSize: 12,
+              opacity: 0.6,
+              padding: '0 4px',
+              borderRadius: 6,
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </span>
+        )}
       </div>
       {expanded && node.children.map((child) => (
         <TreeItem
@@ -78,13 +98,14 @@ function TreeItem({ node, depth, selectedFolderId, onSelectFolder }: {
           depth={depth + 1}
           selectedFolderId={selectedFolderId}
           onSelectFolder={onSelectFolder}
+          onDeleteFolder={onDeleteFolder}
         />
       ))}
     </div>
   );
 }
 
-export function FolderTree({ folders, selectedFolderId, onSelectFolder }: FolderTreeProps) {
+export function FolderTree({ folders, selectedFolderId, onSelectFolder, onDeleteFolder }: FolderTreeProps) {
   const tree = buildTree(folders);
 
   return (
@@ -102,6 +123,7 @@ export function FolderTree({ folders, selectedFolderId, onSelectFolder }: Folder
           depth={0}
           selectedFolderId={selectedFolderId}
           onSelectFolder={onSelectFolder}
+          onDeleteFolder={onDeleteFolder}
         />
       ))}
     </div>

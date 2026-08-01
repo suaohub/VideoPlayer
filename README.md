@@ -20,7 +20,8 @@
 - **mpv 播放器**
   - Windows：下载 mpv，记下 `mpv.exe` 路径
   - macOS：`brew install mpv`
-- **重要**：`electron/main.ts` 顶部的 `MPV_BIN` 常量目前硬编码为 macOS 路径，**在 Windows 上必须改成本机 `mpv.exe` 的绝对路径**（详见开发文档「跨平台注意事项」）。
+- **mpv 路径**：`electron/main.ts` 的 `resolveMpvBin()` 会优先读环境变量 `MPV_BIN`，Windows 下回退到默认安装路径 `C:\Program Files\MPV Player\mpv.exe`，都找不到再回退到 PATH 里的 `mpv`。装在别处时设 `MPV_BIN` 环境变量即可，无需改代码。
+- **FFmpeg**：缩略图/元数据依赖 ffmpeg/ffprobe，可用 `FFMPEG_BIN` / `FFPROBE_BIN` 环境变量指定路径。
 
 ## 快速开始
 
@@ -69,12 +70,14 @@ VideoPlayer/
 
 ## 当前进度
 
-- ✅ **M0** mpv 集成：独立窗口播放 + IPC 控制（播放/暂停/进度/音量/倍速）+ 回车关闭返回列表
-- 🚧 **M1** 文件导入与分类：数据层、扫描、IPC、UI 已完成；**macOS 上 better-sqlite3 存在 SIGSEGV 待解**（见开发文档）
-- ⬜ M2 缩略图与瀑布流虚拟滚动
-- ⬜ M3 全屏播放器控件与三种全屏模式
-- ⬜ M4 键盘空间导航（对角组合键）+ 随机播放
+- ✅ **M0** mpv 集成：IPC 控制（播放/暂停/进度/音量/倍速）+ 回车关闭返回列表
+- ✅ **M1** 文件导入与分类：数据层、扫描、IPC、UI（Windows 上 SQLite 已跑通）
+- ✅ **M2** 缩略图（FFmpeg 抽帧）与瀑布流布局
+- 🚧 **M3** 播放器：**mpv 为主力播放**（嵌入应用窗口）+ 底部 React 控制栏（播放/进度/音量/倍速）已完成；三种全屏模式待做
+- ✅ **M4** 键盘空间导航（对角组合键）+ 随机打乱
 - ⬜ M5 打磨与打包
+
+> 播放策略：早期的「HTML5 试播 → 失败回退 mpv」已废弃。现在**所有视频统一走 mpv**（内置 FFmpeg，高码率 / HEVC / 10-bit / MKV 等 Chromium 播不了的格式都能直接播），mpv 原生窗口嵌入应用内容区，底部为自绘 React 控制栏。
 
 ## 构建生产版本
 

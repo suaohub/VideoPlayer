@@ -6,9 +6,10 @@ interface TagBarProps {
   tagMode: 'or' | 'and';
   onToggleTag: (id: number) => void;
   onTagModeChange: (m: 'or' | 'and') => void;
+  onDeleteTag: (tag: Tag) => void;
 }
 
-export function TagBar({ tags, selectedTagIds, tagMode, onToggleTag, onTagModeChange }: TagBarProps) {
+export function TagBar({ tags, selectedTagIds, tagMode, onToggleTag, onTagModeChange, onDeleteTag }: TagBarProps) {
   return (
     <div style={{ padding: 12 }}>
       {/* 标题 + 模式切换 */}
@@ -82,6 +83,19 @@ export function TagBar({ tags, selectedTagIds, tagMode, onToggleTag, onTagModeCh
                 borderRadius: 8,
               }}>
                 {tag.count}
+              </span>
+              <span
+                onClick={(e) => { e.stopPropagation(); onDeleteTag(tag); }}
+                title="删除该分类标签（视频与缩略图保留）"
+                style={{
+                  fontSize: 11,
+                  opacity: 0.55,
+                  marginLeft: -2,
+                  padding: '0 2px',
+                  borderRadius: 6,
+                }}
+              >
+                ✕
               </span>
             </button>
           );

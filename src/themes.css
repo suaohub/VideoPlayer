@@ -109,3 +109,182 @@ button {
   padding: 4px 8px;
   letter-spacing: 0.3px;
 }
+
+.internal-player {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+}
+
+.internal-player-topbar {
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  background: rgba(12, 14, 20, 0.94);
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.internal-player-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.internal-player-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.internal-player-actions button {
+  padding: 7px 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+}
+
+/* 中间舞台：mpv 原生窗口覆盖于此，未就绪时显示占位 */
+.internal-player-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #000;
+}
+
+.internal-player-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.82);
+  text-align: center;
+}
+
+/* ============ 底部播放控制栏（路线 B：React/CSS 自绘，吃主题变量） ============ */
+.player-controls {
+  height: 64px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--bg-toolbar);
+  border-top: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.player-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  transition: background 0.15s ease;
+}
+.player-btn:hover {
+  background: var(--accent-hover);
+}
+
+.player-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: center;
+}
+
+.player-group {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-icon {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+/* 进度条：占据剩余空间 */
+.player-seek {
+  flex: 1;
+  min-width: 80px;
+}
+
+.player-volume {
+  width: 90px;
+}
+
+/* range 滑块主题化 */
+.player-seek,
+.player-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  cursor: pointer;
+}
+.player-seek::-webkit-slider-thumb,
+.player-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-toolbar);
+  box-shadow: var(--shadow-card);
+}
+
+/* 倍速按钮组 */
+.player-speed {
+  gap: 2px;
+}
+.player-speed-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.player-speed-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.player-speed-btn.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+/* 图标旋转动画（导入中 Loader2） */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}

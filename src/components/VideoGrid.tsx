@@ -1,19 +1,20 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { Video } from '../types';
-import { api } from '../api';
-import { collectRects, findTarget, keysToDir } from '../spatialNav';
-import { computeMasonry } from '../masonry';
+import { findTarget, keysToDir, Rect } from '../spatialNav';
+import { computeMasonry, CardLayout } from '../masonry';
 
 interface VideoGridProps {
   videos: Video[];
-  cardSize: number; // 瀑布流列宽（px），由工具栏滑块控制
+  cardSize: number;
   onCardSizeChange: (n: number) => void;
-  cardSizeRange: [number, number]; // [min, max]
+  cardSizeRange: [number, number];
+  onPlay: (video: Video) => void;
 }
 
 const GAP = 12;
+// 视口外上下各预渲染这么多像素，防止快速滚动时空白闪烁
+const OVERSCAN = 600;
 
-// 格式化文件大小
 function formatSize(bytes: number): string {
   if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
   if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
@@ -21,7 +22,6 @@ function formatSize(bytes: number): string {
   return bytes + ' B';
 }
 
-// 格式化时长
 function formatDuration(sec: number | null): string {
   if (!sec) return '';
   const h = Math.floor(sec / 3600);
@@ -31,7 +31,6 @@ function formatDuration(sec: number | null): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// 缩略图渲染：真实图片 or 渐变占位（高度由布局算好，直接填满）
 function Thumb({ video, height }: { video: Video; height: number }) {
   const tp = video.thumbnail_path;
   const base: React.CSSProperties = {
@@ -39,7 +38,6 @@ function Thumb({ video, height }: { video: Video; height: number }) {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   };
 
-  // 渐变占位
   if (tp && tp.startsWith('gradient:')) {
     const [c1, c2] = tp.replace('gradient:', '').split(',');
     return (
@@ -49,7 +47,6 @@ function Thumb({ video, height }: { video: Video; height: number }) {
     );
   }
 
-  // 真实缩略图
   if (tp) {
     return (
       <div style={{ ...base, background: '#000' }}>
@@ -58,7 +55,6 @@ function Thumb({ video, height }: { video: Video; height: number }) {
     );
   }
 
-  // 无缩略图
   return (
     <div style={{ ...base, background: 'var(--bg-hover)', color: 'var(--text-secondary)', fontSize: 30 }}>▶</div>
   );
@@ -71,28 +67,26 @@ interface VideoCardProps {
   width: number;
   height: number;
   focused: boolean;
-  animate: boolean; // 是否启用位置/尺寸过渡（首帧关闭避免从 0,0 飞入）
+  animate: boolean;
   onFocus: () => void;
+  onPlay: (video: Video) => void;
   cardRef: (el: HTMLDivElement | null) => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, cardRef }: VideoCardProps) {
-  const handlePlay = () => api.playVideo(video.path);
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, cardRef }: VideoCardProps) {
   const durLabel = formatDuration(video.duration);
-  const thumbHeight = height - 46; // 减去信息区高度
+  const thumbHeight = height - 46;
 
   return (
     <div
       ref={cardRef}
-      onClick={handlePlay}
+      onClick={() => onPlay(video)}
       onMouseEnter={onFocus}
       className={'video-card' + (focused ? ' video-card-focused' : '')}
       style={{
         position: 'absolute',
-        left: 0,
-        top: 0,
-        width,
-        height,
+        left: 0, top: 0,
+        width, height,
         transform: `translate(${x}px, ${y}px)`,
         background: 'var(--bg-card)',
         borderRadius: 10,
@@ -103,7 +97,6 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, card
         boxShadow: focused
           ? '0 0 0 3px var(--focus-ring), var(--shadow)'
           : 'var(--shadow-card)',
-        // 位置、尺寸、阴影全部平滑过渡 —— TG 式丝滑的关键
         transition: animate
           ? 'transform 0.32s cubic-bezier(0.22,0.61,0.36,1), width 0.32s cubic-bezier(0.22,0.61,0.36,1), height 0.32s cubic-bezier(0.22,0.61,0.36,1), box-shadow 0.15s ease'
           : 'box-shadow 0.15s ease',
@@ -111,7 +104,6 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, card
         willChange: 'transform, width, height',
       }}
     >
-      {/* 缩略图 + 时长角标 */}
       <div style={{ position: 'relative' }}>
         <Thumb video={video} height={thumbHeight} />
         {durLabel && (
@@ -123,7 +115,6 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, card
           }}>{durLabel}</span>
         )}
       </div>
-      {/* 信息 */}
       <div style={{ padding: '6px 10px', flex: 1, minHeight: 0 }}>
         <div style={{
           fontSize: 13, fontWeight: 500, lineHeight: 1.3,
@@ -141,47 +132,58 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, card
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const cardEls = useRef<(HTMLDivElement | null)[]>([]);
+  // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
+  const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [containerWidth, setContainerWidth] = useState(0);
-  // 首帧不做动画，避免卡片从 (0,0) 飞入
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
   const [animate, setAnimate] = useState(false);
-  // 追踪最新 cardSize，供 wheel 原生监听读取（避免闭包旧值）
   const cardSizeRef = useRef(cardSize);
   cardSizeRef.current = cardSize;
-  // 当前按下的方向键集合（支持对角组合键）
   const pressedKeys = useRef<Set<string>>(new Set());
-  // 对角组合键的合成等待定时器
   const comboTimer = useRef<number | null>(null);
 
-  // 测量容器宽度（含窗口/侧栏变化时自适应）
+  // 测量容器宽度和高度
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const update = () => setContainerWidth(el.clientWidth - 32); // 减去左右 padding
+    const update = () => {
+      setContainerWidth(el.clientWidth - 32);
+      setViewportHeight(el.clientHeight);
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // 首帧渲染后开启动画
+  // 追踪 scroll 位置（用于虚拟化窗口计算）
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // 首帧后开启动画
   useEffect(() => {
     const t = requestAnimationFrame(() => setAnimate(true));
     return () => cancelAnimationFrame(t);
   }, []);
 
-  // Ctrl/Cmd + 滚轮缩放卡片大小（原生非被动监听，才能 preventDefault）
+  // Ctrl+滚轮缩放
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const [min, max] = cardSizeRange;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return; // 未按修饰键正常滚动
+      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const step = -e.deltaY * 0.5; // 上滚放大、下滚缩小
+      const step = -e.deltaY * 0.5;
       const next = Math.max(min, Math.min(max, Math.round(cardSizeRef.current + step)));
       onCardSizeChange(next);
     };
@@ -189,31 +191,66 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange }:
     return () => el.removeEventListener('wheel', onWheel);
   }, [onCardSizeChange, cardSizeRange]);
 
-  // 计算瀑布流布局（按最短列铺放）
+  // 计算瀑布流布局
   const { layouts, totalHeight } = useMemo(
     () => computeMasonry(videos, containerWidth, cardSize, GAP),
     [videos, containerWidth, cardSize]
   );
 
-  // 视频列表变化时，重置焦点到第一个
+  // 虚拟化：只渲染视口 ± OVERSCAN 范围内的卡片（外加当前焦点卡片）
+  const visibleIndices = useMemo(() => {
+    const top = scrollTop - OVERSCAN;
+    const bottom = scrollTop + viewportHeight + OVERSCAN;
+    const set = new Set<number>();
+    layouts.forEach((L, i) => {
+      if (L.y + L.height >= top && L.y <= bottom) set.add(i);
+    });
+    return set;
+  }, [layouts, scrollTop, viewportHeight]);
+
+  // 用布局坐标（而非 DOM getBoundingClientRect）构建 Rect 列表，
+  // 使空间导航对全部卡片有效，不受虚拟化影响
+  const getLayoutRects = useCallback((): Rect[] => {
+    const st = containerRef.current?.scrollTop ?? 0;
+    return layouts.map((L: CardLayout, i: number) => {
+      const top = L.y - st;
+      const bottom = top + L.height;
+      return {
+        index: i,
+        left: L.x, top, right: L.x + L.width, bottom,
+        cx: L.x + L.width / 2,
+        cy: top + L.height / 2,
+      };
+    });
+  }, [layouts]);
+
+  // 滚动目标卡片到可视区（有 DOM 元素用 scrollIntoView，否则按布局位置滚动）
+  const scrollIntoView = useCallback((index: number) => {
+    const L = layouts[index];
+    if (!L) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const el = cardEls.current.get(L.video.id);
+    if (el) {
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } else {
+      const targetTop = L.y - container.clientHeight / 2 + L.height / 2;
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+    }
+  }, [layouts]);
+
+  // 视频列表变化时重置焦点
   useEffect(() => {
-    cardEls.current = cardEls.current.slice(0, videos.length);
+    cardEls.current = new Map();
     setFocusedIndex(videos.length > 0 ? 0 : -1);
   }, [videos]);
 
-  // 把选中卡片滚动到可视区
-  const scrollIntoView = useCallback((index: number) => {
-    const el = cardEls.current[index];
-    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, []);
-
-  // 处理方向移动（合成方向后找目标）
   const move = useCallback(() => {
     const dir = keysToDir(pressedKeys.current);
     if (!dir) return;
     setFocusedIndex((cur) => {
       if (cur < 0) return videos.length > 0 ? 0 : -1;
-      const rects = collectRects(cardEls.current);
+      const rects = getLayoutRects();
       const target = findTarget(rects, cur, dir);
       if (target >= 0) {
         scrollIntoView(target);
@@ -221,7 +258,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange }:
       }
       return cur;
     });
-  }, [videos.length, scrollIntoView]);
+  }, [videos.length, scrollIntoView, getLayoutRects]);
 
   // 键盘监听
   useEffect(() => {
@@ -229,20 +266,12 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange }:
       k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight';
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // 输入框聚焦时不拦截
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-
       if (isArrow(e.key)) {
         e.preventDefault();
-        if (e.repeat) {
-          // 长按连续移动：键已在集合里，直接按当前方向移动
-          move();
-          return;
-        }
+        if (e.repeat) { move(); return; }
         pressedKeys.current.add(e.key);
-        // 开一个 50ms 合成窗口：期间按下的其它方向键会一起合成为对角方向，
-        // 窗口结束时统一移动一次。已有窗口则只加入集合、不重复开。
         if (comboTimer.current == null) {
           comboTimer.current = window.setTimeout(() => {
             comboTimer.current = null;
@@ -250,33 +279,21 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange }:
           }, 50);
         }
       } else if (e.key === 'Enter') {
-        if (focusedIndex >= 0 && videos[focusedIndex]) {
-          api.playVideo(videos[focusedIndex].path);
-        }
+        if (focusedIndex >= 0 && videos[focusedIndex]) onPlay(videos[focusedIndex]);
       }
     };
-
-    const onKeyUp = (e: KeyboardEvent) => {
-      pressedKeys.current.delete(e.key);
-    };
-
+    const onKeyUp = (e: KeyboardEvent) => { pressedKeys.current.delete(e.key); };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      if (comboTimer.current != null) {
-        clearTimeout(comboTimer.current);
-        comboTimer.current = null;
-      }
+      if (comboTimer.current != null) { clearTimeout(comboTimer.current); comboTimer.current = null; }
     };
-  }, [move, focusedIndex, videos]);
+  }, [move, focusedIndex, videos, onPlay]);
 
   return (
-    // 外层：纵向滚动容器（固定高度，禁止横向溢出）
-    <div ref={containerRef} style={{
-      height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16,
-    }}>
+    <div ref={containerRef} style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
       {videos.length === 0 ? (
         <div style={{
           height: '100%', display: 'flex', flexDirection: 'column',
@@ -287,22 +304,29 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange }:
           <div>没有符合条件的视频</div>
         </div>
       ) : (
-        // 内层：绝对定位画布，高度=最高列，卡片各自 transform 定位 + 过渡
         <div style={{ position: 'relative', height: totalHeight }}>
-          {layouts.map((L, i) => (
-            <VideoCard
-              key={L.video.id}
-              video={L.video}
-              x={L.x}
-              y={L.y}
-              width={L.width}
-              height={L.height}
-              focused={i === focusedIndex}
-              animate={animate}
-              onFocus={() => setFocusedIndex(i)}
-              cardRef={(el) => { cardEls.current[i] = el; }}
-            />
-          ))}
+          {layouts.map((L, i) => {
+            // 不在视口范围且不是焦点卡片 → 跳过渲染（虚拟化）
+            if (!visibleIndices.has(i) && i !== focusedIndex) return null;
+            return (
+              <VideoCard
+                key={L.video.id}
+                video={L.video}
+                x={L.x}
+                y={L.y}
+                width={L.width}
+                height={L.height}
+                focused={i === focusedIndex}
+                animate={animate}
+                onFocus={() => setFocusedIndex(i)}
+                onPlay={onPlay}
+                cardRef={(el) => {
+                  if (el) cardEls.current.set(L.video.id, el);
+                  else cardEls.current.delete(L.video.id);
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>

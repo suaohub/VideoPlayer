@@ -1,4 +1,8 @@
-import { Theme, ImportProgress } from '../types';
+import {
+  FolderPlus, Tags, FolderTree, Shuffle, FilterX, Trash2,
+  Search, Sun, Moon, Heart, Grid3x3, Square, Loader2, TriangleAlert,
+} from 'lucide-react';
+import { Theme, ImportProgress, ThumbnailProgress } from '../types';
 
 interface ToolbarProps {
   theme: Theme;
@@ -6,6 +10,7 @@ interface ToolbarProps {
   onImport: () => void;
   onShuffle: () => void;
   onClearFilter: () => void;
+  onClearCache: () => void;
   sidebarMode: 'tags' | 'tree' | null;
   onSidebarModeChange: (m: 'tags' | 'tree' | null) => void;
   search: string;
@@ -14,26 +19,31 @@ interface ToolbarProps {
   filteredCount: number;
   importing: boolean;
   importProgress: ImportProgress | null;
+  thumbProgress: ThumbnailProgress | null;
   cardSize: number;
   onCardSizeChange: (n: number) => void;
+  unmountedDrives: string[];
 }
 
 // 卡片大小滑块范围（列宽 px）
 const CARD_MIN = 120;
 const CARD_MAX = 420;
 
-const THEMES: { value: Theme; label: string; icon: string }[] = [
-  { value: 'day', label: '白天', icon: '☀️' },
-  { value: 'night', label: '夜间', icon: '🌙' },
-  { value: 'romantic', label: '浪漫', icon: '💗' },
+const THEMES: { value: Theme; label: string; Icon: typeof Sun }[] = [
+  { value: 'day', label: '白天', Icon: Sun },
+  { value: 'night', label: '夜间', Icon: Moon },
+  { value: 'romantic', label: '浪漫', Icon: Heart },
 ];
+
+// 图标统一参数：细描边线性风格
+const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
 export function Toolbar(props: ToolbarProps) {
   const {
-    theme, onThemeChange, onImport, onShuffle, onClearFilter,
+    theme, onThemeChange, onImport, onShuffle, onClearFilter, onClearCache,
     sidebarMode, onSidebarModeChange, search, onSearchChange,
-    videoCount, filteredCount, importing, importProgress,
-    cardSize, onCardSizeChange,
+    videoCount, filteredCount, importing, importProgress, thumbProgress,
+    cardSize, onCardSizeChange, unmountedDrives,
   } = props;
 
   const btnStyle: React.CSSProperties = {
@@ -44,6 +54,16 @@ export function Toolbar(props: ToolbarProps) {
     border: '1px solid var(--border)',
     borderRadius: 8,
     transition: 'all 0.15s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+  };
+
+  // 仅图标的方形按钮（主题切换）
+  const iconBtnStyle: React.CSSProperties = {
+    ...btnStyle,
+    padding: 8,
+    justifyContent: 'center',
   };
 
   const activeBtnStyle: React.CSSProperties = {
@@ -58,60 +78,96 @@ export function Toolbar(props: ToolbarProps) {
       background: 'var(--bg-toolbar)',
       borderBottom: '1px solid var(--border)',
       padding: '12px 16px',
+      paddingTop: '52px', // 为 Windows 原生标题栏控件留出空间
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       flexWrap: 'wrap',
       boxShadow: 'var(--shadow)',
       flexShrink: 0,
+      WebkitAppRegion: 'drag', // 顶部可拖拽移动窗口
     }}>
       {/* 导入 */}
       <button onClick={onImport} disabled={importing} style={{
         ...activeBtnStyle,
         opacity: importing ? 0.6 : 1,
         fontWeight: 600,
+        WebkitAppRegion: 'no-drag', // 按钮可点击，不触发拖拽
       }}>
-        {importing ? '导入中...' : '📁 导入文件夹'}
+        {importing
+          ? <><Loader2 {...ICON} className="spin" /> 导入中...</>
+          : <><FolderPlus {...ICON} /> 导入</>}
       </button>
 
       {/* 侧栏模式切换（点击已激活的可收起） */}
-      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8 }}>
+      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8, WebkitAppRegion: 'no-drag' }}>
         <button
           onClick={() => onSidebarModeChange(sidebarMode === 'tags' ? null : 'tags')}
           style={sidebarMode === 'tags' ? activeBtnStyle : btnStyle}
         >
-          🏷️ 分类标签
+          <Tags {...ICON} /> 分类标签
         </button>
         <button
           onClick={() => onSidebarModeChange(sidebarMode === 'tree' ? null : 'tree')}
           style={sidebarMode === 'tree' ? activeBtnStyle : btnStyle}
         >
-          🗂️ 目录树
+          <FolderTree {...ICON} /> 目录树
         </button>
       </div>
 
       {/* 随机打乱 */}
-      <button onClick={onShuffle} style={btnStyle}>🔀 随机打乱</button>
+      <button onClick={onShuffle} style={{ ...btnStyle, WebkitAppRegion: 'no-drag' }}>
+        <Shuffle {...ICON} /> 随机打乱
+      </button>
 
       {/* 清空过滤 */}
-      <button onClick={onClearFilter} style={btnStyle}>✕ 清空过滤</button>
+      <button onClick={onClearFilter} style={{ ...btnStyle, WebkitAppRegion: 'no-drag' }}>
+        <FilterX {...ICON} /> 清空过滤
+      </button>
+
+      {/* 清除缓存 */}
+      <button onClick={onClearCache} style={{ ...btnStyle, WebkitAppRegion: 'no-drag' }} title="删除所有已生成的缩略图文件">
+        <Trash2 {...ICON} /> 清除缓存
+      </button>
 
       {/* 搜索框 */}
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="搜索文件名..."
-        style={{
-          padding: '8px 12px',
-          fontSize: 14,
-          background: 'var(--bg-card)',
-          color: 'var(--text-primary)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          width: 180,
-        }}
-      />
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 12px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        WebkitAppRegion: 'no-drag',
+      }}>
+        <Search {...ICON} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="搜索文件名..."
+          style={{
+            fontSize: 14,
+            background: 'transparent',
+            color: 'var(--text-primary)',
+            border: 'none',
+            outline: 'none',
+            width: 160,
+          }}
+        />
+      </div>
+
+      {/* 未挂载磁盘提示 */}
+      {unmountedDrives.length > 0 && (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          fontSize: 12, color: '#f59e0b',
+          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
+          borderRadius: 6, padding: '4px 10px',
+        }}>
+          <TriangleAlert size={14} strokeWidth={2} />
+          未连接：{unmountedDrives.join('、')} 的视频已隐藏
+        </span>
+      )}
 
       {/* 视频计数 */}
       <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
@@ -122,8 +178,9 @@ export function Toolbar(props: ToolbarProps) {
       <div style={{
         marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8,
         background: 'var(--bg-primary)', padding: '4px 12px', borderRadius: 8,
+        WebkitAppRegion: 'no-drag',
       }}>
-        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }} title="缩小（每行更多）">▦</span>
+        <Grid3x3 size={15} strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} aria-label="缩小（每行更多）" />
         <input
           type="range"
           min={CARD_MIN}
@@ -133,19 +190,19 @@ export function Toolbar(props: ToolbarProps) {
           style={{ width: 120, cursor: 'pointer' }}
           title="拖动调整卡片大小"
         />
-        <span style={{ fontSize: 18, color: 'var(--text-secondary)' }} title="放大（每行更少）">▢</span>
+        <Square size={18} strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} aria-label="放大（每行更少）" />
       </div>
 
       {/* 主题切换（靠右） */}
-      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8 }}>
+      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8, WebkitAppRegion: 'no-drag' }}>
         {THEMES.map((t) => (
           <button
             key={t.value}
             onClick={() => onThemeChange(t.value)}
-            style={theme === t.value ? activeBtnStyle : btnStyle}
+            style={theme === t.value ? { ...activeBtnStyle, padding: 8, justifyContent: 'center' } : iconBtnStyle}
             title={t.label}
           >
-            {t.icon}
+            <t.Icon {...ICON} />
           </button>
         ))}
       </div>
@@ -160,6 +217,23 @@ export function Toolbar(props: ToolbarProps) {
             <div style={{
               height: '100%',
               width: `${(importProgress.current / importProgress.total) * 100}%`,
+              background: 'var(--accent)',
+              transition: 'width 0.2s',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* 缩略图后台生成进度（导入进度条不显示时才显示，避免叠加） */}
+      {!importing && thumbProgress && thumbProgress.total > 0 && (
+        <div style={{ width: '100%', marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+            生成缩略图: {thumbProgress.done} / {thumbProgress.total}
+          </div>
+          <div style={{ height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${(thumbProgress.done / thumbProgress.total) * 100}%`,
               background: 'var(--accent)',
               transition: 'width 0.2s',
             }} />

@@ -10,13 +10,48 @@
     "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\" \"npm:dev:start\"",
     "build:vite": "vite build",
     "build:electron": "node electron/build.mjs",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "build": "npm run build:vite && npm run build:electron",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win --x64",
+    "pack:dir": "npm run build && electron-builder --dir"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "本地视频库管理与播放器",
+  "build": {
+    "appId": "com.sususu.videoplayer",
+    "productName": "VideoPlayer",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VideoPlayer"
+    }
+  },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "@types/node": "^26.1.2",
@@ -33,8 +68,15 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.2",
+    "better-sqlite3": "^11.10.0",
+    "lucide-react": "^1.28.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
+  },
+  "allowScripts": {
+    "electron@31.3.1": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.1": true,
+    "better-sqlite3@11.10.0": true
   }
 }
