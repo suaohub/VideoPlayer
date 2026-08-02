@@ -199,6 +199,18 @@ export const api = {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.deleteTag(tagId);
   },
+  async toggleFavorite(videoId: number): Promise<{ success: boolean; favorited?: boolean; error?: string }> {
+    if (USE_MOCK) return { success: true, favorited: true };
+    return window.electronAPI.toggleFavorite(videoId);
+  },
+  async getFavoritedCount(): Promise<number> {
+    if (USE_MOCK) return 0;
+    return window.electronAPI.getFavoritedCount();
+  },
+  async batchUnfavorite(videoIds: number[]): Promise<{ success: boolean; error?: string }> {
+    if (USE_MOCK) return { success: true };
+    return window.electronAPI.batchUnfavorite(videoIds);
+  },
   async setTitlebarOverlay(opts: { color: string; symbolColor: string }): Promise<void> {
     if (window.electronAPI?.setTitlebarOverlay) await window.electronAPI.setTitlebarOverlay(opts);
   },

@@ -29,16 +29,22 @@ export interface VideoFilter {
   tagMode?: 'or' | 'and';  // 标签过滤逻辑
   folderId?: number | null; // 选中的目录（含子目录）
   search?: string;          // 文件名搜索
+  favorited?: boolean;      // 只显示收藏
 }
 
 // 根据过滤条件查询视频列表
 export function getVideos(filter: VideoFilter = {}) {
   const db = getDb();
-  const { tagIds, tagMode = 'or', folderId, search } = filter;
+  const { tagIds, tagMode = 'or', folderId, search, favorited } = filter;
 
   let sql = `SELECT DISTINCT v.* FROM videos v`;
   const conditions: string[] = [];
   const params: any[] = [];
+
+  // 收藏过滤
+  if (favorited === true) {
+    conditions.push(`v.favorited = 1`);
+  }
 
   // 标签过滤
   if (tagIds && tagIds.length > 0) {
@@ -152,4 +158,28 @@ export function getSetting(key: string): string | null {
 export function setSetting(key: string, value: string) {
   const db = getDb();
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+}
+
+// 切换视频收藏状态
+export function toggleFavorite(videoId: number): { favorited: boolean } {
+  const db = getDb();
+  const row = db.prepare('SELECT favorited FROM videos WHERE id = ?').get(videoId) as { favorited: number } | undefined;
+  if (!row) throw new Error('Video not found');
+  const newState = row.favorited === 1 ? 0 : 1;
+  db.prepare('UPDATE videos SET favorited = ? WHERE id = ?').run(newState, videoId);
+  return { favorited: newState === 1 };
+}
+
+// 获取收藏视频总数
+export function getFavoritedCount(): number {
+  const db = getDb();
+  return (db.prepare('SELECT COUNT(*) as c FROM videos WHERE favorited = 1').get() as { c: number }).c;
+}
+
+// 批量取消收藏
+export function batchUnfavorite(videoIds: number[]): void {
+  if (videoIds.length === 0) return;
+  const db = getDb();
+  const placeholders = videoIds.map(() => '?').join(',');
+  db.prepare(`UPDATE videos SET favorited = 0 WHERE id IN (${placeholders})`).run(...videoIds);
 }

@@ -1,5 +1,4 @@
 // 瀑布流不规则布局下的键盘空间导航算法。
-// 因为 CSS 多列布局的 DOM 顺序 ≠ 视觉位置，方向键必须靠几何坐标判断。
 
 export interface Rect {
   index: number;
@@ -17,9 +16,6 @@ export interface Dir {
   dy: number;
 }
 
-// 交叉轴无重叠时的惩罚权重（越大越倾向"正对方向"）
-const CROSS_W = 2.5;
-
 // 从 DOM 元素列表算出各卡片的完整矩形
 export function collectRects(elements: (HTMLElement | null)[]): Rect[] {
   const rects: Rect[] = [];
@@ -35,77 +31,97 @@ export function collectRects(elements: (HTMLElement | null)[]): Rect[] {
   return rects;
 }
 
-// 两个区间 [a1,a2] 与 [b1,b2] 的重叠长度（无重叠返回负的间隙）
+// 两个区间的重叠长度（>0 表示有重叠，≤0 表示间隙）
 function overlap(a1: number, a2: number, b1: number, b2: number): number {
   return Math.min(a2, b2) - Math.max(a1, b1);
+}
+
+function axisOverlapRatio(a: Rect, b: Rect, horizontalMove: boolean): number {
+  const length = horizontalMove
+    ? overlap(a.top, a.bottom, b.top, b.bottom)
+    : overlap(a.left, a.right, b.left, b.right);
+  const aSize = horizontalMove ? a.bottom - a.top : a.right - a.left;
+  const bSize = horizontalMove ? b.bottom - b.top : b.right - b.left;
+  const base = Math.max(1, Math.min(aSize, bSize));
+  return Math.max(0, Math.min(1, length / base));
+}
+
+function isInDirection(current: Rect, candidate: Rect, dir: Dir): boolean {
+  if (dir.dx > 0 && candidate.cx <= current.cx) return false;
+  if (dir.dx < 0 && candidate.cx >= current.cx) return false;
+  if (dir.dy > 0 && candidate.cy <= current.cy) return false;
+  if (dir.dy < 0 && candidate.cy >= current.cy) return false;
+  return true;
+}
+
+function primaryGap(current: Rect, candidate: Rect, dir: Dir): number {
+  if (dir.dx > 0) return Math.max(0, candidate.left - current.right);
+  if (dir.dx < 0) return Math.max(0, current.left - candidate.right);
+  if (dir.dy > 0) return Math.max(0, candidate.top - current.bottom);
+  return Math.max(0, current.top - candidate.bottom);
+}
+
+function scoreStraightCandidate(current: Rect, candidate: Rect, dir: Dir, aligned: boolean): number {
+  const horizontalMove = dir.dx !== 0;
+  const primary = horizontalMove
+    ? Math.abs(candidate.cx - current.cx)
+    : Math.abs(candidate.cy - current.cy);
+  const cross = horizontalMove
+    ? Math.abs(candidate.cy - current.cy)
+    : Math.abs(candidate.cx - current.cx);
+  const ratio = axisOverlapRatio(current, candidate, horizontalMove);
+  const crossWeight = aligned ? 0.45 : 1.8;
+
+  // 先保证在目标方向，再优先最近的卡片；轴向重叠会显著降低横向跳跃。
+  return primary * 0.15
+    + primaryGap(current, candidate, dir) * 1.1
+    + cross * crossWeight
+    - ratio * 32;
+}
+
+function scoreDiagonalCandidate(current: Rect, candidate: Rect): number {
+  const xDistance = Math.abs(candidate.cx - current.cx);
+  const yDistance = Math.abs(candidate.cy - current.cy);
+  const horizontalOverlap = axisOverlapRatio(current, candidate, true);
+  const verticalOverlap = axisOverlapRatio(current, candidate, false);
+
+  return Math.hypot(xDistance, yDistance)
+    + Math.abs(xDistance - yDistance) * 0.15
+    - (horizontalOverlap + verticalOverlap) * 18;
 }
 
 // 在给定方向上，从 current 出发找最优目标卡片的 index。找不到返回 -1。
 export function findTarget(rects: Rect[], currentIndex: number, dir: Dir): number {
   const cur = rects.find((r) => r.index === currentIndex);
   if (!cur) return -1;
+  if (dir.dx === 0 && dir.dy === 0) return -1;
 
-  const orthogonal = dir.dx === 0 || dir.dy === 0;
-  let best = -1;
-  let bestScore = Infinity;
+  let candidates = rects.filter((r) => r.index !== currentIndex && isInDirection(cur, r, dir));
+  if (candidates.length === 0 && dir.dx !== 0 && dir.dy !== 0) {
+    // 对角方向没有目标时，退回到主轴方向，避免按键后完全不动。
+    const horizontal = findTarget(rects, currentIndex, { dx: dir.dx, dy: 0 });
+    return horizontal >= 0
+      ? horizontal
+      : findTarget(rects, currentIndex, { dx: 0, dy: dir.dy });
+  }
+  if (candidates.length === 0) return -1;
 
-  for (const r of rects) {
-    if (r.index === currentIndex) continue;
-
-    const vx = r.cx - cur.cx;
-    const vy = r.cy - cur.cy;
-    let score: number;
-
-    if (orthogonal) {
-      // 正交方向：主轴前进距离 + 交叉轴"无重叠间隙"惩罚
-      if (dir.dx > 0) {
-        // 向右：候选中心必须在右侧
-        if (vx <= 1) continue;
-        const ov = overlap(cur.top, cur.bottom, r.top, r.bottom); // 垂直重叠
-        const crossGap = ov > 0 ? 0 : -ov;
-        score = vx + crossGap * CROSS_W;
-      } else if (dir.dx < 0) {
-        // 向左
-        if (vx >= -1) continue;
-        const ov = overlap(cur.top, cur.bottom, r.top, r.bottom);
-        const crossGap = ov > 0 ? 0 : -ov;
-        score = -vx + crossGap * CROSS_W;
-      } else if (dir.dy > 0) {
-        // 向下：候选中心必须在下方
-        if (vy <= 1) continue;
-        const ov = overlap(cur.left, cur.right, r.left, r.right); // 水平重叠
-        const crossGap = ov > 0 ? 0 : -ov;
-        score = vy + crossGap * CROSS_W;
-      } else {
-        // 向上
-        if (vy >= -1) continue;
-        const ov = overlap(cur.left, cur.right, r.left, r.right);
-        const crossGap = ov > 0 ? 0 : -ov;
-        score = -vy + crossGap * CROSS_W;
-      }
-    } else {
-      // 对角方向：象限过滤 + 投影打分
-      if (dir.dx > 0 && vx <= 1) continue;
-      if (dir.dx < 0 && vx >= -1) continue;
-      if (dir.dy > 0 && vy <= 1) continue;
-      if (dir.dy < 0 && vy >= -1) continue;
-
-      const len = Math.hypot(dir.dx, dir.dy) || 1;
-      const ux = dir.dx / len;
-      const uy = dir.dy / len;
-      const proj = vx * ux + vy * uy; // 沿对角方向的前进量
-      if (proj <= 1) continue;
-      const perp = Math.abs(vx * uy - vy * ux); // 偏离对角轴的距离
-      score = proj + perp * CROSS_W;
-    }
-
-    if (score < bestScore) {
-      bestScore = score;
-      best = r.index;
-    }
+  if (dir.dx !== 0 && dir.dy !== 0) {
+    candidates.sort((a, b) => scoreDiagonalCandidate(cur, a) - scoreDiagonalCandidate(cur, b));
+    return candidates[0].index;
   }
 
-  return best;
+  const horizontalMove = dir.dx !== 0;
+  const aligned = candidates.filter((candidate) => axisOverlapRatio(cur, candidate, horizontalMove) > 0);
+  const pool = aligned.length > 0 ? aligned : candidates;
+  pool.sort((a, b) => {
+    const scoreDiff = scoreStraightCandidate(cur, a, dir, aligned.length > 0)
+      - scoreStraightCandidate(cur, b, dir, aligned.length > 0);
+    if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
+    return Math.abs(a.index - currentIndex) - Math.abs(b.index - currentIndex);
+  });
+
+  return pool[0].index;
 }
 
 // 把当前按下的方向键集合合成一个方向向量（支持对角组合键）

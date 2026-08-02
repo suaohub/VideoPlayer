@@ -29,30 +29,59 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
   const [speed, setSpeed] = useState(1);
   // 用户拖动进度条时，忽略 mpv 回推的 time-pos，避免抖动
   const seekingRef = useRef(false);
+  // 初始化阶段标记：阻止 mpv 初始回推覆盖用户保存的设置
+  const initializingRef = useRef(true);
 
-  // 启动 mpv 播放 + 订阅状态
+  // 启动 mpv 播放 + 订阅状态 + 恢复用户设置
   useEffect(() => {
     let active = true;
     setReady(false);
     setMessage('正在启动播放引擎...');
     setPosition(0);
+    initializingRef.current = true;
 
-    api.playVideo(video.path, { alertOnError: false }).then((result) => {
+    // 恢复上次的音量和速度设置
+    (async () => {
+      const savedVolume = await api.getSetting('playerVolume');
+      const savedSpeed = await api.getSetting('playerSpeed');
+      if (!active) return;
+
+      const vol = savedVolume ? Number(savedVolume) : 100;
+      const spd = savedSpeed ? Number(savedSpeed) : 1;
+      setVolume(vol);
+      setSpeed(spd);
+
+      const result = await api.playVideo(video.path, { alertOnError: false });
       if (!active) return;
       if (result.success) {
         setReady(true);
         setMessage('');
+        // mpv 启动后应用保存的音量和速度
+        await api.setVolume(vol);
+        await api.setSpeed(spd);
+        // 短暂延迟后允许接受 mpv 回推（此时初始设置已应用）
+        setTimeout(() => { initializingRef.current = false; }, 300);
       } else {
         setMessage(`播放失败：${result.error ?? '未知错误'}`);
+        initializingRef.current = false;
       }
-    });
+    })();
 
     const offs = [
       api.onTimePosition((p) => { if (!seekingRef.current) setPosition(p); }),
       api.onDuration((d) => { if (d > 0) setDuration(d); }),
       api.onPaused((p) => setPaused(!!p)),
-      api.onVolume((v) => setVolume(Math.round(v))),
-      api.onSpeed((s) => setSpeed(s)),
+      // 初始化期间忽略 mpv 回推，避免覆盖用户保存的设置；之后接受所有更新以保持同步
+      api.onVolume((v) => {
+        console.log('[player] mpv volume:', v, 'initializing:', initializingRef.current);
+        if (initializingRef.current) return;
+        setVolume(Math.round(v));
+      }),
+      api.onSpeed((s) => {
+        console.log('[player] mpv speed:', s, 'initializing:', initializingRef.current);
+        if (initializingRef.current) return;
+        setSpeed(s);
+      }),
       api.onStopped(() => { if (active) onClose(); }),
     ];
 
@@ -87,12 +116,16 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
     setPosition(value);
   };
   const changeVolume = (v: number) => {
+    console.log('[player] user set volume:', v);
     setVolume(v);
     api.setVolume(v);
+    api.setSetting('playerVolume', String(v)); // 持久化
   };
   const changeSpeed = (s: number) => {
+    console.log('[player] user set speed:', s);
     setSpeed(s);
     api.setSpeed(s);
+    api.setSetting('playerSpeed', String(s)); // 持久化
   };
 
   return (

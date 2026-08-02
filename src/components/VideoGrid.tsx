@@ -9,11 +9,17 @@ interface VideoGridProps {
   onCardSizeChange: (n: number) => void;
   cardSizeRange: [number, number];
   onPlay: (video: Video) => void;
+  onToggleFavorite: (videoId: number) => void;
+  onBatchUnfavorite: (videoIds: number[]) => void;
+  showFavorited: boolean;
 }
 
 const GAP = 12;
 // 视口外上下各预渲染这么多像素，防止快速滚动时空白闪烁
 const OVERSCAN = 600;
+const VERTICAL_REPEAT_DELAY = 420;
+const VERTICAL_REPEAT_INTERVAL = 190;
+type MoveBehavior = 'auto' | 'smooth' | 'linear';
 
 function formatSize(bytes: number): string {
   if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
@@ -70,18 +76,37 @@ interface VideoCardProps {
   animate: boolean;
   onFocus: () => void;
   onPlay: (video: Video) => void;
+  onToggleFavorite: (videoId: number) => void;
   cardRef: (el: HTMLDivElement | null) => void;
+  selectionMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: (videoId: number) => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, cardRef }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, cardRef, selectionMode, isSelected, onToggleSelect }: VideoCardProps) {
+  const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
   const thumbHeight = height - 46;
+
+  const handleClick = () => {
+    if (selectionMode) {
+      onToggleSelect(video.id);
+    } else {
+      onPlay(video);
+    }
+  };
 
   return (
     <div
       ref={cardRef}
-      onClick={() => onPlay(video)}
-      onMouseEnter={onFocus}
+      tabIndex={-1}
+      onClick={handleClick}
+      onPointerMove={(event) => {
+        onFocus();
+        event.currentTarget.focus({ preventScroll: true });
+        setHover(true);
+      }}
+      onMouseLeave={() => setHover(false)}
       className={'video-card' + (focused ? ' video-card-focused' : '')}
       style={{
         position: 'absolute',
@@ -96,6 +121,8 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         flexDirection: 'column',
         boxShadow: focused
           ? '0 0 0 3px var(--focus-ring), var(--shadow)'
+          : isSelected
+          ? '0 0 0 3px var(--accent), var(--shadow)'
           : 'var(--shadow-card)',
         transition: animate
           ? 'transform 0.32s cubic-bezier(0.22,0.61,0.36,1), width 0.32s cubic-bezier(0.22,0.61,0.36,1), height 0.32s cubic-bezier(0.22,0.61,0.36,1), box-shadow 0.15s ease'
@@ -113,6 +140,48 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
             fontSize: 11, padding: '2px 6px', borderRadius: 4,
             fontVariantNumeric: 'tabular-nums',
           }}>{durLabel}</span>
+        )}
+        {/* 选择模式：显示复选框 */}
+        {selectionMode && (
+          <div
+            style={{
+              position: 'absolute', top: 6, left: 6,
+              width: 24, height: 24,
+              background: isSelected ? 'var(--accent)' : 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(8px)',
+              border: '2px solid ' + (isSelected ? 'var(--accent)' : 'rgba(255,255,255,0.4)'),
+              borderRadius: 4,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: 16,
+            }}
+          >
+            {isSelected && '✓'}
+          </div>
+        )}
+        {/* 收藏按钮：悬停时显示在右上角（非选择模式） */}
+        {!selectionMode && hover && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(video.id); }}
+            style={{
+              position: 'absolute', top: 6, right: 6,
+              width: 32, height: 32,
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              color: video.favorited ? '#ef4444' : '#fff',
+            }}
+            title={video.favorited ? '取消收藏' : '收藏'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={video.favorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+          </button>
         )}
       </div>
       <div style={{ padding: '6px 10px', flex: 1, minHeight: 0 }}>
@@ -132,11 +201,22 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  // 多选模式状态（仅在收藏夹视图激活）
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const focusedIndexRef = useRef(focusedIndex);
+  focusedIndexRef.current = focusedIndex;
+  const focusedVideoIdRef = useRef<number | null>(null);
+  const videosRef = useRef(videos);
+  videosRef.current = videos;
+  const onPlayRef = useRef(onPlay);
+  onPlayRef.current = onPlay;
+  const selectionModeRef = useRef(selectionMode);
   const [containerWidth, setContainerWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -145,6 +225,19 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   cardSizeRef.current = cardSize;
   const pressedKeys = useRef<Set<string>>(new Set());
   const comboTimer = useRef<number | null>(null);
+  const verticalRepeatStartTimer = useRef<number | null>(null);
+  const verticalRepeatTimer = useRef<number | null>(null);
+  const heldVerticalKey = useRef<'ArrowUp' | 'ArrowDown' | null>(null);
+  const scrollAnimation = useRef<number | null>(null);
+  selectionModeRef.current = selectionMode;
+
+  // 退出收藏夹视图时自动退出选择模式
+  useEffect(() => {
+    if (!showFavorited) {
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [showFavorited]);
 
   // 测量容器宽度和高度
   useLayoutEffect(() => {
@@ -164,7 +257,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const onScroll = () => setScrollTop(el.scrollTop);
+    const onScroll = () => {
+      const nextScrollTop = el.scrollTop;
+      setScrollTop(nextScrollTop);
+    };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
@@ -224,41 +320,115 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     });
   }, [layouts]);
 
-  // 滚动目标卡片到可视区（有 DOM 元素用 scrollIntoView，否则按布局位置滚动）
-  const scrollIntoView = useCallback((index: number) => {
+  const stopVerticalRepeat = useCallback(() => {
+    if (verticalRepeatStartTimer.current != null) {
+      clearTimeout(verticalRepeatStartTimer.current);
+      verticalRepeatStartTimer.current = null;
+    }
+    if (verticalRepeatTimer.current != null) {
+      clearInterval(verticalRepeatTimer.current);
+      verticalRepeatTimer.current = null;
+    }
+    heldVerticalKey.current = null;
+  }, []);
+
+  // 滚动目标卡片到可视区，linear 用于长按上下键，避免滚动速度忽快忽慢。
+  const scrollIntoView = useCallback((index: number, behavior: MoveBehavior = 'smooth') => {
     const L = layouts[index];
     if (!L) return;
     const container = containerRef.current;
     if (!container) return;
-    const el = cardEls.current.get(L.video.id);
-    if (el) {
-      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const viewportTop = container.scrollTop;
+    const viewportBottom = viewportTop + container.clientHeight;
+    const cardBottom = L.y + L.height;
+    let targetTop = viewportTop;
+
+    if (L.y < viewportTop) {
+      targetTop = L.y;
+    } else if (cardBottom > viewportBottom) {
+      targetTop = cardBottom - container.clientHeight;
+    }
+
+    targetTop = Math.max(0, Math.min(targetTop, container.scrollHeight - container.clientHeight));
+    if (Math.abs(targetTop - container.scrollTop) < 1) return;
+
+    if (scrollAnimation.current != null) {
+      cancelAnimationFrame(scrollAnimation.current);
+      scrollAnimation.current = null;
+    }
+
+    if (behavior === 'linear') {
+      const startTop = container.scrollTop;
+      const startedAt = performance.now();
+      const duration = 180;
+      const animateScroll = (now: number) => {
+        const progress = Math.min(1, (now - startedAt) / duration);
+        container.scrollTop = startTop + (targetTop - startTop) * progress;
+        if (progress < 1) {
+          scrollAnimation.current = requestAnimationFrame(animateScroll);
+        } else {
+          scrollAnimation.current = null;
+        }
+      };
+      scrollAnimation.current = requestAnimationFrame(animateScroll);
     } else {
-      const targetTop = L.y - container.clientHeight / 2 + L.height / 2;
-      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+      container.scrollTo({ top: targetTop, behavior });
     }
   }, [layouts]);
 
   // 视频列表变化时重置焦点
   useEffect(() => {
     cardEls.current = new Map();
-    setFocusedIndex(videos.length > 0 ? 0 : -1);
+    const previousId = focusedVideoIdRef.current;
+    const preservedIndex = previousId == null
+      ? -1
+      : videos.findIndex((video) => video.id === previousId);
+    const nextIndex = videos.length === 0
+      ? -1
+      : preservedIndex >= 0
+        ? preservedIndex
+        : Math.min(Math.max(focusedIndexRef.current, 0), videos.length - 1);
+    focusedVideoIdRef.current = nextIndex >= 0 ? videos[nextIndex].id : null;
+    focusedIndexRef.current = nextIndex;
+    setFocusedIndex(nextIndex);
   }, [videos]);
 
-  const move = useCallback(() => {
+  const move = useCallback((behavior: MoveBehavior = 'smooth') => {
     const dir = keysToDir(pressedKeys.current);
     if (!dir) return;
-    setFocusedIndex((cur) => {
-      if (cur < 0) return videos.length > 0 ? 0 : -1;
-      const rects = getLayoutRects();
-      const target = findTarget(rects, cur, dir);
-      if (target >= 0) {
-        scrollIntoView(target);
-        return target;
+    const current = focusedIndexRef.current;
+    if (current < 0) {
+      if (videos.length > 0) {
+        focusedVideoIdRef.current = videos[0].id;
+        focusedIndexRef.current = 0;
+        setFocusedIndex(0);
+        scrollIntoView(0, behavior);
       }
-      return cur;
-    });
+      return;
+    }
+
+    const target = findTarget(getLayoutRects(), current, dir);
+    if (target < 0 || target === current) return;
+    focusedVideoIdRef.current = videos[target].id;
+    focusedIndexRef.current = target;
+    setFocusedIndex(target);
+    scrollIntoView(target, behavior);
   }, [videos.length, scrollIntoView, getLayoutRects]);
+
+  const startVerticalRepeat = useCallback((key: 'ArrowUp' | 'ArrowDown') => {
+    stopVerticalRepeat();
+    heldVerticalKey.current = key;
+    verticalRepeatStartTimer.current = window.setTimeout(() => {
+      verticalRepeatStartTimer.current = null;
+      verticalRepeatTimer.current = window.setInterval(() => {
+        if (!pressedKeys.current.has(key)) {
+          stopVerticalRepeat();
+          return;
+        }
+        move('linear');
+      }, VERTICAL_REPEAT_INTERVAL);
+    }, VERTICAL_REPEAT_DELAY);
+  }, [move, stopVerticalRepeat]);
 
   // 键盘监听
   useEffect(() => {
@@ -266,34 +436,191 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight';
 
     const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isControl = !!target?.closest(
+        'button, input, textarea, select, option, a, [contenteditable="true"]'
+      );
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable || isControl) return;
       if (isArrow(e.key)) {
         e.preventDefault();
-        if (e.repeat) { move(); return; }
+        const wasPressed = pressedKeys.current.has(e.key);
+        const hasAnotherKey = pressedKeys.current.size > 0 && !wasPressed;
         pressedKeys.current.add(e.key);
-        if (comboTimer.current == null) {
+
+        if (e.repeat || wasPressed) {
+          if (comboTimer.current != null) {
+            clearTimeout(comboTimer.current);
+            comboTimer.current = null;
+          }
+          // 上下键由自定义节奏处理，忽略浏览器过快的 repeat 事件。
+          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') move('auto');
+          return;
+        }
+
+        if (hasAnotherKey) {
+          stopVerticalRepeat();
+          if (comboTimer.current != null) {
+            clearTimeout(comboTimer.current);
+            comboTimer.current = null;
+          }
+          move('smooth');
+        } else if (comboTimer.current == null) {
+          // 留出短暂窗口识别同时按下的两个方向键。
           comboTimer.current = window.setTimeout(() => {
             comboTimer.current = null;
-            move();
-          }, 50);
+            move('smooth');
+          }, 60);
+        }
+        if (!hasAnotherKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          startVerticalRepeat(e.key);
         }
       } else if (e.key === 'Enter') {
-        if (focusedIndex >= 0 && videos[focusedIndex]) onPlay(videos[focusedIndex]);
+        const current = focusedIndexRef.current;
+        const currentVideos = videosRef.current;
+        if (current >= 0 && currentVideos[current]) {
+          if (selectionModeRef.current) {
+            const videoId = currentVideos[current].id;
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(videoId)) next.delete(videoId);
+              else next.add(videoId);
+              return next;
+            });
+          } else {
+            onPlayRef.current(currentVideos[current]);
+          }
+        }
+      } else if (e.key === 'Escape' && selectionModeRef.current) {
+        setSelectionMode(false);
+        setSelectedIds(new Set());
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => { pressedKeys.current.delete(e.key); };
+    const onKeyUp = (e: KeyboardEvent) => {
+      pressedKeys.current.delete(e.key);
+      if (e.key === heldVerticalKey.current) stopVerticalRepeat();
+    };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      pressedKeys.current.clear();
+      stopVerticalRepeat();
+      if (scrollAnimation.current != null) {
+        cancelAnimationFrame(scrollAnimation.current);
+        scrollAnimation.current = null;
+      }
       if (comboTimer.current != null) { clearTimeout(comboTimer.current); comboTimer.current = null; }
     };
-  }, [move, focusedIndex, videos, onPlay]);
+  }, [move, startVerticalRepeat, stopVerticalRepeat]);
+
+  const handleToggleSelect = (videoId: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(videoId)) next.delete(videoId);
+      else next.add(videoId);
+      return next;
+    });
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedIds.size === 0) return;
+    onBatchUnfavorite(Array.from(selectedIds));
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  };
 
   return (
     <div ref={containerRef} style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
+      {/* 批量操作工具栏（收藏夹视图） */}
+      {showFavorited && videos.length > 0 && (
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          background: 'var(--bg-toolbar)',
+          borderRadius: 8,
+          padding: '8px 12px',
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          boxShadow: 'var(--shadow)',
+          border: '1px solid var(--border)',
+        }}>
+          {!selectionMode ? (
+            <button
+              onClick={() => setSelectionMode(true)}
+              style={{
+                padding: '6px 12px',
+                fontSize: 13,
+                background: 'var(--accent)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              批量管理
+            </button>
+          ) : (
+            <>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                已选择 {selectedIds.size} 项
+              </span>
+              <button
+                onClick={() => setSelectedIds(new Set(videos.map(v => v.id)))}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                }}
+              >
+                全选
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={selectedIds.size === 0}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  background: selectedIds.size > 0 ? '#ef4444' : 'var(--bg-card)',
+                  color: selectedIds.size > 0 ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                  fontWeight: 500,
+                  opacity: selectedIds.size > 0 ? 1 : 0.5,
+                }}
+              >
+                移出收藏
+              </button>
+              <button
+                onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  marginLeft: 'auto',
+                }}
+              >
+                取消
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {videos.length === 0 ? (
         <div style={{
           height: '100%', display: 'flex', flexDirection: 'column',
@@ -318,12 +645,20 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 height={L.height}
                 focused={i === focusedIndex}
                 animate={animate}
-                onFocus={() => setFocusedIndex(i)}
+                onFocus={() => {
+                  focusedVideoIdRef.current = L.video.id;
+                  focusedIndexRef.current = i;
+                  setFocusedIndex(i);
+                }}
                 onPlay={onPlay}
+                onToggleFavorite={onToggleFavorite}
                 cardRef={(el) => {
                   if (el) cardEls.current.set(L.video.id, el);
                   else cardEls.current.delete(L.video.id);
                 }}
+                selectionMode={selectionMode}
+                isSelected={selectedIds.has(L.video.id)}
+                onToggleSelect={handleToggleSelect}
               />
             );
           })}

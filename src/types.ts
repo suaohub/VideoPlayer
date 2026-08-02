@@ -13,6 +13,7 @@ export interface Video {
   folder_id: number | null;
   added_at: number;
   mtime: number;
+  favorited: number;
 }
 
 // 标签
@@ -57,6 +58,7 @@ export interface VideoFilter {
   tagMode?: 'or' | 'and';
   folderId?: number | null;
   search?: string;
+  favorited?: boolean;
 }
 
 // Electron API 类型
@@ -94,6 +96,9 @@ export interface ElectronAPI {
   clearCache: () => Promise<{ success: boolean; count?: number; error?: string }>;
   deleteFolder: (folderId: number) => Promise<{ success: boolean; videoCount?: number; thumbCount?: number; error?: string }>;
   deleteTag: (tagId: number) => Promise<{ success: boolean; error?: string }>;
+  toggleFavorite: (videoId: number) => Promise<{ success: boolean; favorited?: boolean; error?: string }>;
+  getFavoritedCount: () => Promise<number>;
+  batchUnfavorite: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
   checkRemovableDrives: () => Promise<{ drives: string[]; mounted: string[] }>;
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }) => Promise<void>;
 }

@@ -7,7 +7,7 @@ import { initDatabase, getDb } from './db';
 import { backfillMissingThumbnails, importFiles, importFolder } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir } from './thumbnail';
 import { setThumbnailListeners } from './thumbnailQueue';
-import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, deleteTag, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, VideoFilter } from './queries';
 
 // CJS 模式下 __dirname 原生可用
 declare const __dirname: string;
@@ -269,10 +269,8 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
   }
 
   try {
-    // 立即启动 mpv（停止旧进程和事件监听在后台异步执行，不阻塞）
-    if (mpvProcess) {
-      stopMpv().catch(() => {}); // 异步停止，不等待
-    }
+    // 先快速结束旧进程，避免旧 mpv 的退出事件干扰新进程。
+    await stopMpv();
 
     console.log('[mpv] Video path:', videoPath);
 
@@ -284,7 +282,7 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
     const args = [
       '--no-terminal',
       '--keep-open=yes',
-      '--force-window=yes',
+      '--force-window=immediate',
       '--no-config',
       '--osd-level=1',
       `--input-ipc-server=${socketPath}`,
@@ -297,14 +295,16 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
       videoPath,
     ];
 
-    mpvProcess = spawn(resolveMpvBin(), args, {
+    const currentProcess = spawn(resolveMpvBin(), args, {
       detached: false,
       windowsHide: false,
     });
+    mpvProcess = currentProcess;
 
-    mpvProcess.stderr?.on('data', (d) => console.log(`[mpv stderr] ${d}`));
-    mpvProcess.on('exit', (code) => {
+    currentProcess.stderr?.on('data', (d) => console.log(`[mpv stderr] ${d}`));
+    currentProcess.on('exit', (code) => {
       console.log(`[mpv] exited: ${code}`);
+      if (mpvProcess !== currentProcess) return;
       mpvProcess = null;
       if (mpvPlacementTimer) {
         clearTimeout(mpvPlacementTimer);
@@ -317,10 +317,10 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
       }
       mainWindow?.webContents.send('mpv-stopped');
     });
-    mpvProcess.on('error', (err) => console.error('[mpv] error:', err));
+    currentProcess.on('error', (err) => console.error('[mpv] error:', err));
 
     // 全屏模式：立即返回，不等待 socket 连接（控制功能可后台异步建立）
-    waitAndConnectSocket(); // 异步执行，不阻塞响应
+    void waitAndConnectSocket(currentProcess, socketPath); // 异步执行，不阻塞响应
     return { success: true };
   } catch (error) {
     console.error('[mpv] Failed to start:', error);
@@ -329,14 +329,23 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
 });
 
 // 等待 socket 文件创建并建立连接
-function waitAndConnectSocket(): Promise<void> {
+function waitAndConnectSocket(expectedProcess: ChildProcess, expectedSocketPath: string): Promise<void> {
   return new Promise((resolve) => {
     let attempts = 0;
     const tryConnect = () => {
+      if (mpvProcess !== expectedProcess || expectedProcess.exitCode !== null) {
+        resolve();
+        return;
+      }
       attempts++;
-      const sock = net.connect(socketPath);
+      const sock = net.connect(expectedSocketPath);
 
       sock.on('connect', () => {
+        if (mpvProcess !== expectedProcess || socketPath !== expectedSocketPath) {
+          sock.destroy();
+          resolve();
+          return;
+        }
         console.log('[mpv] IPC connected');
         ipcSocket = sock;
         setupIpcListeners(sock);
@@ -346,9 +355,20 @@ function waitAndConnectSocket(): Promise<void> {
         observeProperty('pause', 3);
         observeProperty('volume', 4);
         observeProperty('speed', 5);
+        observeProperty('mute', 6);
         // 绑定回车键 = 退出 mpv（回到列表）
         sendCommand(['keybind', 'ENTER', 'quit']);
         sendCommand(['keybind', 'KP_ENTER', 'quit']); // 小键盘回车
+        void Promise.all([
+          getSetting('playerVolume'),
+          getSetting('playerSpeed'),
+          getSetting('playerMute'),
+        ]).then(([volume, speed, mute]) => {
+          if (mpvProcess !== expectedProcess) return;
+          if (volume) setProperty('volume', volume);
+          if (speed) setProperty('speed', speed);
+          if (mute) setProperty('mute', mute === 'yes' ? 'yes' : 'no');
+        });
         resolve();
       });
 
@@ -404,10 +424,36 @@ function handleMpvMessage(msg: any) {
         mainWindow?.webContents.send('mpv-paused', msg.data);
         break;
       case 'volume':
-        if (msg.data != null) mainWindow?.webContents.send('mpv-volume', msg.data);
+        console.log('[mpv] property-change volume:', msg.data);
+        if (msg.data != null) {
+          mainWindow?.webContents.send('mpv-volume', msg.data);
+          // 用户在 mpv 中调整音量时，立即持久化到设置
+          const volumeValue = String(Math.round(msg.data));
+          console.log('[main] saving volume to settings:', volumeValue);
+          setSetting('playerVolume', volumeValue);
+          console.log('[main] volume saved successfully');
+        }
         break;
       case 'speed':
-        if (msg.data != null) mainWindow?.webContents.send('mpv-speed', msg.data);
+        console.log('[mpv] property-change speed:', msg.data);
+        if (msg.data != null) {
+          mainWindow?.webContents.send('mpv-speed', msg.data);
+          // 用户在 mpv 中调整速度时，立即持久化到设置
+          const speedValue = String(msg.data);
+          console.log('[main] saving speed to settings:', speedValue);
+          setSetting('playerSpeed', speedValue);
+          console.log('[main] speed saved successfully');
+        }
+        break;
+      case 'mute':
+        console.log('[mpv] property-change mute:', msg.data);
+        if (msg.data != null) {
+          // 静音状态变化时，单独保存 mute 设置
+          const muteValue = msg.data ? 'yes' : 'no';
+          console.log('[main] saving mute to settings:', muteValue);
+          setSetting('playerMute', muteValue);
+          console.log('[main] mute state saved successfully');
+        }
         break;
     }
   }
@@ -427,6 +473,7 @@ function observeProperty(name: string, id: number) {
 
 // 设置属性
 function setProperty(name: string, value: any) {
+  console.log('[mpv] set_property:', name, '=', value);
   sendCommand(['set_property', name, value]);
 }
 
@@ -448,6 +495,7 @@ ipcMain.handle('seek', async (event, seconds: number) => {
 });
 
 ipcMain.handle('set-volume', async (event, volume: number) => {
+  console.log('[ipc] set-volume:', volume);
   setProperty('volume', volume);
   return { success: true };
 });
@@ -633,6 +681,35 @@ ipcMain.handle('delete-tag', async (event, tagId: number) => {
     return { success: true };
   } catch (error) {
     console.error('[delete-tag] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('toggle-favorite', async (event, videoId: number) => {
+  try {
+    const result = toggleFavorite(videoId);
+    return { success: true, favorited: result.favorited };
+  } catch (error) {
+    console.error('[toggle-favorite] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('get-favorited-count', async () => {
+  try {
+    return getFavoritedCount();
+  } catch (error) {
+    console.error('[get-favorited-count] failed:', error);
+    return 0;
+  }
+});
+
+ipcMain.handle('batch-unfavorite', async (event, videoIds: number[]) => {
+  try {
+    batchUnfavorite(videoIds);
+    return { success: true };
+  } catch (error) {
+    console.error('[batch-unfavorite] failed:', error);
     return { success: false, error: String(error) };
   }
 });

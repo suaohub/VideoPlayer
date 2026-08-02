@@ -23,6 +23,8 @@ function App() {
   const [tagMode, setTagMode] = useState<'or' | 'and'>('or');
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
+  const [showFavorited, setShowFavorited] = useState(false);
+  const [favoritedCount, setFavoritedCount] = useState(0);
 
   // UI 状态
   const [theme, setTheme] = useState<Theme>('night');
@@ -53,14 +55,16 @@ function App() {
 
   // 刷新标签、目录、视频总数
   const refreshAll = useCallback(async () => {
-    const [t, f, count] = await Promise.all([
+    const [t, f, count, favCount] = await Promise.all([
       api.getTags(),
       api.getFolderTree(),
       api.getVideoCount(),
+      api.getFavoritedCount(),
     ]);
     setTags(t);
     setFolders(f);
     setVideoCount(count);
+    setFavoritedCount(favCount);
   }, []);
 
   // 根据过滤条件加载视频列表
@@ -70,10 +74,11 @@ function App() {
       tagMode,
       folderId: selectedFolderId,
       search: search || undefined,
+      favorited: showFavorited || undefined,
     };
     const list = await api.getVideos(filter);
     setVideos(list);
-  }, [selectedTagIds, tagMode, selectedFolderId, search]);
+  }, [selectedTagIds, tagMode, selectedFolderId, search, showFavorited]);
 
   const refreshVisibleData = useCallback(async () => {
     await refreshAll();
@@ -208,6 +213,7 @@ function App() {
     setSelectedTagIds([]);
     setSelectedFolderId(null);
     setSearch('');
+    setShowFavorited(false);
   };
 
   // 随机打乱视频顺序
@@ -284,6 +290,40 @@ function App() {
     }
   };
 
+  // 切换视频收藏状态
+  const handleToggleFavorite = async (videoId: number) => {
+    const result = await api.toggleFavorite(videoId);
+    if (result.success) {
+      // 更新本地视频列表中的收藏状态
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, favorited: result.favorited ? 1 : 0 } : v))
+      );
+      // 更新收藏总数
+      setFavoritedCount((prev) => (result.favorited ? prev + 1 : prev - 1));
+    }
+  };
+
+  // 批量取消收藏
+  const handleBatchUnfavorite = async (videoIds: number[]) => {
+    if (videoIds.length === 0) return;
+    if (!confirm(`确认将 ${videoIds.length} 个视频移出收藏夹？`)) return;
+    const result = await api.batchUnfavorite(videoIds);
+    if (result.success) {
+      // 更新本地视频列表
+      setVideos((prev) =>
+        prev.map((v) => (videoIds.includes(v.id) ? { ...v, favorited: 0 } : v))
+      );
+      // 更新收藏总数
+      setFavoritedCount((prev) => prev - videoIds.length);
+      // 如果当前在收藏夹过滤视图，移除已取消收藏的视频
+      if (showFavorited) {
+        setVideos((prev) => prev.filter((v) => !videoIds.includes(v.id)));
+      }
+    } else {
+      alert(`批量取消收藏失败：${result.error}`);
+    }
+  };
+
   // 过滤掉未挂载磁盘上的视频（前端过滤，避免不必要的数据库查询）
   const visibleVideos = unmountedDrives.length === 0 ? videos : videos.filter(v => {
     const drive = v.path.match(/^([A-Za-z]:)/)?.[1]?.toUpperCase();
@@ -324,6 +364,9 @@ function App() {
         cardSize={cardSize}
         onCardSizeChange={setCardSize}
         unmountedDrives={unmountedDrives}
+        showFavorited={showFavorited}
+        onShowFavoritedChange={setShowFavorited}
+        favoritedCount={favoritedCount}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -364,6 +407,9 @@ function App() {
             onCardSizeChange={setCardSize}
             cardSizeRange={[CARD_MIN, CARD_MAX]}
             onPlay={handlePlay}
+            onToggleFavorite={handleToggleFavorite}
+            onBatchUnfavorite={handleBatchUnfavorite}
+            showFavorited={showFavorited}
           />
         </main>
       </div>

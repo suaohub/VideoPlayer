@@ -23,6 +23,9 @@ interface ToolbarProps {
   cardSize: number;
   onCardSizeChange: (n: number) => void;
   unmountedDrives: string[];
+  showFavorited: boolean;
+  onShowFavoritedChange: (show: boolean) => void;
+  favoritedCount: number;
 }
 
 // 卡片大小滑块范围（列宽 px）
@@ -44,6 +47,7 @@ export function Toolbar(props: ToolbarProps) {
     sidebarMode, onSidebarModeChange, search, onSearchChange,
     videoCount, filteredCount, importing, importProgress, thumbProgress,
     cardSize, onCardSizeChange, unmountedDrives,
+    showFavorited, onShowFavoritedChange, favoritedCount,
   } = props;
 
   const btnStyle: React.CSSProperties = {
@@ -114,6 +118,18 @@ export function Toolbar(props: ToolbarProps) {
           <FolderTree {...ICON} /> 目录树
         </button>
       </div>
+
+      {/* 收藏过滤 */}
+      <button
+        onClick={() => onShowFavoritedChange(!showFavorited)}
+        style={{
+          ...(showFavorited ? activeBtnStyle : btnStyle),
+          WebkitAppRegion: 'no-drag',
+        }}
+        title={`收藏夹 (${favoritedCount})`}
+      >
+        <Heart {...ICON} fill={showFavorited ? 'currentColor' : 'none'} /> 收藏 {favoritedCount > 0 && `(${favoritedCount})`}
+      </button>
 
       {/* 随机打乱 */}
       <button onClick={onShuffle} style={{ ...btnStyle, WebkitAppRegion: 'no-drag' }}>

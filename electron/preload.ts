@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   deleteFolder: (folderId: number) => ipcRenderer.invoke('delete-folder', folderId),
   deleteTag: (tagId: number) => ipcRenderer.invoke('delete-tag', tagId),
+  toggleFavorite: (videoId: number) => ipcRenderer.invoke('toggle-favorite', videoId),
+  getFavoritedCount: () => ipcRenderer.invoke('get-favorited-count'),
+  batchUnfavorite: (videoIds: number[]) => ipcRenderer.invoke('batch-unfavorite', videoIds),
   checkRemovableDrives: () => ipcRenderer.invoke('check-removable-drives'),
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }) => ipcRenderer.invoke('set-titlebar-overlay', opts),
 

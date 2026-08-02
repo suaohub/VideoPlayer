@@ -17,6 +17,7 @@ export interface VideoRecord {
   folder_id: number | null;
   added_at: number;
   mtime: number;
+  favorited: number;
 }
 
 // 文件夹记录类型（原始目录树）
@@ -66,6 +67,7 @@ export function initDatabase() {
       folder_id INTEGER,
       added_at INTEGER,
       mtime INTEGER,
+      favorited INTEGER DEFAULT 0,
       FOREIGN KEY (folder_id) REFERENCES folders(id)
     );
   `);
@@ -101,6 +103,13 @@ export function initDatabase() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_video_tags_tag ON video_tags(tag_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);`);
+
+  // 迁移：为旧数据库添加 favorited 字段
+  const columns = db.pragma('table_info(videos)') as Array<{ name: string }>;
+  if (!columns.some(c => c.name === 'favorited')) {
+    db.exec(`ALTER TABLE videos ADD COLUMN favorited INTEGER DEFAULT 0;`);
+    console.log('[db] Migration: added favorited column');
+  }
 
   console.log('[db] Initialized');
   return db;
