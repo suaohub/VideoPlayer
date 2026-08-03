@@ -65,6 +65,10 @@ export const api = {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.generateThumbnails();
   },
+  async regenerateThumbnail(videoId: number): Promise<{ success: boolean; error?: string; timestamp?: number; thumbnail_path?: string }> {
+    if (USE_MOCK) return { success: true };
+    return window.electronAPI.regenerateThumbnail(videoId);
+  },
 
   // 设置（mock 用 localStorage）
   async getSetting(key: string): Promise<string | null> {
@@ -83,6 +87,14 @@ export const api = {
       return { canceled: true, kind: 'none', paths: [] };
     }
     return window.electronAPI.selectImportSource();
+  },
+  async selectBackgroundImage(): Promise<{ canceled: boolean; path: string | null }> {
+    if (USE_MOCK) return { canceled: true, path: null };
+    return window.electronAPI.selectBackgroundImage();
+  },
+  async getBackgroundImageUrl(path: string): Promise<string | null> {
+    if (USE_MOCK) return path;
+    return window.electronAPI.getBackgroundImageUrl(path);
   },
   async selectFolders(): Promise<{ canceled: boolean; paths: string[] }> {
     if (USE_MOCK) {
@@ -212,6 +224,24 @@ export const api = {
   },
   async setTitlebarOverlay(opts: { color: string; symbolColor: string }): Promise<void> {
     if (window.electronAPI?.setTitlebarOverlay) await window.electronAPI.setTitlebarOverlay(opts);
+  },
+  async minimizeWindow(): Promise<{ success: boolean }> {
+    return window.electronAPI?.minimizeWindow?.() ?? { success: false };
+  },
+  async toggleMaximizeWindow(): Promise<{ success: boolean; maximized: boolean }> {
+    return window.electronAPI?.toggleMaximizeWindow?.() ?? { success: false, maximized: false };
+  },
+  async closeWindow(): Promise<{ success: boolean }> {
+    return window.electronAPI?.closeWindow?.() ?? { success: false };
+  },
+  async isWindowMaximized(): Promise<boolean> {
+    return window.electronAPI?.isWindowMaximized?.() ?? false;
+  },
+  onWindowMaximized(cb: () => void) {
+    return window.electronAPI?.onWindowMaximized?.(cb);
+  },
+  onWindowUnmaximized(cb: () => void) {
+    return window.electronAPI?.onWindowUnmaximized?.(cb);
   },
 };
 

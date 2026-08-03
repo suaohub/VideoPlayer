@@ -14,6 +14,7 @@ export const CARD_MAX = 420;
 function App() {
   // 数据
   const [videos, setVideos] = useState<Video[]>([]);
+  const [regeneratingThumbnailId, setRegeneratingThumbnailId] = useState<number | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [videoCount, setVideoCount] = useState(0);
@@ -34,6 +35,13 @@ function App() {
   const [thumbProgress, setThumbProgress] = useState<{ done: number; total: number } | null>(null);
   // 卡片大小（即瀑布流列宽，px）。越大卡片越大、每行越少。
   const [cardSize, setCardSize] = useState(220);
+  const [wallpaperPath, setWallpaperPath] = useState<string | null>(null);
+  const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
+  const [wallpaperOpacity, setWallpaperOpacity] = useState(32);
+  const [toolbarOpacity, setToolbarOpacity] = useState(62);
+  const [toolbarBlur, setToolbarBlur] = useState(14);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // 可移动磁盘检测
   const [unmountedDrives, setUnmountedDrives] = useState<string[]>([]);
@@ -52,6 +60,16 @@ function App() {
     const timer = setInterval(checkDrives, 30_000);
     return () => clearInterval(timer);
   }, [checkDrives]);
+
+  useEffect(() => {
+    api.isWindowMaximized().then(setIsMaximized);
+    const offMaximized = api.onWindowMaximized(() => setIsMaximized(true));
+    const offUnmaximized = api.onWindowUnmaximized(() => setIsMaximized(false));
+    return () => {
+      offMaximized?.();
+      offUnmaximized?.();
+    };
+  }, []);
 
   // 刷新标签、目录、视频总数
   const refreshAll = useCallback(async () => {
@@ -91,22 +109,33 @@ function App() {
     setVideos(list);
   }, [refreshAll]);
 
-  // 应用主题到 DOM + 同步标题栏按钮颜色
-  const TITLEBAR_COLORS: Record<Theme, { color: string; symbolColor: string }> = {
-    day:      { color: '#ffffff', symbolColor: '#1a1a2e' },
-    night:    { color: '#1a1e29', symbolColor: '#e6e8ec' },
-    romantic: { color: '#46233c', symbolColor: '#ffe8f5' },
-  };
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     api.setSetting('theme', theme);
-    api.setTitlebarOverlay(TITLEBAR_COLORS[theme]);
   }, [theme]);
 
   // 持久化卡片大小
   useEffect(() => {
     api.setSetting('cardSize', String(cardSize));
   }, [cardSize]);
+
+  useEffect(() => {
+    if (preferencesLoaded) {
+      api.setSetting('wallpaperOpacity', String(wallpaperOpacity));
+    }
+  }, [wallpaperOpacity, preferencesLoaded]);
+
+  useEffect(() => {
+    if (preferencesLoaded) {
+      api.setSetting('toolbarOpacity', String(toolbarOpacity));
+    }
+  }, [toolbarOpacity, preferencesLoaded]);
+
+  useEffect(() => {
+    if (preferencesLoaded) {
+      api.setSetting('toolbarBlur', String(toolbarBlur));
+    }
+  }, [toolbarBlur, preferencesLoaded]);
 
   // 初始化：读取设置 + 加载数据
   useEffect(() => {
@@ -115,6 +144,38 @@ function App() {
       if (savedTheme) setTheme(savedTheme as Theme);
       const savedSize = await api.getSetting('cardSize');
       if (savedSize) setCardSize(Number(savedSize));
+      const savedOpacity = await api.getSetting('wallpaperOpacity');
+      if (savedOpacity) {
+        const parsedOpacity = Number(savedOpacity);
+        if (Number.isFinite(parsedOpacity)) {
+          setWallpaperOpacity(Math.min(100, Math.max(0, parsedOpacity)));
+        }
+      }
+      const savedToolbarOpacity = await api.getSetting('toolbarOpacity');
+      if (savedToolbarOpacity) {
+        const parsedToolbarOpacity = Number(savedToolbarOpacity);
+        if (Number.isFinite(parsedToolbarOpacity)) {
+          setToolbarOpacity(Math.min(100, Math.max(0, parsedToolbarOpacity)));
+        }
+      }
+      const savedToolbarBlur = await api.getSetting('toolbarBlur');
+      if (savedToolbarBlur) {
+        const parsedToolbarBlur = Number(savedToolbarBlur);
+        if (Number.isFinite(parsedToolbarBlur)) {
+          setToolbarBlur(Math.min(30, Math.max(0, parsedToolbarBlur)));
+        }
+      }
+      const savedWallpaperPath = await api.getSetting('wallpaperPath');
+      if (savedWallpaperPath) {
+        const savedWallpaperUrl = await api.getBackgroundImageUrl(savedWallpaperPath);
+        if (savedWallpaperUrl) {
+          setWallpaperPath(savedWallpaperPath);
+          setWallpaperUrl(savedWallpaperUrl);
+        } else {
+          await api.setSetting('wallpaperPath', '');
+        }
+      }
+      setPreferencesLoaded(true);
       await refreshAll();
       await loadVideos();
     })();
@@ -194,7 +255,55 @@ function App() {
     }
   };
 
+  const handleSelectBackground = async () => {
+    const result = await api.selectBackgroundImage();
+    if (result.canceled || !result.path) return;
+    const imageUrl = await api.getBackgroundImageUrl(result.path);
+    if (!imageUrl) {
+      alert('无法读取这张图片，请选择常见的 JPG、PNG、WebP 或 GIF 图片。');
+      return;
+    }
+    setWallpaperPath(result.path);
+    setWallpaperUrl(imageUrl);
+    await api.setSetting('wallpaperPath', result.path);
+  };
+
+  const handleClearBackground = async () => {
+    setWallpaperPath(null);
+    setWallpaperUrl(null);
+    await api.setSetting('wallpaperPath', '');
+  };
+
+  const handleRegenerateThumbnail = async (videoId: number) => {
+    if (regeneratingThumbnailId != null) return;
+    setRegeneratingThumbnailId(videoId);
+    try {
+      const result = await api.regenerateThumbnail(videoId);
+      if (!result.success) {
+        alert(`缩略图生成失败：${result.error ?? '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('[thumbnail] regenerate failed', error);
+      alert(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setRegeneratingThumbnailId(null);
+    }
+  };
+
   // 切换标签选中
+  const handleMinimize = () => {
+    api.minimizeWindow();
+  };
+
+  const handleToggleMaximize = async () => {
+    const result = await api.toggleMaximizeWindow();
+    if (result.success) setIsMaximized(result.maximized);
+  };
+
+  const handleClose = () => {
+    api.closeWindow();
+  };
+
   const toggleTag = (tagId: number) => {
     setSelectedTagIds((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
@@ -339,7 +448,16 @@ function App() {
   });
 
   return (
-    <>
+    <div className="app-shell">
+      <div
+        className="app-wallpaper"
+        aria-hidden="true"
+        style={{
+          backgroundImage: wallpaperUrl ? `url("${wallpaperUrl}")` : undefined,
+          opacity: wallpaperUrl ? wallpaperOpacity / 100 : 0,
+        }}
+      />
+      <div className="app-content">
       {IS_MOCK && (
         <div className="mock-banner">
           UI 预览模式（mock 假数据）— 带真实缩略图的卡片可实际播放，占位卡片仅供布局演示
@@ -367,6 +485,19 @@ function App() {
         showFavorited={showFavorited}
         onShowFavoritedChange={setShowFavorited}
         favoritedCount={favoritedCount}
+        backgroundImagePath={wallpaperPath}
+        backgroundOpacity={wallpaperOpacity}
+        onSelectBackground={handleSelectBackground}
+        onClearBackground={handleClearBackground}
+        onBackgroundOpacityChange={setWallpaperOpacity}
+        toolbarOpacity={toolbarOpacity}
+        onToolbarOpacityChange={setToolbarOpacity}
+        toolbarBlur={toolbarBlur}
+        onToolbarBlurChange={setToolbarBlur}
+        isMaximized={isMaximized}
+        onMinimize={handleMinimize}
+        onToggleMaximize={handleToggleMaximize}
+        onClose={handleClose}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -375,7 +506,8 @@ function App() {
           <aside style={{
             width: 260,
             borderRight: '1px solid var(--border)',
-            background: 'var(--bg-secondary)',
+            background: `color-mix(in srgb, var(--bg-secondary) ${toolbarOpacity}%, transparent)`,
+            backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.08)` : 'none',
             overflowY: 'auto',
             flexShrink: 0,
           }}>
@@ -410,10 +542,13 @@ function App() {
             onToggleFavorite={handleToggleFavorite}
             onBatchUnfavorite={handleBatchUnfavorite}
             showFavorited={showFavorited}
+            onRegenerateThumbnail={handleRegenerateThumbnail}
+            regeneratingThumbnailId={regeneratingThumbnailId}
           />
         </main>
       </div>
-    </>
+      </div>
+    </div>
   );
 }
 

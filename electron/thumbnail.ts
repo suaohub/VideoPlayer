@@ -57,6 +57,11 @@ export interface ThumbnailResult extends VideoMetadata {
   thumbnail_path: string | null;
 }
 
+export interface ThumbnailGenerationOptions {
+  force?: boolean;
+  timestamp?: number;
+}
+
 const WINDOWS_FFMPEG_DIR = 'C:\\Users\\sususu\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.2-full_build\\bin';
 
 export function resolveBinary(name: 'ffmpeg' | 'ffprobe'): string {
@@ -156,7 +161,7 @@ export function generateThumbnail(videoPath: string, metadata: VideoMetadata): s
 
 export function thumbnailFilePathFromUrl(url: string): string | null {
   if (!url.startsWith('thumb://')) return null;
-  const fileName = decodeURIComponent(url.replace('thumb://', ''));
+  const fileName = decodeURIComponent(url.replace('thumb://', '').split(/[?#]/, 1)[0]);
   if (!/^[a-f0-9]{40}\.jpg$/i.test(fileName)) return null;
   return path.join(app.getPath('userData'), 'thumbnails', fileName);
 }
@@ -234,14 +239,20 @@ export async function probeVideoAsync(videoPath: string): Promise<VideoMetadata>
   }
 }
 
-export async function generateThumbnailAsync(videoPath: string, metadata: VideoMetadata): Promise<string | null> {
+export async function generateThumbnailAsync(
+  videoPath: string,
+  metadata: VideoMetadata,
+  options: ThumbnailGenerationOptions = {},
+): Promise<string | null> {
   const outputPath = getThumbPath(videoPath);
-  if (fs.existsSync(outputPath)) return toThumbUrl(outputPath);
+  if (!options.force && fs.existsSync(outputPath)) return toThumbUrl(outputPath);
 
   const ffmpeg = resolveBinary('ffmpeg');
-  const ss = metadata.duration && metadata.duration > 20
-    ? Math.min(Math.max(metadata.duration * 0.1, 3), 60)
-    : 1;
+  const ss = options.timestamp ?? (
+    metadata.duration && metadata.duration > 20
+      ? Math.min(Math.max(metadata.duration * 0.1, 3), 60)
+      : 1
+  );
   const hwaccel = await detectHwAccelAsync();
 
   async function run(hwArgs: string[], vf: string): Promise<boolean> {

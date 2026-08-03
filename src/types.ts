@@ -78,6 +78,8 @@ export interface ElectronAPI {
   onStopped: (cb: () => void) => (() => void) | void;
 
   selectImportSource: () => Promise<ImportSourceSelection>;
+  selectBackgroundImage: () => Promise<{ canceled: boolean; path: string | null }>;
+  getBackgroundImageUrl: (imagePath: string) => Promise<string | null>;
   selectFolders: () => Promise<{ canceled: boolean; paths: string[] }>;
   selectVideoFiles: () => Promise<{ canceled: boolean; paths: string[] }>;
   importFolders: (paths: string[]) => Promise<any[]>;
@@ -87,6 +89,7 @@ export interface ElectronAPI {
   getVideos: (filter: VideoFilter) => Promise<Video[]>;
   getVideoCount: () => Promise<number>;
   generateThumbnails: () => Promise<{ success: boolean }>;
+  regenerateThumbnail: (videoId: number) => Promise<{ success: boolean; error?: string; timestamp?: number; thumbnail_path?: string }>;
   getSetting: (key: string) => Promise<string | null>;
   setSetting: (key: string, value: string) => Promise<{ success: boolean }>;
   onImportProgress: (cb: (data: ImportProgress) => void) => (() => void) | void;
@@ -101,6 +104,12 @@ export interface ElectronAPI {
   batchUnfavorite: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
   checkRemovableDrives: () => Promise<{ drives: string[]; mounted: string[] }>;
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }) => Promise<void>;
+  minimizeWindow: () => Promise<{ success: boolean }>;
+  toggleMaximizeWindow: () => Promise<{ success: boolean; maximized: boolean }>;
+  closeWindow: () => Promise<{ success: boolean }>;
+  isWindowMaximized: () => Promise<boolean>;
+  onWindowMaximized: (cb: () => void) => (() => void) | void;
+  onWindowUnmaximized: (cb: () => void) => (() => void) | void;
 }
 
 // 缩略图后台生成事件

@@ -2,6 +2,7 @@ import {
   FolderPlus, Tags, FolderTree, Shuffle, FilterX, Trash2,
   Search, Sun, Moon, Heart, Grid3x3, Square, Loader2, TriangleAlert,
   Waves, Trees, Sunset, Circle, Zap, ChevronDown,
+  Image as ImageIcon, X, Minus, Maximize2, Minimize2,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Theme, ImportProgress, ThumbnailProgress } from '../types';
@@ -28,6 +29,19 @@ interface ToolbarProps {
   showFavorited: boolean;
   onShowFavoritedChange: (show: boolean) => void;
   favoritedCount: number;
+  backgroundImagePath: string | null;
+  backgroundOpacity: number;
+  onSelectBackground: () => void;
+  onClearBackground: () => void;
+  onBackgroundOpacityChange: (value: number) => void;
+  toolbarOpacity: number;
+  onToolbarOpacityChange: (value: number) => void;
+  toolbarBlur: number;
+  onToolbarBlurChange: (value: number) => void;
+  isMaximized: boolean;
+  onMinimize: () => void;
+  onToggleMaximize: () => void;
+  onClose: () => void;
 }
 
 // 卡片大小滑块范围（列宽 px）
@@ -55,6 +69,10 @@ export function Toolbar(props: ToolbarProps) {
     videoCount, filteredCount, importing, importProgress, thumbProgress,
     cardSize, onCardSizeChange, unmountedDrives,
     showFavorited, onShowFavoritedChange, favoritedCount,
+    backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
+    onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
+    toolbarBlur, onToolbarBlurChange,
+    isMaximized, onMinimize, onToggleMaximize, onClose,
   } = props;
 
   // 主题下拉菜单开关
@@ -104,7 +122,11 @@ export function Toolbar(props: ToolbarProps) {
 
   return (
     <header style={{
-      background: 'var(--bg-toolbar)',
+      position: 'relative',
+      zIndex: 20,
+      overflow: 'visible',
+      background: `color-mix(in srgb, var(--bg-toolbar) ${toolbarOpacity}%, transparent)`,
+      backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.08)` : 'none',
       borderBottom: '1px solid var(--border)',
       padding: '12px 16px',
       paddingTop: '52px', // 为 Windows 原生标题栏控件留出空间
@@ -116,6 +138,20 @@ export function Toolbar(props: ToolbarProps) {
       flexShrink: 0,
       WebkitAppRegion: 'drag', // 顶部可拖拽移动窗口
     }}>
+      <div className="window-controls" style={{ WebkitAppRegion: 'no-drag' }}>
+        <button className="window-control" onClick={onMinimize} title="最小化">
+          <Minus size={16} strokeWidth={1.8} />
+        </button>
+        <button className="window-control" onClick={onToggleMaximize} title={isMaximized ? '还原' : '最大化'}>
+          {isMaximized
+            ? <Minimize2 size={15} strokeWidth={1.8} />
+            : <Maximize2 size={15} strokeWidth={1.8} />}
+        </button>
+        <button className="window-control window-control-close" onClick={onClose} title="关闭">
+          <X size={16} strokeWidth={1.8} />
+        </button>
+      </div>
+
       {/* 导入 */}
       <button onClick={onImport} disabled={importing} style={{
         ...activeBtnStyle,
@@ -293,6 +329,123 @@ export function Toolbar(props: ToolbarProps) {
                 </button>
               );
             })}
+            <div style={{
+              height: 1,
+              margin: '6px 4px',
+              background: 'var(--border)',
+            }} />
+            <button
+              onClick={onSelectBackground}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                padding: '8px 10px',
+                fontSize: 14,
+                textAlign: 'left',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: 'var(--text-primary)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <ImageIcon {...ICON} />
+              <span>{backgroundImagePath ? '更换壁纸' : '选择壁纸'}</span>
+            </button>
+            {backgroundImagePath && (
+              <>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 10px 4px',
+                  color: 'var(--text-secondary)',
+                  fontSize: 12,
+                }}>
+                  <span style={{ flexShrink: 0 }}>壁纸透明度</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={100 - backgroundOpacity}
+                    onChange={(e) => onBackgroundOpacityChange(100 - Number(e.target.value))}
+                    style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                    title="调整壁纸透明度，100% 为完全透明"
+                  />
+                  <span style={{ width: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {100 - backgroundOpacity}%
+                  </span>
+                </div>
+                <button
+                  onClick={onClearBackground}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    width: '100%',
+                    padding: '8px 10px',
+                    fontSize: 14,
+                    textAlign: 'left',
+                    border: 'none',
+                    borderRadius: 6,
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <X {...ICON} />
+                  <span>清除壁纸</span>
+                </button>
+              </>
+            )}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px 4px',
+              color: 'var(--text-secondary)',
+              fontSize: 12,
+            }}>
+              <span style={{ flexShrink: 0 }}>操作区透明</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={100 - toolbarOpacity}
+                onChange={(e) => onToolbarOpacityChange(100 - Number(e.target.value))}
+                style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                title="调整顶部操作区和右上角窗口按钮的透明度，100% 为完全透明"
+              />
+              <span style={{ width: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {100 - toolbarOpacity}%
+              </span>
+            </div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 10px 8px',
+              color: 'var(--text-secondary)',
+              fontSize: 12,
+            }}>
+              <span style={{ flexShrink: 0 }}>操作区模糊</span>
+              <input
+                type="range"
+                min={0}
+                max={30}
+                value={toolbarBlur}
+                onChange={(e) => onToolbarBlurChange(Number(e.target.value))}
+                style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                title="调整顶部操作区和侧边栏的模糊程度"
+              />
+              <span style={{ width: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {toolbarBlur}px
+              </span>
+            </div>
           </div>
         )}
       </div>

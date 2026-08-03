@@ -5,7 +5,7 @@ import { join } from 'path';
 import * as net from 'net';
 import { initDatabase, getDb } from './db';
 import { backfillMissingThumbnails, importFiles, importFolder } from './scanner';
-import { thumbnailFilePathFromUrl, getThumbnailDir } from './thumbnail';
+import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners } from './thumbnailQueue';
 import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, VideoFilter } from './queries';
 
@@ -34,12 +34,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#0B0E14',
-      symbolColor: '#F8FAFC',
-      height: 40,
-    },
+    frame: false,
     icon: join(app.getAppPath(), 'assets', 'icon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -63,6 +58,8 @@ function createWindow() {
   mainWindow.on('resize', syncMpvWindowBounds);
   mainWindow.on('maximize', syncMpvWindowBounds);
   mainWindow.on('unmaximize', syncMpvWindowBounds);
+  mainWindow.on('maximize', () => mainWindow?.webContents.send('window-maximized'));
+  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-unmaximized'));
   mainWindow.on('restore', syncMpvWindowBounds);
   mainWindow.on('show', syncMpvWindowBounds);
   mainWindow.on('minimize', hideMpvWindow);
@@ -516,6 +513,41 @@ ipcMain.handle('select-import-source', async () => {
   return { canceled: result.canceled, kind: 'files', paths: result.filePaths };
 });
 
+ipcMain.handle('select-background-image', async () => {
+  if (!mainWindow) return { canceled: true, path: null };
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'] },
+    ],
+  });
+  return { canceled: result.canceled, path: result.filePaths[0] ?? null };
+});
+
+ipcMain.handle('get-background-image-url', async (event, imagePath: string) => {
+  try {
+    if (!imagePath || !existsSync(imagePath)) return null;
+    const extension = imagePath.toLowerCase().split('.').pop() ?? '';
+    const mimeTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      bmp: 'image/bmp',
+      avif: 'image/avif',
+    };
+    const mime = mimeTypes[extension];
+    if (!mime) return null;
+    const data = readFileSync(imagePath);
+    if (data.byteLength > 30 * 1024 * 1024) return null;
+    return `data:${mime};base64,${data.toString('base64')}`;
+  } catch (error) {
+    console.error('[background] failed to read image:', error);
+    return null;
+  }
+});
+
 ipcMain.handle('get-media-url', async (event, videoPath: string) => {
   return `file:///${videoPath.replace(/\\/g, '/')}`;
 });
@@ -589,6 +621,62 @@ ipcMain.handle('generate-thumbnails', async () => {
   return { success: true };
 });
 
+ipcMain.handle('regenerate-thumbnail', async (event, videoId: number) => {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT path, duration FROM videos WHERE id = ?')
+    .get(videoId) as { path: string; duration: number | null } | undefined;
+
+  if (!row) return { success: false, error: '视频记录不存在' };
+  if (!existsSync(row.path)) return { success: false, error: '视频文件当前不可用' };
+
+  try {
+    const metadata = await probeVideoAsync(row.path);
+    const duration = metadata.duration ?? row.duration ?? 1;
+    const minTime = duration > 2 ? duration * 0.05 : 0.1;
+    const maxTime = duration > 2 ? Math.max(minTime, duration * 0.9) : Math.max(minTime, duration * 0.5);
+    const timestamp = minTime + Math.random() * (maxTime - minTime);
+    const thumbnailPath = await generateThumbnailAsync(row.path, metadata, {
+      force: true,
+      timestamp,
+    });
+
+    if (!thumbnailPath) return { success: false, error: '缩略图生成失败' };
+
+    db.prepare(`
+      UPDATE videos
+      SET thumbnail_path = ?,
+          duration = COALESCE(?, duration),
+          width = COALESCE(?, width),
+          height = COALESCE(?, height),
+          aspect_ratio = COALESCE(?, aspect_ratio)
+      WHERE id = ?
+    `).run(
+      thumbnailPath,
+      metadata.duration,
+      metadata.width,
+      metadata.height,
+      metadata.aspect_ratio,
+      videoId,
+    );
+
+    const refreshedThumbnailPath = `${thumbnailPath}?v=${Date.now()}`;
+    mainWindow?.webContents.send('thumbnail-ready', {
+      id: videoId,
+      thumbnail_path: refreshedThumbnailPath,
+      duration: metadata.duration,
+      width: metadata.width,
+      height: metadata.height,
+      aspect_ratio: metadata.aspect_ratio,
+    });
+
+    return { success: true, timestamp, thumbnail_path: refreshedThumbnailPath };
+  } catch (error) {
+    console.error('[regenerate-thumbnail] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
 // 设置读写
 ipcMain.handle('get-setting', async (event, key: string) => {
   return getSetting(key);
@@ -603,6 +691,30 @@ ipcMain.handle('set-titlebar-overlay', async (event, options: { color: string; s
   if (mainWindow) {
     mainWindow.setTitleBarOverlay({ ...options, height: 40 });
   }
+});
+
+ipcMain.handle('window-minimize', async () => {
+  mainWindow?.minimize();
+  return { success: true };
+});
+
+ipcMain.handle('window-toggle-maximize', async () => {
+  if (!mainWindow) return { success: false, maximized: false };
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+  return { success: true, maximized: mainWindow.isMaximized() };
+});
+
+ipcMain.handle('window-close', async () => {
+  mainWindow?.close();
+  return { success: true };
+});
+
+ipcMain.handle('window-is-maximized', async () => {
+  return mainWindow?.isMaximized() ?? false;
 });
 
 ipcMain.handle('clear-cache', async () => {

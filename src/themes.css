@@ -157,6 +157,68 @@ body {
   flex-direction: column;
 }
 
+.app-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--bg-primary);
+}
+
+.app-wallpaper {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.app-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.window-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  height: 40px;
+}
+
+.window-control {
+  width: 46px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.window-control:hover {
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+}
+
+.window-control-close:hover {
+  color: #fff;
+  background: #e81123;
+}
+
 /* 滚动条美化 */
 ::-webkit-scrollbar {
   width: 10px;

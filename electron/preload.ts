@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ---------- 导入与查询 ----------
   selectImportSource: () => ipcRenderer.invoke('select-import-source'),
+  selectBackgroundImage: () => ipcRenderer.invoke('select-background-image'),
+  getBackgroundImageUrl: (imagePath: string) => ipcRenderer.invoke('get-background-image-url', imagePath),
   selectFolders: () => ipcRenderer.invoke('select-folders'),
   selectVideoFiles: () => ipcRenderer.invoke('select-video-files'),
   importFolders: (paths: string[]) => ipcRenderer.invoke('import-folders', paths),
@@ -52,6 +54,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideos: (filter: any) => ipcRenderer.invoke('get-videos', filter),
   getVideoCount: () => ipcRenderer.invoke('get-video-count'),
   generateThumbnails: () => ipcRenderer.invoke('generate-thumbnails'),
+  regenerateThumbnail: (videoId: number) => ipcRenderer.invoke('regenerate-thumbnail', videoId),
   getSetting: (key: string) => ipcRenderer.invoke('get-setting', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('set-setting', key, value),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
@@ -62,6 +65,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   batchUnfavorite: (videoIds: number[]) => ipcRenderer.invoke('batch-unfavorite', videoIds),
   checkRemovableDrives: () => ipcRenderer.invoke('check-removable-drives'),
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }) => ipcRenderer.invoke('set-titlebar-overlay', opts),
+  minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window-toggle-maximize'),
+  closeWindow: () => ipcRenderer.invoke('window-close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  onWindowMaximized: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('window-maximized', listener);
+    return () => ipcRenderer.removeListener('window-maximized', listener);
+  },
+  onWindowUnmaximized: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('window-unmaximized', listener);
+    return () => ipcRenderer.removeListener('window-unmaximized', listener);
+  },
 
   onImportProgress: (callback: (data: { current: number; total: number; file: string; folderPath: string }) => void) => {
     const listener = (_: Electron.IpcRendererEvent, data: { current: number; total: number; file: string; folderPath: string }) => callback(data);

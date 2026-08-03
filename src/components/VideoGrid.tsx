@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { Video } from '../types';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
@@ -12,6 +13,8 @@ interface VideoGridProps {
   onToggleFavorite: (videoId: number) => void;
   onBatchUnfavorite: (videoIds: number[]) => void;
   showFavorited: boolean;
+  onRegenerateThumbnail: (videoId: number) => void;
+  regeneratingThumbnailId: number | null;
 }
 
 const GAP = 12;
@@ -77,13 +80,15 @@ interface VideoCardProps {
   onFocus: () => void;
   onPlay: (video: Video) => void;
   onToggleFavorite: (videoId: number) => void;
+  onRegenerateThumbnail: (videoId: number) => void;
+  regenerating: boolean;
   cardRef: (el: HTMLDivElement | null) => void;
   selectionMode: boolean;
   isSelected: boolean;
   onToggleSelect: (videoId: number) => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, cardRef, selectionMode, isSelected, onToggleSelect }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect }: VideoCardProps) {
   const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
   const thumbHeight = height - 46;
@@ -162,6 +167,27 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         )}
         {/* 收藏按钮：悬停时显示在右上角（非选择模式） */}
         {!selectionMode && hover && (
+          <>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRegenerateThumbnail(video.id); }}
+            disabled={regenerating}
+            style={{
+              position: 'absolute', top: 6, right: 44,
+              width: 32, height: 32,
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: regenerating ? 'wait' : 'pointer',
+              transition: 'all 0.2s ease',
+              color: '#fff',
+              opacity: regenerating ? 0.7 : 1,
+            }}
+            title="重新生成缩略图"
+          >
+            <RefreshCw size={15} strokeWidth={1.9} className={regenerating ? 'spin' : undefined} />
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); onToggleFavorite(video.id); }}
             style={{
@@ -182,6 +208,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
             </svg>
           </button>
+          </>
         )}
       </div>
       <div style={{ padding: '6px 10px', flex: 1, minHeight: 0 }}>
@@ -201,7 +228,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -652,6 +679,8 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 }}
                 onPlay={onPlay}
                 onToggleFavorite={onToggleFavorite}
+                onRegenerateThumbnail={onRegenerateThumbnail}
+                regenerating={regeneratingThumbnailId === L.video.id}
                 cardRef={(el) => {
                   if (el) cardEls.current.set(L.video.id, el);
                   else cardEls.current.delete(L.video.id);

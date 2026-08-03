@@ -194,6 +194,7 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
             </button>
           ))}
         </div>
+
       </div>
     </div>
   );
