@@ -19,8 +19,7 @@
 - Node.js 18+
 - **mpv 播放器**
   - Windows：下载 mpv，记下 `mpv.exe` 路径
-  - macOS：`brew install mpv`
-- **mpv 路径**：`electron/main.ts` 的 `resolveMpvBin()` 会优先读环境变量 `MPV_BIN`，Windows 下回退到默认安装路径 `C:\Program Files\MPV Player\mpv.exe`，都找不到再回退到 PATH 里的 `mpv`。装在别处时设 `MPV_BIN` 环境变量即可，无需改代码。
+- **mpv 路径**：`electron/main.ts` 的 `resolveMpvBin()` 会优先读环境变量 `MPV_BIN`，再回退到默认安装路径 `C:\Program Files\MPV Player\mpv.exe`，都找不到再回退到 PATH 里的 `mpv`。装在别处时设 `MPV_BIN` 环境变量即可，无需改代码。
 - **FFmpeg**：缩略图/元数据依赖 ffmpeg/ffprobe，可用 `FFMPEG_BIN` / `FFPROBE_BIN` 环境变量指定路径。
 
 ## 快速开始

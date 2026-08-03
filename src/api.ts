@@ -1,8 +1,7 @@
 import { Video, Tag, Folder, VideoFilter, ImportSourceSelection } from './types';
 import { generateMockData } from './mock/mockData';
 
-// ⚠️ 开发开关：macOS 上数据库崩溃，先用 mock 假数据跑 UI。
-// 到 Windows 数据库跑通后，改为 false 即走真实 IPC。
+// ⚠️ 开发开关：需要纯 UI 预览时可临时改为 true；正式运行走真实 IPC。
 const USE_MOCK = false;
 
 // ---------- Mock 实现 ----------

@@ -16,7 +16,7 @@ const DEFAULT_WINDOWS_MPV = 'C:\\Program Files\\MPV Player\\mpv.exe';
 
 function resolveMpvBin() {
   if (process.env.MPV_BIN) return process.env.MPV_BIN;
-  if (process.platform === 'win32' && existsSync(DEFAULT_WINDOWS_MPV)) return DEFAULT_WINDOWS_MPV;
+  if (existsSync(DEFAULT_WINDOWS_MPV)) return DEFAULT_WINDOWS_MPV;
   return 'mpv';
 }
 
@@ -68,10 +68,6 @@ function createWindow() {
   mainWindow.on('minimize', hideMpvWindow);
 }
 
-// UI 预览模式：跳过数据库初始化（macOS 上 better-sqlite3 崩溃）。
-// 到 Windows 数据库跑通后，把此处改回 false 并同步 src/api.ts 的 USE_MOCK。
-const SKIP_DB = false;
-
 app.whenReady().then(() => {
   protocol.handle('thumb', (request) => {
     const filePath = thumbnailFilePathFromUrl(request.url);
@@ -82,7 +78,7 @@ app.whenReady().then(() => {
       headers: { 'Content-Type': 'image/jpeg' },
     });
   });
-  if (!SKIP_DB) initDatabase(); // 初始化数据库
+  initDatabase(); // Windows-only：启动时直接初始化 SQLite 数据库。
 
   // 注册缩略图队列事件 → 转发给渲染进程（生成一张就地替换一张卡 + 进度）
   setThumbnailListeners(
@@ -93,14 +89,11 @@ app.whenReady().then(() => {
   createWindow();
   // 启动后异步补齐缺失缩略图（现为限并发队列，不再阻塞主进程）
   setTimeout(() => backfillMissingThumbnails(), 1000);
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
 });
 
 app.on('window-all-closed', () => {
   stopMpv();
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 // ---------- mpv 启动与 IPC ----------
@@ -131,25 +124,13 @@ function getMainWindowHandle() {
   }
 }
 
-function getMpvGeometry() {
-  if (!mainWindow) return '960x540+100+100';
-  const bounds = getMpvBounds();
-  return `${bounds.width}x${bounds.height}+${bounds.x}+${bounds.y}`;
-}
-
 function syncMpvWindowBounds() {
   if (!mpvProcess || !mainWindow || mainWindow.isMinimized()) return;
-  // 非 Windows：用 mpv 的 geometry 属性（屏幕坐标）定位。
-  // Windows：走 SetParent 嵌入 + SetWindowPos（子窗口相对坐标），
-  //   此处若再发 geometry（mpv 按屏幕坐标解释）会与嵌入定位打架，故跳过。
-  if (ipcSocket && process.platform !== 'win32') {
-    sendCommand(['set_property', 'geometry', getMpvGeometry()]);
-  }
   scheduleMpvWindowPlacement();
 }
 
 function scheduleMpvWindowPlacement(delay = 80) {
-  if (process.platform !== 'win32' || !mpvProcess || !mainWindow) return;
+  if (!mpvProcess || !mainWindow) return;
   if (mpvPlacementTimer) clearTimeout(mpvPlacementTimer);
   mpvPlacementTimer = setTimeout(() => {
     mpvPlacementTimer = null;
@@ -162,7 +143,7 @@ const MPV_DEBUG_LOG = join(app.getPath('temp'), 'mpv-place-debug.log');
 const MPV_WINDOW_TITLE = 'VideoPlayerMpvEmbedWindow';
 
 function placeMpvWindow(show: boolean) {
-  if (process.platform !== 'win32' || !mpvProcess || !mainWindow) return;
+  if (!mpvProcess || !mainWindow) return;
   const bounds = getMpvBounds();
   const command = `
 $ErrorActionPreference = 'SilentlyContinue'
@@ -274,11 +255,8 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
 
     console.log('[mpv] Video path:', videoPath);
 
-    socketPath = process.platform === 'win32'
-      ? `\\\\.\\pipe\\mpv-${process.pid}-${Date.now()}`
-      : `/tmp/mpv-socket-${Date.now()}`;
+    socketPath = `\\\\.\\pipe\\mpv-${process.pid}-${Date.now()}`;
 
-    const isWin = process.platform === 'win32';
     const args = [
       '--no-terminal',
       '--keep-open=yes',
@@ -289,9 +267,8 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
       `--title=${MPV_WINDOW_TITLE}`,
       '--border=no',
       '--fullscreen',
-      ...(isWin
-        ? ['--show-in-taskbar=no', '--taskbar-progress=no']
-        : ['--ontop', `--geometry=${getMpvGeometry()}`]),
+      '--show-in-taskbar=no',
+      '--taskbar-progress=no',
       videoPath,
     ];
 

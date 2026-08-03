@@ -1,7 +1,9 @@
 import {
   FolderPlus, Tags, FolderTree, Shuffle, FilterX, Trash2,
   Search, Sun, Moon, Heart, Grid3x3, Square, Loader2, TriangleAlert,
+  Waves, Trees, Sunset, Circle, Zap, ChevronDown,
 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 import { Theme, ImportProgress, ThumbnailProgress } from '../types';
 
 interface ToolbarProps {
@@ -36,6 +38,11 @@ const THEMES: { value: Theme; label: string; Icon: typeof Sun }[] = [
   { value: 'day', label: '白天', Icon: Sun },
   { value: 'night', label: '夜间', Icon: Moon },
   { value: 'romantic', label: '浪漫', Icon: Heart },
+  { value: 'ocean', label: '海洋', Icon: Waves },
+  { value: 'forest', label: '森林', Icon: Trees },
+  { value: 'sunset', label: '日落', Icon: Sunset },
+  { value: 'slate', label: '极简灰', Icon: Circle },
+  { value: 'cyberpunk', label: '赛博霓虹', Icon: Zap },
 ];
 
 // 图标统一参数：细描边线性风格
@@ -49,6 +56,24 @@ export function Toolbar(props: ToolbarProps) {
     cardSize, onCardSizeChange, unmountedDrives,
     showFavorited, onShowFavoritedChange, favoritedCount,
   } = props;
+
+  // 主题下拉菜单开关
+  const [themeOpen, setThemeOpen] = useState(false);
+  const themeRef = useRef<HTMLDivElement>(null);
+
+  // 点击菜单外部时收起
+  useEffect(() => {
+    if (!themeOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
+        setThemeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [themeOpen]);
+
+  const currentTheme = THEMES.find((t) => t.value === theme) ?? THEMES[0];
 
   const btnStyle: React.CSSProperties = {
     padding: '8px 14px',
@@ -209,18 +234,67 @@ export function Toolbar(props: ToolbarProps) {
         <Square size={18} strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} aria-label="放大（每行更少）" />
       </div>
 
-      {/* 主题切换（靠右） */}
-      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-primary)', padding: 4, borderRadius: 8, WebkitAppRegion: 'no-drag' }}>
-        {THEMES.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => onThemeChange(t.value)}
-            style={theme === t.value ? { ...activeBtnStyle, padding: 8, justifyContent: 'center' } : iconBtnStyle}
-            title={t.label}
-          >
-            <t.Icon {...ICON} />
-          </button>
-        ))}
+      {/* 主题切换（靠右）：单按钮 + 下拉菜单 */}
+      <div ref={themeRef} style={{ position: 'relative', WebkitAppRegion: 'no-drag' }}>
+        <button
+          onClick={() => setThemeOpen((o) => !o)}
+          style={{ ...btnStyle }}
+          title="切换主题"
+        >
+          <currentTheme.Icon {...ICON} />
+          <span>{currentTheme.label}</span>
+          <ChevronDown size={14} strokeWidth={1.75} style={{
+            opacity: 0.6,
+            transition: 'transform 0.15s',
+            transform: themeOpen ? 'rotate(180deg)' : 'none',
+          }} />
+        </button>
+
+        {themeOpen && (
+          <div style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            minWidth: 160,
+            background: 'var(--bg-toolbar)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            boxShadow: 'var(--shadow)',
+            padding: 6,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            zIndex: 50,
+          }}>
+            {THEMES.map((t) => {
+              const active = theme === t.value;
+              return (
+                <button
+                  key={t.value}
+                  onClick={() => { onThemeChange(t.value); setThemeOpen(false); }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '8px 10px',
+                    fontSize: 14,
+                    textAlign: 'left',
+                    border: 'none',
+                    borderRadius: 6,
+                    background: active ? 'var(--accent)' : 'transparent',
+                    color: active ? '#fff' : 'var(--text-primary)',
+                    transition: 'background 0.12s',
+                  }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <t.Icon {...ICON} />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 导入进度条 */}

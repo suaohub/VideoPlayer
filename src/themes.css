@@ -51,6 +51,91 @@
   --focus-ring: #ff6b9d;
 }
 
+/* 海洋主题：深蓝青绿，冷静清澈 */
+[data-theme='ocean'] {
+  --bg-primary: linear-gradient(160deg, #0a1929 0%, #0d2438 55%, #0a2e3a 100%);
+  --bg-secondary: rgba(13, 34, 54, 0.72);
+  --bg-toolbar: rgba(14, 38, 58, 0.85);
+  --bg-card: rgba(18, 46, 68, 0.6);
+  --bg-hover: rgba(30, 74, 104, 0.6);
+  --text-primary: #e2f4ff;
+  --text-secondary: #8bb8cf;
+  --border: rgba(90, 160, 200, 0.22);
+  --accent: #22d3ee;
+  --accent-hover: #67e8f9;
+  --shadow: 0 8px 28px rgba(10, 60, 90, 0.45);
+  --shadow-card: 0 3px 12px rgba(10, 50, 80, 0.35);
+  --focus-ring: #22d3ee;
+}
+
+/* 森林主题：墨绿沉稳，护眼自然 */
+[data-theme='forest'] {
+  --bg-primary: linear-gradient(160deg, #0f1c12 0%, #13251a 55%, #16301f 100%);
+  --bg-secondary: rgba(19, 37, 26, 0.72);
+  --bg-toolbar: rgba(22, 42, 30, 0.85);
+  --bg-card: rgba(26, 48, 34, 0.6);
+  --bg-hover: rgba(42, 78, 54, 0.6);
+  --text-primary: #e6f4e6;
+  --text-secondary: #9cc09c;
+  --border: rgba(110, 170, 120, 0.22);
+  --accent: #4ade80;
+  --accent-hover: #86efac;
+  --shadow: 0 8px 28px rgba(10, 50, 25, 0.45);
+  --shadow-card: 0 3px 12px rgba(10, 40, 20, 0.35);
+  --focus-ring: #4ade80;
+}
+
+/* 日落主题：暖橙琥珀，温柔黄昏 */
+[data-theme='sunset'] {
+  --bg-primary: linear-gradient(150deg, #2b1810 0%, #3d2114 45%, #4a2418 100%);
+  --bg-secondary: rgba(61, 33, 20, 0.72);
+  --bg-toolbar: rgba(70, 38, 22, 0.85);
+  --bg-card: rgba(80, 44, 26, 0.55);
+  --bg-hover: rgba(120, 66, 38, 0.55);
+  --text-primary: #fff0e2;
+  --text-secondary: #d9b193;
+  --border: rgba(210, 150, 100, 0.24);
+  --accent: #fb923c;
+  --accent-hover: #fdba74;
+  --shadow: 0 8px 30px rgba(140, 70, 20, 0.35);
+  --shadow-card: 0 4px 16px rgba(140, 70, 20, 0.28);
+  --focus-ring: #fb923c;
+}
+
+/* 极简灰主题：中性石板，专注内容 */
+[data-theme='slate'] {
+  --bg-primary: #1c1c1e;
+  --bg-secondary: #242427;
+  --bg-toolbar: #2a2a2e;
+  --bg-card: #2e2e33;
+  --bg-hover: #3a3a40;
+  --text-primary: #ececec;
+  --text-secondary: #9a9aa0;
+  --border: #3c3c42;
+  --accent: #a1a1aa;
+  --accent-hover: #c4c4cc;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --focus-ring: #d4d4d8;
+}
+
+/* 赛博霓虹主题：暗底霓虹，强烈科技感 */
+[data-theme='cyberpunk'] {
+  --bg-primary: linear-gradient(155deg, #0d0221 0%, #150b2e 50%, #1a0b2e 100%);
+  --bg-secondary: rgba(21, 11, 46, 0.75);
+  --bg-toolbar: rgba(26, 13, 52, 0.88);
+  --bg-card: rgba(32, 16, 60, 0.6);
+  --bg-hover: rgba(60, 28, 100, 0.6);
+  --text-primary: #f0e6ff;
+  --text-secondary: #b088d9;
+  --border: rgba(180, 100, 255, 0.28);
+  --accent: #f000b8;
+  --accent-hover: #ff44dd;
+  --shadow: 0 8px 32px rgba(240, 0, 184, 0.28);
+  --shadow-card: 0 3px 16px rgba(120, 40, 220, 0.3);
+  --focus-ring: #00f0ff;
+}
+
 /* ============ 全局基础样式 ============ */
 
 * {

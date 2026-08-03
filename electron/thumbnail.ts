@@ -64,10 +64,8 @@ export function resolveBinary(name: 'ffmpeg' | 'ffprobe'): string {
   const fromEnv = process.env[envName];
   if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
 
-  if (process.platform === 'win32') {
-    const exe = path.join(WINDOWS_FFMPEG_DIR, `${name}.exe`);
-    if (fs.existsSync(exe)) return exe;
-  }
+  const exe = path.join(WINDOWS_FFMPEG_DIR, `${name}.exe`);
+  if (fs.existsSync(exe)) return exe;
 
   return name;
 }

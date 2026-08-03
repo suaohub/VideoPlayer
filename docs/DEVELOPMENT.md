@@ -1,6 +1,6 @@
 # VideoPlayer 开发方案与进度
 
-> 本文档面向接手开发者（尤其是从 Windows 拉取本仓库继续开发的场景）。包含技术选型、架构、当前进度、环境搭建、跨平台注意事项与待解问题。
+> 本文档面向接手开发者。项目只支持 Windows，后续开发不保留 macOS/Linux 兼容路径，避免兼容分支影响 Windows 主路径性能与复杂度。
 
 ## 一、技术选型
 
@@ -21,7 +21,7 @@
 Electron 主进程 (Node/CJS)
 ├─ 文件扫描服务 scanner.ts（递归遍历、目录树与标签入库）
 ├─ SQLite 数据层 db.ts + 查询层 queries.ts
-├─ mpv 进程管理 main.ts（spawn mpv + JSON IPC over unix socket）
+├─ mpv 进程管理 main.ts（spawn mpv + JSON IPC over Windows named pipe）
 └─ IPC 网关（ipcMain.handle）──┐
                                │ contextBridge (preload.ts)
 渲染进程 (React)               ┘
@@ -35,7 +35,7 @@ Electron 主进程 (Node/CJS)
 ### mpv 控制机制（已实现）
 
 - 主进程 `spawn` mpv 子进程，带 `--input-ipc-server=<socket>` 开启 JSON IPC
-- socket 按平台区分：Windows 用命名管道 `\\.\pipe\mpv-*`，其它平台用 `/tmp/mpv-socket-*`
+- socket 固定使用 Windows 命名管道 `\\.\pipe\mpv-*`
 - 主进程连上该 socket，发送命令（`cycle pause`、`seek`、`set_property volume/speed` 等）
 - 通过 `observe_property` 订阅 `time-pos`/`duration`/`pause`/`volume`/`speed`，转发给渲染进程更新 UI（用户用 mpv 原生键位改音量/倍速时，DOM 控制栏也会同步）
 - 通过 `keybind ENTER quit` 让 mpv 内按回车即退出；mpv 退出时主进程把 Electron 窗口拉回前台，实现「回车返回列表」
@@ -124,28 +124,27 @@ npm run build && npm start
 ```
 
 ---
-## 五、平台与环境说明（Windows 为目标平台）
+## 五、平台与环境说明（仅支持 Windows）
 
-项目在 macOS 上起步，现已在 **Windows** 上跑通。以下为当前实现状态（旧的「macOS → Windows 必改项」多数已解决）。
+项目运行、嵌入播放、打包目标均为 **Windows**。代码不保留 macOS/Linux fallback。
 
 ### 1. mpv 二进制路径
 
-已由 `main.ts` 的 `resolveMpvBin()` 处理：优先 `MPV_BIN` 环境变量 → Windows 默认 `C:\Program Files\MPV Player\mpv.exe` → PATH 里的 `mpv`。无需改代码，装在别处设环境变量即可。
+已由 `main.ts` 的 `resolveMpvBin()` 处理：优先 `MPV_BIN` 环境变量 → 默认 `C:\Program Files\MPV Player\mpv.exe` → PATH 里的 `mpv`。无需改代码，装在别处设环境变量即可。
 
 ### 2. mpv 窗口嵌入
 
 Windows 上已实现嵌入：用 `SetParent` + `SetWindowPos`（PowerShell 调 Win32）把 mpv 窗口塞进主窗口内容区，随窗口变化同步几何。
 - **airspace**：原生子窗口永远盖在 Chromium 内容之上，所以控制栏放在 mpv 视频区**外**（底部独立一栏），用 React/CSS 自绘。
 - 后续可选：改用 mpv 原生 `--wid=<HWND>` 省掉 PowerShell 开销。
-- macOS：NSView 跨进程无效，无法嵌入，只能独立窗口（原理限制，非 bug）。
 
 ### 3. socket 路径
 
-已按平台处理：Windows 用命名管道 `\\.\pipe\mpv-*`，其它平台用 `/tmp/mpv-socket-*`。
+固定使用 Windows 命名管道 `\\.\pipe\mpv-*`。
 
 ### 4. native 模块
 
-`better-sqlite3` 需针对 Electron ABI 编译（见第四节）。Windows 需要 Visual Studio Build Tools 提供 MSVC 与 `node-gyp` 依赖。**Windows 上已跑通**（早期 macOS 的 SIGSEGV 问题在 Windows 目标平台上不复现）。
+`better-sqlite3` 需针对 Electron ABI 编译（见第四节）。Windows 需要 Visual Studio Build Tools 提供 MSVC 与 `node-gyp` 依赖。
 
 ---
 
@@ -155,7 +154,6 @@ Windows 上已实现嵌入：用 `SetParent` + `SetWindowPos`（PowerShell 调 W
 - **三种全屏模式**：目前是「嵌入应用内容区」一种，App 内全屏 / 窗口全屏 / 独立桌面全屏尚未实现。
 - **控制栏焦点**：mpv 获焦时 DOM 控制栏鼠标点击的可靠性需实测（详见 M3）。
 - **增量导入**：`scanner.ts` 按 path `INSERT OR IGNORE` 去重，能识别新增；文件被修改（mtime 变化）暂不更新。
-- **macOS better-sqlite3 SIGSEGV**（历史记录，非当前阻塞）：如需回到 macOS 开发，可评估切 `node:sqlite`（Node 22+ 内置）或 `sql.js`（纯 wasm）规避原生编译。
 
 ---
 
@@ -166,4 +164,3 @@ Windows 上已实现嵌入：用 `SetParent` + `SetWindowPos`（PowerShell 调 W
 3. 瀑布流虚拟滚动
 4. 播放进度记忆、随机连播
 5. M5 打磨与打包（electron-builder，已在 devDependencies）
-
