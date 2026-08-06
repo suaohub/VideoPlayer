@@ -1,46 +1,52 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Folder } from '../types';
 
 interface FolderTreeProps {
   folders: Folder[];
-  selectedFolderId: number | null;
-  onSelectFolder: (id: number | null) => void;
+  selectedFolderIds: number[];
+  onSelectionChange: (ids: number[]) => void;
   onDeleteFolder: (folder: Folder) => void;
 }
 
-interface TreeNode extends Folder {
-  children: TreeNode[];
-}
+interface TreeNode extends Folder { children: TreeNode[]; }
 
 // 把扁平列表组装成树
 function buildTree(folders: Folder[]): TreeNode[] {
   const map = new Map<number, TreeNode>();
   const roots: TreeNode[] = [];
-
   folders.forEach((f) => map.set(f.id, { ...f, children: [] }));
   folders.forEach((f) => {
     const node = map.get(f.id)!;
-    if (f.parent_id != null && map.has(f.parent_id)) {
-      map.get(f.parent_id)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
+    if (f.parent_id != null && map.has(f.parent_id)) map.get(f.parent_id)!.children.push(node);
+    else roots.push(node);
   });
-
   return roots;
 }
 
-function TreeItem({ node, depth, selectedFolderId, onSelectFolder, onDeleteFolder }: {
+// 按当前展开状态，深度优先展平成可见节点的 id 顺序（用于 Shift 连选）
+function flattenVisible(nodes: TreeNode[], expanded: Set<number>, out: number[] = []): number[] {
+  for (const n of nodes) {
+    out.push(n.id);
+    if (n.children.length > 0 && expanded.has(n.id)) flattenVisible(n.children, expanded, out);
+  }
+  return out;
+}
+
+interface MenuState { x: number; y: number; node: TreeNode; selected: boolean; }
+
+function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, onRowClick, onOpenMenu }: {
   node: TreeNode;
   depth: number;
-  selectedFolderId: number | null;
-  onSelectFolder: (id: number | null) => void;
-  onDeleteFolder: (folder: Folder) => void;
+  selectedFolderIds: number[];
+  expanded: Set<number>;
+  onToggleExpand: (id: number) => void;
+  onRowClick: (id: number, e: React.MouseEvent) => void;
+  onOpenMenu: (m: MenuState) => void;
 }) {
-  const [expanded, setExpanded] = useState(depth < 1); // 默认展开第一层
   const [hover, setHover] = useState(false);
   const hasChildren = node.children.length > 0;
-  const selected = selectedFolderId === node.id;
+  const isExpanded = expanded.has(node.id);
+  const selected = selectedFolderIds.includes(node.id);
 
   return (
     <div>
@@ -48,25 +54,23 @@ function TreeItem({ node, depth, selectedFolderId, onSelectFolder, onDeleteFolde
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '5px 8px',
-          paddingLeft: 8 + depth * 14,
-          borderRadius: 6,
-          background: selected ? 'var(--accent)' : 'transparent',
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '5px 8px', paddingLeft: 8 + depth * 14, borderRadius: 6,
+          background: selected ? 'var(--accent)' : (hover ? 'var(--bg-hover)' : 'transparent'),
           color: selected ? '#fff' : 'var(--text-primary)',
-          cursor: 'pointer',
-          fontSize: 13,
+          cursor: 'pointer', fontSize: 13,
+          userSelect: 'none',
         }}
-        onClick={() => onSelectFolder(selected ? null : node.id)}
+        onClick={(e) => onRowClick(node.id, e)}
+        onContextMenu={(e) => { e.preventDefault(); onOpenMenu({ x: e.clientX, y: e.clientY, node, selected }); }}
+        title="左键单选 · Ctrl+左键 多选 · Shift+左键 连选 · 右键菜单"
       >
         {hasChildren ? (
           <span
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            onClick={(e) => { e.stopPropagation(); onToggleExpand(node.id); }}
             style={{ width: 14, display: 'inline-block', textAlign: 'center', opacity: 0.7 }}
           >
-            {expanded ? '▾' : '▸'}
+            {isExpanded ? '▾' : '▸'}
           </span>
         ) : (
           <span style={{ width: 14, display: 'inline-block' }} />
@@ -75,42 +79,108 @@ function TreeItem({ node, depth, selectedFolderId, onSelectFolder, onDeleteFolde
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </span>
-        {hover && (
-          <span
-            onClick={(e) => { e.stopPropagation(); onDeleteFolder(node); }}
-            title="删除该目录及其子目录（视频文件保留，仅删除记录、缩略图、标签关联）"
-            style={{
-              fontSize: 12,
-              opacity: 0.6,
-              padding: '0 4px',
-              borderRadius: 6,
-              flexShrink: 0,
-            }}
-          >
-            ✕
-          </span>
-        )}
       </div>
-      {expanded && node.children.map((child) => (
+      {isExpanded && node.children.map((child) => (
         <TreeItem
           key={child.id}
           node={child}
           depth={depth + 1}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={onSelectFolder}
-          onDeleteFolder={onDeleteFolder}
+          selectedFolderIds={selectedFolderIds}
+          expanded={expanded}
+          onToggleExpand={onToggleExpand}
+          onRowClick={onRowClick}
+          onOpenMenu={onOpenMenu}
         />
       ))}
     </div>
   );
 }
 
-export function FolderTree({ folders, selectedFolderId, onSelectFolder, onDeleteFolder }: FolderTreeProps) {
-  const tree = buildTree(folders);
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder }: FolderTreeProps) {
+  const tree = useMemo(() => buildTree(folders), [folders]);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  // 已初始化过的根 id，避免刷新时重置用户手动折叠
+  const seededRef = useRef(false);
+  // 连选锚点
+  const anchorRef = useRef<number | null>(null);
+
+  // 首次拿到目录时默认展开第一层（根）
+  useEffect(() => {
+    if (seededRef.current || folders.length === 0) return;
+    seededRef.current = true;
+    setExpanded(new Set(folders.filter((f) => f.parent_id == null).map((f) => f.id)));
+  }, [folders]);
+
+  const toggleExpand = (id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const visibleOrder = useMemo(() => flattenVisible(tree, expanded), [tree, expanded]);
+
+  const handleRowClick = (id: number, e: React.MouseEvent) => {
+    if (e.shiftKey && anchorRef.current != null) {
+      // 连选：锚点到当前项之间（按可见顺序）
+      const a = visibleOrder.indexOf(anchorRef.current);
+      const b = visibleOrder.indexOf(id);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a <= b ? [a, b] : [b, a];
+        onSelectionChange(visibleOrder.slice(lo, hi + 1));
+        return;
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      // 切换单项，更新锚点
+      const has = selectedFolderIds.includes(id);
+      onSelectionChange(has ? selectedFolderIds.filter((x) => x !== id) : [...selectedFolderIds, id]);
+      anchorRef.current = id;
+      return;
+    }
+    // 普通单击：单选（点已单选的唯一项则取消）
+    anchorRef.current = id;
+    onSelectionChange(selectedFolderIds.length === 1 && selectedFolderIds[0] === id ? [] : [id]);
+  };
+
+  // 打开菜单后：点击别处 / 滚动 / 缩放窗口 / Esc 关闭
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
+  const MENU_W = 160, MENU_H = 92;
+  const mx = menu ? Math.min(menu.x, window.innerWidth - MENU_W - 8) : 0;
+  const my = menu ? Math.min(menu.y, window.innerHeight - MENU_H - 8) : 0;
+
+  const itemStyle: React.CSSProperties = {
+    display: 'block', width: '100%', textAlign: 'left', border: 'none',
+    background: 'transparent', color: 'var(--text-primary)',
+    padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderRadius: 6,
+  };
 
   return (
     <div style={{ padding: 12 }}>
-      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>目录结构</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>目录结构</span>
+        {selectedFolderIds.length > 1 && (
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>已选 {selectedFolderIds.length} 项</span>
+        )}
+      </div>
       {tree.length === 0 && (
         <div style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', marginTop: 20 }}>
           还没有导入目录
@@ -121,11 +191,49 @@ export function FolderTree({ folders, selectedFolderId, onSelectFolder, onDelete
           key={node.id}
           node={node}
           depth={0}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={onSelectFolder}
-          onDeleteFolder={onDeleteFolder}
+          selectedFolderIds={selectedFolderIds}
+          expanded={expanded}
+          onToggleExpand={toggleExpand}
+          onRowClick={handleRowClick}
+          onOpenMenu={setMenu}
         />
       ))}
+
+      {menu && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed', left: mx, top: my, minWidth: MENU_W,
+            background: 'var(--bg-toolbar)', border: '1px solid var(--border)',
+            borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, zIndex: 3000,
+            display: 'flex', flexDirection: 'column', gap: 2,
+          }}
+        >
+          <button
+            style={itemStyle}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => {
+              const id = menu.node.id;
+              const has = selectedFolderIds.includes(id);
+              onSelectionChange(has ? selectedFolderIds.filter((x) => x !== id) : [...selectedFolderIds, id]);
+              anchorRef.current = id;
+              setMenu(null);
+            }}
+          >
+            {menu.selected ? '从多选中移除' : '加入多选'}
+          </button>
+          <div style={{ height: 1, background: 'var(--border)', margin: '2px 4px' }} />
+          <button
+            style={{ ...itemStyle, color: '#e5735f' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => { onDeleteFolder(menu.node); setMenu(null); }}
+          >
+            删除目录
+          </button>
+        </div>
+      )}
     </div>
   );
 }

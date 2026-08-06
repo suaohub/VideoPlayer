@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setVolume: (volume: number) => ipcRenderer.invoke('set-volume', volume),
   setSpeed: (speed: number) => ipcRenderer.invoke('set-speed', speed),
   getMediaUrl: (videoPath: string) => ipcRenderer.invoke('get-media-url', videoPath),
+  saveWallpaperFrame: (dataUrl: string) => ipcRenderer.invoke('save-wallpaper-frame', dataUrl),
+  onWallpaperCaptured: (callback: (payload: { path: string; dataUrl: string }) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, payload: { path: string; dataUrl: string }) => callback(payload);
+    ipcRenderer.on('wallpaper-captured', listener);
+    return () => ipcRenderer.removeListener('wallpaper-captured', listener);
+  },
+  readTextFile: (filePath: string) => ipcRenderer.invoke('read-text-file', filePath),
+  listComicPages: (comicDir: string) => ipcRenderer.invoke('list-comic-pages', comicDir),
 
   onTimePosition: (callback: (position: number) => void) => {
     const listener = (_: Electron.IpcRendererEvent, position: number) => callback(position);
@@ -49,10 +57,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectVideoFiles: () => ipcRenderer.invoke('select-video-files'),
   importFolders: (paths: string[]) => ipcRenderer.invoke('import-folders', paths),
   importVideoFiles: (paths: string[]) => ipcRenderer.invoke('import-video-files', paths),
-  getTags: () => ipcRenderer.invoke('get-tags'),
-  getFolderTree: () => ipcRenderer.invoke('get-folder-tree'),
+  getTags: (mediaType?: string) => ipcRenderer.invoke('get-tags', mediaType),
+  getFolderTree: (mediaType?: string) => ipcRenderer.invoke('get-folder-tree', mediaType),
   getVideos: (filter: any) => ipcRenderer.invoke('get-videos', filter),
-  getVideoCount: () => ipcRenderer.invoke('get-video-count'),
+  getVideoCount: (mediaType?: string) => ipcRenderer.invoke('get-video-count', mediaType),
   generateThumbnails: () => ipcRenderer.invoke('generate-thumbnails'),
   regenerateThumbnail: (videoId: number) => ipcRenderer.invoke('regenerate-thumbnail', videoId),
   getSetting: (key: string) => ipcRenderer.invoke('get-setting', key),
@@ -78,6 +86,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = () => callback();
     ipcRenderer.on('window-unmaximized', listener);
     return () => ipcRenderer.removeListener('window-unmaximized', listener);
+  },
+  setFullscreen: (on: boolean) => ipcRenderer.invoke('set-fullscreen', on),
+  toggleFullscreen: () => ipcRenderer.invoke('toggle-fullscreen'),
+  getFullscreen: () => ipcRenderer.invoke('get-fullscreen'),
+  onFullscreenChanged: (callback: (on: boolean) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, on: boolean) => callback(on);
+    ipcRenderer.on('fullscreen-changed', listener);
+    return () => ipcRenderer.removeListener('fullscreen-changed', listener);
   },
 
   onImportProgress: (callback: (data: { current: number; total: number; file: string; folderPath: string }) => void) => {

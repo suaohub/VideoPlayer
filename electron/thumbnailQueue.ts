@@ -1,6 +1,7 @@
 import { getDb } from './db';
 import { buildThumbnailAsync, thumbnailFilePathFromUrl } from './thumbnail';
 import * as fs from 'fs';
+import { isAudioFile, isTextFile, isComicExt } from './media';
 
 // 缩略图后台生成队列：限并发、非阻塞，逐个生成后更新 DB 并通过事件通知渲染进程。
 
@@ -92,9 +93,12 @@ function pump() {
 async function processOne(id: number) {
   const db = getDb();
   const row = db
-    .prepare('SELECT path, thumbnail_path FROM videos WHERE id = ?')
-    .get(id) as { path: string; thumbnail_path: string | null } | undefined;
+    .prepare('SELECT path, ext, thumbnail_path FROM videos WHERE id = ?')
+    .get(id) as { path: string; ext: string | null; thumbnail_path: string | null } | undefined;
   if (!row) return;
+
+  // 音频/文本没有视频画面，漫画缩略图直接指向首图，都不启动 ffmpeg 生成缩略图。
+  if (isAudioFile(row.path) || isTextFile(row.path) || isComicExt(row.ext)) return;
 
   // 已有缩略图且文件仍在磁盘上：跳过（不重跑 ffprobe/ffmpeg，也不重复发事件）。
   // 覆盖重开补图 + 重新导入已导入文件夹两种场景。
@@ -139,8 +143,11 @@ async function processOne(id: number) {
 export function enqueueMissingThumbnails(priorityIds: number[] = []) {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT id FROM videos
+    SELECT id, path, ext FROM videos
     WHERE thumbnail_path IS NULL
-  `).all() as { id: number }[];
-  enqueueThumbnails(rows.map((r) => r.id), priorityIds);
+  `).all() as { id: number; path: string; ext: string | null }[];
+  enqueueThumbnails(
+    rows.filter((row) => !isAudioFile(row.path) && !isTextFile(row.path) && !isComicExt(row.ext)).map((r) => r.id),
+    priorityIds,
+  );
 }

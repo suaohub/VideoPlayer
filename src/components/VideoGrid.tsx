@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Music2, BookOpen, RefreshCw } from 'lucide-react';
 import { Video } from '../types';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
+import { isAudioFile, isTextFile, isComicExt } from '../media';
 
 interface VideoGridProps {
   videos: Video[];
@@ -42,10 +43,64 @@ function formatDuration(sec: number | null): string {
 
 function Thumb({ video, height }: { video: Video; height: number }) {
   const tp = video.thumbnail_path;
+  const audioOnly = isAudioFile(video.path);
+  const textOnly = isTextFile(video.path);
+  const comicItem = isComicExt(video.ext);
   const base: React.CSSProperties = {
     width: '100%', height, flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   };
+
+  if (comicItem) {
+    // 漫画封面 = 首页图（comic:// URL）；无封面时退化为占位块。角标标注"漫画"
+    return (
+      <div style={{ ...base, background: '#000', position: 'relative' }}>
+        {tp
+          ? <img src={tp} alt={video.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <BookOpen size={50} strokeWidth={1.35} color="#fff" />}
+        <span style={{
+          position: 'absolute', left: 8, top: 8,
+          padding: '2px 8px', borderRadius: 6,
+          background: 'rgba(0,0,0,0.6)', color: '#fff',
+          fontSize: 11, letterSpacing: 0.4, backdropFilter: 'blur(2px)',
+        }}>漫画</span>
+      </div>
+    );
+  }
+
+  if (textOnly) {
+    return (
+      <div
+        style={{
+          ...base,
+          background: 'linear-gradient(135deg, #6b5b3e, color-mix(in srgb, #6b5b3e 45%, #111))',
+          color: '#fff',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <BookOpen size={50} strokeWidth={1.35} />
+        <span style={{ fontSize: 12, opacity: 0.86, letterSpacing: 0.4 }}>小说</span>
+      </div>
+    );
+  }
+
+  if (audioOnly) {
+    return (
+      <div
+        style={{
+          ...base,
+          background: 'linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 42%, #111))',
+          color: '#fff',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <Music2 size={52} strokeWidth={1.35} />
+        <span style={{ fontSize: 12, opacity: 0.86, letterSpacing: 0.4 }}>音频</span>
+      </div>
+    );
+  }
 
   if (tp && tp.startsWith('gradient:')) {
     const [c1, c2] = tp.replace('gradient:', '').split(',');
@@ -91,6 +146,7 @@ interface VideoCardProps {
 function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect }: VideoCardProps) {
   const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
+  const comicItem = isComicExt(video.ext);
   const thumbHeight = height - 46;
 
   const handleClick = () => {
@@ -168,26 +224,28 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         {/* 收藏按钮：悬停时显示在右上角（非选择模式） */}
         {!selectionMode && hover && (
           <>
-          <button
-            onClick={(e) => { e.stopPropagation(); onRegenerateThumbnail(video.id); }}
-            disabled={regenerating}
-            style={{
-              position: 'absolute', top: 6, right: 44,
-              width: 32, height: 32,
-              background: 'rgba(0,0,0,0.6)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: regenerating ? 'wait' : 'pointer',
-              transition: 'all 0.2s ease',
-              color: '#fff',
-              opacity: regenerating ? 0.7 : 1,
-            }}
-            title="重新生成缩略图"
-          >
-            <RefreshCw size={15} strokeWidth={1.9} className={regenerating ? 'spin' : undefined} />
-          </button>
+          {!isAudioFile(video.path) && !isTextFile(video.path) && !isComicExt(video.ext) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRegenerateThumbnail(video.id); }}
+              disabled={regenerating}
+              style={{
+                position: 'absolute', top: 6, right: 44,
+                width: 32, height: 32,
+                background: 'rgba(0,0,0,0.6)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: regenerating ? 'wait' : 'pointer',
+                transition: 'all 0.2s ease',
+                color: '#fff',
+                opacity: regenerating ? 0.7 : 1,
+              }}
+              title="重新生成缩略图"
+            >
+              <RefreshCw size={15} strokeWidth={1.9} className={regenerating ? 'spin' : undefined} />
+            </button>
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); onToggleFavorite(video.id); }}
             style={{
@@ -220,8 +278,17 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
           {video.name}
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 8 }}>
-          <span>{video.ext.replace('.', '').toUpperCase()}</span>
-          <span>{formatSize(video.size)}</span>
+          {comicItem ? (
+            <>
+              <span>漫画</span>
+              <span>{video.size} 页</span>
+            </>
+          ) : (
+            <>
+              <span>{video.ext.replace('.', '').toUpperCase()}</span>
+              <span>{formatSize(video.size)}</span>
+            </>
+          )}
         </div>
       </div>
     </div>

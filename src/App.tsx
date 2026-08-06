@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import './themes.css';
-import { Video, Tag, Folder, Theme, ImportProgress, VideoFilter } from './types';
+import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
-import { TagBar } from './components/TagBar';
 import { FolderTree } from './components/FolderTree';
+import { SettingsModal } from './components/SettingsModal';
 import { VideoGrid } from './components/VideoGrid';
+import { MusicPlayer } from './components/MusicPlayer';
+import { TextReader } from './components/TextReader';
+import { ComicReader } from './components/ComicReader';
+import { ShortsFeed } from './components/ShortsFeed';
+import { isAudioFile, isTextFile, isComicExt, isPlayableInBrowser } from './media';
 
 // 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
 export const CARD_MIN = 120;
@@ -15,21 +20,24 @@ function App() {
   // 数据
   const [videos, setVideos] = useState<Video[]>([]);
   const [regeneratingThumbnailId, setRegeneratingThumbnailId] = useState<number | null>(null);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [videoCount, setVideoCount] = useState(0);
 
   // 过滤状态
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
-  const [tagMode, setTagMode] = useState<'or' | 'and'>('or');
-  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<number[]>([]);
+  // 媒体类型分类（顶部切换：全部/视频/音频/小说）
+  const [mediaType, setMediaType] = useState<MediaType>('all');
   const [search, setSearch] = useState('');
   const [showFavorited, setShowFavorited] = useState(false);
   const [favoritedCount, setFavoritedCount] = useState(0);
+  // 排序
+  const [sortBy, setSortBy] = useState<SortBy>('added');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   // UI 状态
   const [theme, setTheme] = useState<Theme>('night');
-  const [sidebarMode, setSidebarMode] = useState<'tags' | 'tree' | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [thumbProgress, setThumbProgress] = useState<{ done: number; total: number } | null>(null);
@@ -46,6 +54,14 @@ function App() {
   // 可移动磁盘检测
   const [unmountedDrives, setUnmountedDrives] = useState<string[]>([]);
   const [mountedDrives, setMountedDrives] = useState<string[]>([]);
+  // 正在播放的音频（非空时渲染音乐播放页）
+  const [playingAudio, setPlayingAudio] = useState<Video | null>(null);
+  // 正在阅读的小说（非空时渲染阅读器）
+  const [readingText, setReadingText] = useState<Video | null>(null);
+  // 正在阅读的漫画（非空时渲染漫画阅读器）
+  const [readingComic, setReadingComic] = useState<Video | null>(null);
+  // 刷视频模式：非空数组时渲染 ShortsFeed
+  const [feedVideos, setFeedVideos] = useState<Video[] | null>(null);
 
   // 定期检测磁盘挂载状态（启动时 + 每30秒一次）
   const checkDrives = useCallback(async () => {
@@ -71,43 +87,63 @@ function App() {
     };
   }, []);
 
-  // 刷新标签、目录、视频总数
+  // 刷新标签、目录、视频总数（跟随当前媒体类型分类）
   const refreshAll = useCallback(async () => {
-    const [t, f, count, favCount] = await Promise.all([
-      api.getTags(),
-      api.getFolderTree(),
-      api.getVideoCount(),
+    const [f, count, favCount] = await Promise.all([
+      api.getFolderTree(mediaType),
+      api.getVideoCount(mediaType),
       api.getFavoritedCount(),
     ]);
-    setTags(t);
     setFolders(f);
     setVideoCount(count);
     setFavoritedCount(favCount);
-  }, []);
+  }, [mediaType]);
 
   // 根据过滤条件加载视频列表
   const loadVideos = useCallback(async () => {
     const filter: VideoFilter = {
-      tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
-      tagMode,
-      folderId: selectedFolderId,
+      folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
       search: search || undefined,
       favorited: showFavorited || undefined,
+      mediaType,
+      sortBy,
+      sortDir,
     };
     const list = await api.getVideos(filter);
     setVideos(list);
-  }, [selectedTagIds, tagMode, selectedFolderId, search, showFavorited]);
+  }, [selectedFolderIds, search, showFavorited, mediaType, sortBy, sortDir]);
 
   const refreshVisibleData = useCallback(async () => {
     await refreshAll();
     await loadVideos();
   }, [refreshAll, loadVideos]);
 
+  // 打开刷视频模式：按当前过滤取视频，再筛出浏览器可解码的格式
+  const handleOpenFeed = useCallback(async () => {
+    const filter: VideoFilter = {
+      folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
+      search: search || undefined,
+      favorited: showFavorited || undefined,
+      mediaType: 'video',
+      sortBy,
+      sortDir,
+    };
+    const list = await api.getVideos(filter);
+    const playable = list.filter((v) => isPlayableInBrowser(v.path));
+    setFeedVideos(playable);
+  }, [selectedFolderIds, search, showFavorited, sortBy, sortDir]);
+
   const loadAllVideos = useCallback(async () => {
     await refreshAll();
-    const list = await api.getVideos({});
+    const list = await api.getVideos({ mediaType });
     setVideos(list);
-  }, [refreshAll]);
+  }, [refreshAll, mediaType]);
+
+  // 切换媒体分类：清空可能失效的标签/目录选择，然后重新加载
+  const changeMediaType = useCallback((type: MediaType) => {
+    setMediaType(type);
+    setSelectedFolderIds([]);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -118,6 +154,15 @@ function App() {
   useEffect(() => {
     api.setSetting('cardSize', String(cardSize));
   }, [cardSize]);
+
+  // 持久化排序
+  useEffect(() => {
+    if (preferencesLoaded) api.setSetting('sortBy', sortBy);
+  }, [sortBy, preferencesLoaded]);
+
+  useEffect(() => {
+    if (preferencesLoaded) api.setSetting('sortDir', sortDir);
+  }, [sortDir, preferencesLoaded]);
 
   useEffect(() => {
     if (preferencesLoaded) {
@@ -144,6 +189,10 @@ function App() {
       if (savedTheme) setTheme(savedTheme as Theme);
       const savedSize = await api.getSetting('cardSize');
       if (savedSize) setCardSize(Number(savedSize));
+      const savedSortBy = await api.getSetting('sortBy');
+      if (savedSortBy) setSortBy(savedSortBy as SortBy);
+      const savedSortDir = await api.getSetting('sortDir');
+      if (savedSortDir === 'asc' || savedSortDir === 'desc') setSortDir(savedSortDir);
       const savedOpacity = await api.getSetting('wallpaperOpacity');
       if (savedOpacity) {
         const parsedOpacity = Number(savedOpacity);
@@ -242,8 +291,7 @@ function App() {
       } else if (kind === 'folders') {
         await api.importFolders(paths);
       }
-      setSelectedTagIds([]);
-      setSelectedFolderId(null);
+      setSelectedFolderIds([]);
       setSearch('');
       await loadAllVideos();
     } catch (error) {
@@ -267,6 +315,29 @@ function App() {
     setWallpaperUrl(imageUrl);
     await api.setSetting('wallpaperPath', result.path);
   };
+
+  // 把一帧截图（path + 立即可显示的 dataURL）设为背景并持久化
+  const applyWallpaper = useCallback(async (path: string, dataUrl: string) => {
+    setWallpaperPath(path);
+    setWallpaperUrl(dataUrl);
+    await api.setSetting('wallpaperPath', path);
+  }, []);
+
+  // ShortsFeed 传来 dataURL 截帧 → 保存为文件并设为背景
+  const handleCaptureWallpaper = useCallback(async (dataUrl: string) => {
+    const result = await api.saveWallpaperFrame(dataUrl);
+    if (result.success && result.path) {
+      await applyWallpaper(result.path, dataUrl);
+    }
+  }, [applyWallpaper]);
+
+  // mpv 全屏时按全局快捷键 B 截帧 → 主进程推送已存好的 path + dataURL
+  useEffect(() => {
+    const off = api.onWallpaperCaptured(({ path, dataUrl }) => {
+      void applyWallpaper(path, dataUrl);
+    });
+    return () => { off?.(); };
+  }, [applyWallpaper]);
 
   const handleClearBackground = async () => {
     setWallpaperPath(null);
@@ -304,23 +375,9 @@ function App() {
     api.closeWindow();
   };
 
-  const toggleTag = (tagId: number) => {
-    setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
-    );
-    setSelectedFolderId(null); // 标签和目录过滤互斥（简化）
-  };
-
-  // 选择目录
-  const selectFolder = (folderId: number | null) => {
-    setSelectedFolderId(folderId);
-    setSelectedTagIds([]);
-  };
-
   // 清空过滤
   const clearFilter = () => {
-    setSelectedTagIds([]);
-    setSelectedFolderId(null);
+    setSelectedFolderIds([]);
     setSearch('');
     setShowFavorited(false);
   };
@@ -337,8 +394,21 @@ function App() {
     });
   };
 
-  // 全屏播放：直接启动 mpv，不渲染内嵌播放器界面
+  // 播放：文本走阅读器，音频走音乐播放页，视频走全屏 mpv
   const handlePlay = async (video: Video) => {
+    if (isComicExt(video.ext)) {
+      setReadingComic(video);
+      return;
+    }
+    if (isTextFile(video.path)) {
+      setReadingText(video);
+      return;
+    }
+    if (isAudioFile(video.path)) {
+      // 音乐播放页由 MusicPlayer 组件负责启动 mpv 与控制
+      setPlayingAudio(video);
+      return;
+    }
     const result = await api.playVideo(video.path, { alertOnError: true });
     if (!result.success && result.error) {
       alert(`播放失败：${result.error}`);
@@ -353,11 +423,10 @@ function App() {
       // 清空界面状态
       setVideos([]);
       setFolders([]);
-      setTags([]);
       setVideoCount(0);
-      setSelectedTagIds([]);
-      setSelectedFolderId(null);
+      setSelectedFolderIds([]);
       setSearch('');
+      setSettingsOpen(false);
       alert('已清除所有数据，重新导入视频即可恢复。');
     } else {
       alert(`清除失败：${result.error}`);
@@ -376,24 +445,9 @@ function App() {
     )) return;
     const result = await api.deleteFolder(folder.id);
     if (result.success) {
-      if (selectedFolderId === folder.id) setSelectedFolderId(null);
+      setSelectedFolderIds((prev) => prev.filter((id) => id !== folder.id));
       await refreshVisibleData();
       alert(`已删除目录「${folder.name}」：清理了 ${result.videoCount ?? 0} 条视频记录、${result.thumbCount ?? 0} 张缩略图。`);
-    } else {
-      alert(`删除失败：${result.error}`);
-    }
-  };
-
-  // 删除单个标签：仅移除标签及其关联，保留视频与缩略图
-  const handleDeleteTag = async (tag: Tag) => {
-    if (!confirm(
-      `删除分类标签「${tag.name}」？\n\n` +
-      `仅移除该标签及其与视频的关联，视频记录、缩略图、目录都会保留。`
-    )) return;
-    const result = await api.deleteTag(tag.id);
-    if (result.success) {
-      setSelectedTagIds((prev) => prev.filter((id) => id !== tag.id));
-      await refreshVisibleData();
     } else {
       alert(`删除失败：${result.error}`);
     }
@@ -466,12 +520,18 @@ function App() {
       <Toolbar
         theme={theme}
         onThemeChange={setTheme}
-        onImport={handleImport}
         onShuffle={shuffleVideos}
         onClearFilter={clearFilter}
-        onClearCache={handleClearCache}
-        sidebarMode={sidebarMode}
-        onSidebarModeChange={setSidebarMode}
+        onOpenSettings={() => setSettingsOpen(true)}
+        sidebarOpen={sidebarOpen}
+        onSidebarOpenChange={setSidebarOpen}
+        mediaType={mediaType}
+        onMediaTypeChange={changeMediaType}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        sortDir={sortDir}
+        onSortDirChange={setSortDir}
+        onOpenFeed={handleOpenFeed}
         search={search}
         onSearchChange={setSearch}
         videoCount={videoCount}
@@ -485,15 +545,8 @@ function App() {
         showFavorited={showFavorited}
         onShowFavoritedChange={setShowFavorited}
         favoritedCount={favoritedCount}
-        backgroundImagePath={wallpaperPath}
-        backgroundOpacity={wallpaperOpacity}
-        onSelectBackground={handleSelectBackground}
-        onClearBackground={handleClearBackground}
-        onBackgroundOpacityChange={setWallpaperOpacity}
         toolbarOpacity={toolbarOpacity}
-        onToolbarOpacityChange={setToolbarOpacity}
         toolbarBlur={toolbarBlur}
-        onToolbarBlurChange={setToolbarBlur}
         isMaximized={isMaximized}
         onMinimize={handleMinimize}
         onToggleMaximize={handleToggleMaximize}
@@ -501,8 +554,8 @@ function App() {
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* 左侧：标签栏 或 目录树（折叠时不渲染） */}
-        {sidebarMode && (
+        {/* 左侧：目录树（折叠时不渲染） */}
+        {sidebarOpen && (
           <aside style={{
             width: 260,
             borderRight: '1px solid var(--border)',
@@ -511,23 +564,12 @@ function App() {
             overflowY: 'auto',
             flexShrink: 0,
           }}>
-            {sidebarMode === 'tags' ? (
-              <TagBar
-                tags={tags}
-                selectedTagIds={selectedTagIds}
-                tagMode={tagMode}
-                onToggleTag={toggleTag}
-                onTagModeChange={setTagMode}
-                onDeleteTag={handleDeleteTag}
-              />
-            ) : (
-              <FolderTree
-                folders={visibleFolders}
-                selectedFolderId={selectedFolderId}
-                onSelectFolder={selectFolder}
-                onDeleteFolder={handleDeleteFolder}
-              />
-            )}
+            <FolderTree
+              folders={visibleFolders}
+              selectedFolderIds={selectedFolderIds}
+              onSelectionChange={setSelectedFolderIds}
+              onDeleteFolder={handleDeleteFolder}
+            />
           </aside>
         )}
 
@@ -548,6 +590,54 @@ function App() {
         </main>
       </div>
       </div>
+
+      {playingAudio && (
+        <MusicPlayer
+          video={playingAudio}
+          onClose={() => setPlayingAudio(null)}
+        />
+      )}
+
+      {readingText && (
+        <TextReader
+          video={readingText}
+          onClose={() => setReadingText(null)}
+        />
+      )}
+
+      {readingComic && (
+        <ComicReader
+          video={readingComic}
+          onClose={() => setReadingComic(null)}
+        />
+      )}
+
+      {feedVideos && (
+        <ShortsFeed
+          videos={feedVideos}
+          onClose={() => setFeedVideos(null)}
+          onCaptureWallpaper={handleCaptureWallpaper}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          onImport={handleImport}
+          importing={importing}
+          importProgress={importProgress}
+          onClearCache={handleClearCache}
+          backgroundImagePath={wallpaperPath}
+          backgroundOpacity={wallpaperOpacity}
+          onSelectBackground={handleSelectBackground}
+          onClearBackground={handleClearBackground}
+          onBackgroundOpacityChange={setWallpaperOpacity}
+          toolbarOpacity={toolbarOpacity}
+          onToolbarOpacityChange={setToolbarOpacity}
+          toolbarBlur={toolbarBlur}
+          onToolbarBlurChange={setToolbarBlur}
+        />
+      )}
     </div>
   );
 }

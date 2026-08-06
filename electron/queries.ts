@@ -1,45 +1,118 @@
 import { getDb } from './db';
 import * as path from 'path';
 import { normalizeThumbnailUrl } from './thumbnail';
+import { extsForType, MediaType } from './media';
 
-// 获取所有标签（含每个标签的视频数量）
-export function getAllTags() {
-  const db = getDb();
-  return db.prepare(`
-    SELECT t.id, t.name, COUNT(vt.video_id) as count
-    FROM tags t
-    LEFT JOIN video_tags vt ON t.id = vt.tag_id
-    GROUP BY t.id
-    ORDER BY count DESC, t.name ASC
-  `).all();
+// 构造 ext 过滤子句（返回 { clause, params }，'all' 时 clause 为空串）
+function extClause(type: MediaType | undefined, col = 'v.ext'): { clause: string; params: string[] } {
+  const exts = extsForType(type ?? 'all');
+  if (exts.length === 0) return { clause: '', params: [] };
+  return {
+    clause: `${col} IN (${exts.map(() => '?').join(',')})`,
+    params: exts,
+  };
 }
 
-// 获取目录树（所有文件夹，前端自行组装成树）
-export function getFolderTree() {
+// 获取所有标签（含每个标签的视频数量）。可按媒体类型过滤：只统计/返回含该类型文件的标签。
+export function getAllTags(mediaType?: MediaType) {
   const db = getDb();
+  const { clause, params } = extClause(mediaType);
+  if (!clause) {
+    return db.prepare(`
+      SELECT t.id, t.name, COUNT(vt.video_id) as count
+      FROM tags t
+      LEFT JOIN video_tags vt ON t.id = vt.tag_id
+      GROUP BY t.id
+      ORDER BY count DESC, t.name ASC
+    `).all();
+  }
+  // 按类型过滤：join videos 限定扩展名，只保留 count>0 的标签
   return db.prepare(`
+    SELECT t.id, t.name, COUNT(v.id) as count
+    FROM tags t
+    JOIN video_tags vt ON t.id = vt.tag_id
+    JOIN videos v ON v.id = vt.video_id AND ${clause}
+    GROUP BY t.id
+    HAVING count > 0
+    ORDER BY count DESC, t.name ASC
+  `).all(...params);
+}
+
+// 获取目录树（所有文件夹，前端自行组装成树）。
+// 按类型过滤时：只返回含该类型文件的文件夹 + 其所有祖先（保证树可展开）。
+export function getFolderTree(mediaType?: MediaType) {
+  const db = getDb();
+  const all = db.prepare(`
     SELECT id, path, name, parent_id, import_root_id
     FROM folders
     ORDER BY path ASC
-  `).all();
+  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null }>;
+
+  const { clause, params } = extClause(mediaType);
+  if (!clause) return all;
+
+  // 找出直接含该类型文件的文件夹 id
+  const withType = db.prepare(`
+    SELECT DISTINCT v.folder_id as id FROM videos v
+    WHERE v.folder_id IS NOT NULL AND ${clause}
+  `).all(...params) as Array<{ id: number }>;
+
+  const keep = new Set<number>();
+  const byId = new Map(all.map((f) => [f.id, f]));
+  // 沿 parent_id 向上把祖先也纳入
+  for (const { id } of withType) {
+    let cur: number | null = id;
+    while (cur != null && !keep.has(cur)) {
+      keep.add(cur);
+      cur = byId.get(cur)?.parent_id ?? null;
+    }
+  }
+  return all.filter((f) => keep.has(f.id));
 }
+
+export type SortBy = 'added' | 'name' | 'size' | 'duration' | 'mtime' | 'random';
+export type SortDir = 'asc' | 'desc';
 
 export interface VideoFilter {
   tagIds?: number[];       // 选中的标签
   tagMode?: 'or' | 'and';  // 标签过滤逻辑
-  folderId?: number | null; // 选中的目录（含子目录）
+  folderId?: number | null; // 单选目录（含子目录，兼容旧调用）
+  folderIds?: number[];     // 多选目录（含各自子目录）
   search?: string;          // 文件名搜索
   favorited?: boolean;      // 只显示收藏
+  mediaType?: MediaType;    // 媒体类型分类（all/video/audio/text）
+  sortBy?: SortBy;          // 排序字段
+  sortDir?: SortDir;        // 排序方向
 }
+
+// 排序字段 -> SQL 列（白名单，避免注入）
+const SORT_COLUMNS: Record<Exclude<SortBy, 'random'>, string> = {
+  added: 'v.added_at',
+  name: 'v.name COLLATE NOCASE',
+  size: 'v.size',
+  duration: 'v.duration',
+  mtime: 'v.mtime',
+};
 
 // 根据过滤条件查询视频列表
 export function getVideos(filter: VideoFilter = {}) {
   const db = getDb();
-  const { tagIds, tagMode = 'or', folderId, search, favorited } = filter;
+  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, mediaType, sortBy = 'added', sortDir = 'desc' } = filter;
+  // 合并单选/多选目录
+  const folderIdList = folderIds && folderIds.length > 0
+    ? folderIds
+    : (folderId != null ? [folderId] : []);
 
   let sql = `SELECT DISTINCT v.* FROM videos v`;
   const conditions: string[] = [];
   const params: any[] = [];
+
+  // 媒体类型过滤（按扩展名）
+  const ext = extClause(mediaType);
+  if (ext.clause) {
+    conditions.push(ext.clause);
+    params.push(...ext.params);
+  }
 
   // 收藏过滤
   if (favorited === true) {
@@ -61,19 +134,15 @@ export function getVideos(filter: VideoFilter = {}) {
     }
   }
 
-  // 目录过滤（含子目录：用路径前缀匹配）
-  if (folderId != null) {
-    const folder = db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
-    if (folder) {
-      sql += tagIds && tagIds.length > 0 ? '' : ` JOIN folders f ON v.folder_id = f.id`;
-      if (!(tagIds && tagIds.length > 0)) {
-        conditions.push(`(f.path = ? OR f.path LIKE ?)`);
-        params.push(folder.path, folder.path + path.sep + '%');
-      } else {
-        // 已 join video_tags 的情况，用子查询判断目录
-        conditions.push(`v.folder_id IN (SELECT id FROM folders WHERE path = ? OR path LIKE ?)`);
-        params.push(folder.path, folder.path + path.sep + '%');
-      }
+  // 目录过滤（含子目录：用路径前缀匹配）。多选时任一目录命中即可（OR）。
+  if (folderIdList.length > 0) {
+    const placeholders = folderIdList.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT path FROM folders WHERE id IN (${placeholders})`).all(...folderIdList) as Array<{ path: string }>;
+    if (rows.length > 0) {
+      // 用子查询按路径前缀匹配所有选中目录及其子目录，避免与标签 join 冲突
+      const ors = rows.map(() => `(path = ? OR path LIKE ?)`).join(' OR ');
+      conditions.push(`v.folder_id IN (SELECT id FROM folders WHERE ${ors})`);
+      for (const r of rows) params.push(r.path, r.path + path.sep + '%');
     }
   }
 
@@ -93,7 +162,14 @@ export function getVideos(filter: VideoFilter = {}) {
     params.push(tagIds.length);
   }
 
-  sql += ` ORDER BY v.added_at DESC`;
+  // 排序
+  if (sortBy === 'random') {
+    sql += ` ORDER BY RANDOM()`;
+  } else {
+    const col = SORT_COLUMNS[sortBy];
+    const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
+    sql += ` ORDER BY ${col} ${dir}`;
+  }
 
   const rows = db.prepare(sql).all(...params) as any[];
   return rows.map((row) => ({
@@ -102,10 +178,12 @@ export function getVideos(filter: VideoFilter = {}) {
   }));
 }
 
-// 获取视频总数
-export function getVideoCount(): number {
+// 获取视频总数（可按媒体类型过滤）
+export function getVideoCount(mediaType?: MediaType): number {
   const db = getDb();
-  return (db.prepare('SELECT COUNT(*) as c FROM videos').get() as { c: number }).c;
+  const { clause, params } = extClause(mediaType);
+  const sql = clause ? `SELECT COUNT(*) as c FROM videos v WHERE ${clause}` : 'SELECT COUNT(*) as c FROM videos';
+  return (db.prepare(sql).get(...params) as { c: number }).c;
 }
 
 // 级联删除目录：删除该目录 + 所有子目录 + 其中的视频记录 + video_tags 关联，

@@ -3,15 +3,10 @@ import * as path from 'path';
 import { getDb } from './db';
 import { normalizeThumbnailUrl } from './thumbnail';
 import { enqueueThumbnails, enqueueMissingThumbnails } from './thumbnailQueue';
+import { isSupportedMediaFile, isImageFile, COMIC_EXT, comicImageUrl } from './media';
 
 // 首批优先生成缩略图的数量（首屏尽快出真图，其余静默补）
 const PRIORITY_COUNT = 100;
-
-// 支持的视频扩展名
-const VIDEO_EXTS = new Set([
-  '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv',
-  '.ts', '.webm', '.m4v', '.mpg', '.mpeg', '.rmvb', '.3gp',
-]);
 
 export interface ScanResult {
   importRootPath: string;
@@ -25,7 +20,7 @@ export interface ScanResult {
 export type ProgressCallback = (current: number, total: number, currentFile: string) => void;
 
 export function isVideoFile(filePath: string): boolean {
-  return VIDEO_EXTS.has(path.extname(filePath).toLowerCase());
+  return isSupportedMediaFile(filePath);
 }
 
 // 递归收集目录下所有视频文件的路径
@@ -45,13 +40,64 @@ function collectVideoFiles(dir: string, results: string[] = []): string[] {
       if (entry.name.startsWith('.')) continue;
       collectVideoFiles(fullPath, results);
     } else if (entry.isFile()) {
-      const ext = path.extname(entry.name).toLowerCase();
-      if (VIDEO_EXTS.has(ext)) {
+      if (isSupportedMediaFile(fullPath)) {
         results.push(fullPath);
       }
     }
   }
   return results;
+}
+
+// 文件名自然排序：让 2.jpg 排在 10.jpg 前面（漫画页顺序关键）
+const naturalCollator = new Intl.Collator('zh', { numeric: true, sensitivity: 'base' });
+export function naturalCompare(a: string, b: string): number {
+  return naturalCollator.compare(a, b);
+}
+
+export interface ComicFolder {
+  dir: string;        // 漫画文件夹绝对路径（作为 videos.path）
+  firstImage: string; // 第一张图（用于缩略图）
+  pageCount: number;
+}
+
+// 递归找出所有"直接含图片"的文件夹，每个作为一部漫画。
+// 一个文件夹只要直接包含图片就算一部漫画；其子文件夹继续递归（支持嵌套的多话结构）。
+function collectComicFolders(dir: string, results: ComicFolder[] = []): ComicFolder[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    console.warn('[scanner] Cannot read dir:', dir, e);
+    return results;
+  }
+
+  const images: string[] = [];
+  for (const entry of entries) {
+    if (entry.isFile() && isImageFile(entry.name)) images.push(entry.name);
+    else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+      collectComicFolders(path.join(dir, entry.name), results);
+    }
+  }
+  if (images.length > 0) {
+    images.sort(naturalCompare);
+    results.push({ dir, firstImage: path.join(dir, images[0]), pageCount: images.length });
+  }
+  return results;
+}
+
+// 列出一个漫画文件夹里的所有图片（自然排序），返回可加载的 comic:// URL 数组
+export function listComicPages(comicDir: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(comicDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isFile() && isImageFile(e.name))
+    .map((e) => e.name)
+    .sort(naturalCompare)
+    .map((name) => comicImageUrl(path.join(comicDir, name)));
 }
 
 // 确保文件夹记录存在，返回 folder_id（递归创建父级）
@@ -180,7 +226,51 @@ export function backfillMissingThumbnails() {
   enqueueMissingThumbnails();
 }
 
-// 导入一个文件夹
+// 导入漫画文件夹：每个含图片的文件夹作为一条 .comic 记录，缩略图直接指向首图（不走 ffmpeg 队列）
+function importComicFolders(importRootPath: string, comics: ComicFolder[], rootId: number): number {
+  const db = getDb();
+  let newComics = 0;
+  const insertComic = db.prepare(`
+    INSERT OR IGNORE INTO videos (path, name, ext, size, thumbnail_path, folder_id, added_at, mtime)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const getId = db.prepare('SELECT id FROM videos WHERE path = ?');
+  const linkTag = db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)');
+
+  const run = db.transaction(() => {
+    for (const comic of comics) {
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(comic.dir);
+      } catch {
+        continue;
+      }
+      // 漫画归属其父目录（与视频文件"归属所在目录"一致），根目录本身则归自己
+      const parentDir = comic.dir === importRootPath ? importRootPath : path.dirname(comic.dir);
+      const folderId = ensureFolder(parentDir, importRootPath, rootId);
+      const name = path.basename(comic.dir);
+      const result = insertComic.run(
+        comic.dir, name, COMIC_EXT, comic.pageCount, comicImageUrl(comic.firstImage),
+        folderId, Date.now(), Math.floor(stat.mtimeMs),
+      );
+      if (result.changes > 0) newComics++;
+
+      const row = getId.get(comic.dir) as { id: number } | undefined;
+      if (!row) continue;
+      // 扁平化标签：漫画文件夹相对导入根的各级目录名（含漫画名本身）
+      const relative = path.relative(importRootPath, comic.dir);
+      if (relative) {
+        for (const part of relative.split(path.sep).filter(Boolean)) {
+          linkTag.run(row.id, ensureTag(part));
+        }
+      }
+    }
+  });
+  run();
+  return newComics;
+}
+
+// 导入一个文件夹（视频/音频/小说 + 漫画）
 export function importFolder(importRootPath: string, onProgress?: ProgressCallback): ScanResult {
   console.log('[scanner] Importing folder:', importRootPath);
 
@@ -188,7 +278,22 @@ export function importFolder(importRootPath: string, onProgress?: ProgressCallba
   const videoFiles = collectVideoFiles(importRootPath);
   console.log('[scanner] Found', videoFiles.length, 'video files');
 
-  return importVideoFiles(importRootPath, videoFiles, onProgress);
+  const result = importVideoFiles(importRootPath, videoFiles, onProgress);
+
+  // 再收集漫画文件夹
+  const comics = collectComicFolders(importRootPath);
+  console.log('[scanner] Found', comics.length, 'comic folders');
+  if (comics.length > 0) {
+    const db = getDb();
+    const rootRow = db.prepare('SELECT id FROM folders WHERE path = ?').get(importRootPath) as { id: number } | undefined;
+    const rootId = rootRow?.id ?? ensureFolder(importRootPath, importRootPath, null);
+    const newComics = importComicFolders(importRootPath, comics, rootId);
+    result.newVideos += newComics;
+    result.totalVideos = (db.prepare('SELECT COUNT(*) as c FROM videos').get() as { c: number }).c;
+    result.folders = (db.prepare('SELECT COUNT(*) as c FROM folders').get() as { c: number }).c;
+    result.tags = (db.prepare('SELECT COUNT(*) as c FROM tags').get() as { c: number }).c;
+  }
+  return result;
 }
 
 // 导入用户直接选择的视频文件

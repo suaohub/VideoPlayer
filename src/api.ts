@@ -21,14 +21,19 @@ function mockGetVideos(filter: VideoFilter): Video[] {
     });
   }
 
-  // 目录过滤（含子目录）
-  if (filter.folderId != null) {
-    const target = dataset.folders.find((f) => f.id === filter.folderId);
-    if (target) {
-      const okFolderIds = dataset.folders
-        .filter((f) => f.path === target.path || f.path.startsWith(target.path + '/'))
-        .map((f) => f.id);
-      list = list.filter((v) => v.folder_id != null && okFolderIds.includes(v.folder_id));
+  // 目录过滤（含子目录）。支持单选 folderId 与多选 folderIds。
+  const folderIdList = filter.folderIds && filter.folderIds.length > 0
+    ? filter.folderIds
+    : (filter.folderId != null ? [filter.folderId] : []);
+  if (folderIdList.length > 0) {
+    const targets = dataset.folders.filter((f) => folderIdList.includes(f.id));
+    if (targets.length > 0) {
+      const okFolderIds = new Set(
+        dataset.folders
+          .filter((f) => targets.some((t) => f.path === t.path || f.path.startsWith(t.path + '/')))
+          .map((f) => f.id),
+      );
+      list = list.filter((v) => v.folder_id != null && okFolderIds.has(v.folder_id));
     }
   }
 
@@ -38,7 +43,28 @@ function mockGetVideos(filter: VideoFilter): Video[] {
     list = list.filter((v) => v.name.toLowerCase().includes(s));
   }
 
-  return list.sort((a, b) => b.added_at - a.added_at);
+  // 排序
+  const sortBy = filter.sortBy ?? 'added';
+  const sortDir = filter.sortDir ?? 'desc';
+  if (sortBy === 'random') {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+  } else {
+    const cmp = (a: Video, b: Video): number => {
+      switch (sortBy) {
+        case 'name': return a.name.localeCompare(b.name);
+        case 'size': return (a.size ?? 0) - (b.size ?? 0);
+        case 'duration': return (a.duration ?? 0) - (b.duration ?? 0);
+        case 'mtime': return (a.mtime ?? 0) - (b.mtime ?? 0);
+        default: return a.added_at - b.added_at;
+      }
+    };
+    list.sort((a, b) => (sortDir === 'asc' ? cmp(a, b) : -cmp(a, b)));
+  }
+
+  return list;
 }
 
 // ---------- 统一 API ----------
@@ -49,17 +75,17 @@ export const api = {
     if (USE_MOCK) return mockGetVideos(filter);
     return window.electronAPI.getVideos(filter);
   },
-  async getTags(): Promise<Tag[]> {
+  async getTags(mediaType?: import('./types').MediaType): Promise<Tag[]> {
     if (USE_MOCK) return dataset.tags;
-    return window.electronAPI.getTags();
+    return window.electronAPI.getTags(mediaType);
   },
-  async getFolderTree(): Promise<Folder[]> {
+  async getFolderTree(mediaType?: import('./types').MediaType): Promise<Folder[]> {
     if (USE_MOCK) return dataset.folders;
-    return window.electronAPI.getFolderTree();
+    return window.electronAPI.getFolderTree(mediaType);
   },
-  async getVideoCount(): Promise<number> {
+  async getVideoCount(mediaType?: import('./types').MediaType): Promise<number> {
     if (USE_MOCK) return dataset.videos.length;
-    return window.electronAPI.getVideoCount();
+    return window.electronAPI.getVideoCount(mediaType);
   },
   async generateThumbnails(): Promise<{ success: boolean }> {
     if (USE_MOCK) return { success: true };
@@ -123,6 +149,39 @@ export const api = {
   async getMediaUrl(path: string): Promise<string> {
     if (USE_MOCK) return path;
     return window.electronAPI.getMediaUrl(path);
+  },
+  // 应用内 <video> 用的流式 URL（可 seek），供「刷视频」模式使用
+  mediaStreamUrl(id: number): string {
+    return `media://stream/${id}`;
+  },
+  // 保存一帧截图（dataURL）为壁纸文件，返回文件路径
+  async saveWallpaperFrame(dataUrl: string): Promise<{ success: boolean; path?: string; error?: string }> {
+    if (USE_MOCK) return { success: false, error: 'mock' };
+    return window.electronAPI.saveWallpaperFrame(dataUrl);
+  },
+  // 监听 mpv 截帧设为背景事件（全局快捷键 B 触发）
+  onWallpaperCaptured(callback: (payload: { path: string; dataUrl: string }) => void): (() => void) | undefined {
+    if (USE_MOCK) return undefined;
+    return window.electronAPI.onWallpaperCaptured?.(callback);
+  },
+  async readTextFile(path: string): Promise<{ success: boolean; content?: string; encoding?: string; error?: string }> {
+    if (window.electronAPI?.readTextFile) return window.electronAPI.readTextFile(path);
+    return { success: false, error: 'no electronAPI' };
+  },
+  async listComicPages(comicDir: string): Promise<{ success: boolean; pages: string[]; error?: string }> {
+    if (window.electronAPI?.listComicPages) return window.electronAPI.listComicPages(comicDir);
+    return { success: false, pages: [], error: 'no electronAPI' };
+  },
+  async setFullscreen(on: boolean): Promise<boolean> {
+    if (window.electronAPI?.setFullscreen) return window.electronAPI.setFullscreen(on);
+    return false;
+  },
+  async getFullscreen(): Promise<boolean> {
+    if (window.electronAPI?.getFullscreen) return window.electronAPI.getFullscreen();
+    return false;
+  },
+  onFullscreenChanged(cb: (on: boolean) => void): (() => void) | void {
+    if (window.electronAPI?.onFullscreenChanged) return window.electronAPI.onFullscreenChanged(cb);
   },
   async playVideo(path: string, options?: { alertOnError?: boolean }): Promise<{ success: boolean; error?: string }> {
     if (USE_MOCK && path.startsWith('/Movies/mock/')) {

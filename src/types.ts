@@ -52,13 +52,24 @@ export interface ImportSourceSelection {
   paths: string[];
 }
 
+// 媒体类型分类
+export type MediaType = 'all' | 'video' | 'audio' | 'text' | 'comic';
+
+// 排序字段与方向
+export type SortBy = 'added' | 'name' | 'size' | 'duration' | 'mtime' | 'random';
+export type SortDir = 'asc' | 'desc';
+
 // 视频过滤条件
 export interface VideoFilter {
   tagIds?: number[];
   tagMode?: 'or' | 'and';
-  folderId?: number | null;
+  folderId?: number | null;   // 单选目录（兼容旧调用）
+  folderIds?: number[];       // 多选目录（含各自子目录）
   search?: string;
   favorited?: boolean;
+  mediaType?: MediaType;
+  sortBy?: SortBy;
+  sortDir?: SortDir;
 }
 
 // Electron API 类型
@@ -70,6 +81,10 @@ export interface ElectronAPI {
   setVolume: (volume: number) => Promise<{ success: boolean }>;
   setSpeed: (speed: number) => Promise<{ success: boolean }>;
   getMediaUrl: (videoPath: string) => Promise<string>;
+  saveWallpaperFrame: (dataUrl: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  onWallpaperCaptured: (cb: (payload: { path: string; dataUrl: string }) => void) => (() => void) | void;
+  readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; encoding?: string; error?: string }>;
+  listComicPages: (comicDir: string) => Promise<{ success: boolean; pages: string[]; error?: string }>;
   onTimePosition: (cb: (position: number) => void) => (() => void) | void;
   onDuration: (cb: (duration: number) => void) => (() => void) | void;
   onPaused: (cb: (paused: boolean) => void) => (() => void) | void;
@@ -84,10 +99,10 @@ export interface ElectronAPI {
   selectVideoFiles: () => Promise<{ canceled: boolean; paths: string[] }>;
   importFolders: (paths: string[]) => Promise<any[]>;
   importVideoFiles: (paths: string[]) => Promise<any[]>;
-  getTags: () => Promise<Tag[]>;
-  getFolderTree: () => Promise<Folder[]>;
+  getTags: (mediaType?: MediaType) => Promise<Tag[]>;
+  getFolderTree: (mediaType?: MediaType) => Promise<Folder[]>;
   getVideos: (filter: VideoFilter) => Promise<Video[]>;
-  getVideoCount: () => Promise<number>;
+  getVideoCount: (mediaType?: MediaType) => Promise<number>;
   generateThumbnails: () => Promise<{ success: boolean }>;
   regenerateThumbnail: (videoId: number) => Promise<{ success: boolean; error?: string; timestamp?: number; thumbnail_path?: string }>;
   getSetting: (key: string) => Promise<string | null>;
@@ -110,6 +125,10 @@ export interface ElectronAPI {
   isWindowMaximized: () => Promise<boolean>;
   onWindowMaximized: (cb: () => void) => (() => void) | void;
   onWindowUnmaximized: (cb: () => void) => (() => void) | void;
+  setFullscreen: (on: boolean) => Promise<boolean>;
+  toggleFullscreen: () => Promise<boolean>;
+  getFullscreen: () => Promise<boolean>;
+  onFullscreenChanged: (cb: (on: boolean) => void) => (() => void) | void;
 }
 
 // 缩略图后台生成事件

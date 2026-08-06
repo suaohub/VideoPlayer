@@ -95,8 +95,7 @@ export function probeVideo(videoPath: string): VideoMetadata {
   const ffprobe = resolveBinary('ffprobe');
   const result = spawnSync(ffprobe, [
     '-v', 'error',
-    '-select_streams', 'v:0',
-    '-show_entries', 'stream=width,height:format=duration',
+    '-show_entries', 'stream=codec_type,width,height:format=duration',
     '-of', 'json',
     videoPath,
   ], { encoding: 'utf8' });
@@ -108,7 +107,7 @@ export function probeVideo(videoPath: string): VideoMetadata {
 
   try {
     const data = JSON.parse(result.stdout);
-    const stream = data.streams?.[0];
+    const stream = data.streams?.find((item: any) => item.codec_type === 'video');
     const width = Number.isFinite(Number(stream?.width)) ? Number(stream.width) : null;
     const height = Number.isFinite(Number(stream?.height)) ? Number(stream.height) : null;
     const duration = Number.isFinite(Number(data.format?.duration)) ? Number(data.format.duration) : null;
@@ -214,8 +213,7 @@ export async function probeVideoAsync(videoPath: string): Promise<VideoMetadata>
   const ffprobe = resolveBinary('ffprobe');
   const { code, stdout } = await runProcess(ffprobe, [
     '-v', 'error',
-    '-select_streams', 'v:0',
-    '-show_entries', 'stream=width,height:format=duration',
+    '-show_entries', 'stream=codec_type,width,height:format=duration',
     '-of', 'json',
     videoPath,
   ]);
@@ -227,7 +225,7 @@ export async function probeVideoAsync(videoPath: string): Promise<VideoMetadata>
 
   try {
     const data = JSON.parse(stdout);
-    const stream = data.streams?.[0];
+    const stream = data.streams?.find((item: any) => item.codec_type === 'video');
     const width = Number.isFinite(Number(stream?.width)) ? Number(stream.width) : null;
     const height = Number.isFinite(Number(stream?.height)) ? Number(stream.height) : null;
     const duration = Number.isFinite(Number(data.format?.duration)) ? Number(data.format.duration) : null;

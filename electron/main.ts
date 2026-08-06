@@ -1,13 +1,31 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, globalShortcut } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
-import { existsSync, readFileSync, readdirSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import * as net from 'net';
 import { initDatabase, getDb } from './db';
-import { backfillMissingThumbnails, importFiles, importFolder } from './scanner';
+import { backfillMissingThumbnails, importFiles, importFolder, listComicPages } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners } from './thumbnailQueue';
 import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, VideoFilter } from './queries';
+import { isAudioFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
+import { createReadStream, statSync } from 'fs';
+import { Readable } from 'stream';
+
+// 图片扩展名 → MIME，用于 comic:// 协议响应头
+const IMAGE_MIME: Record<string, string> = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif',
+};
+
+// 注册 media:// 为特权 scheme：支持 fetch/流式/Range，供「刷视频」应用内 <video> 播放并可 seek。
+// 必须在 app ready 之前、模块顶层调用。
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media',
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true },
+  },
+]);
 
 // CJS 模式下 __dirname 原生可用
 declare const __dirname: string;
@@ -60,6 +78,8 @@ function createWindow() {
   mainWindow.on('unmaximize', syncMpvWindowBounds);
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window-maximized'));
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-unmaximized'));
+  mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('fullscreen-changed', true));
+  mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('fullscreen-changed', false));
   mainWindow.on('restore', syncMpvWindowBounds);
   mainWindow.on('show', syncMpvWindowBounds);
   mainWindow.on('minimize', hideMpvWindow);
@@ -73,6 +93,72 @@ app.whenReady().then(() => {
     }
     return new Response(new Uint8Array(readFileSync(filePath)), {
       headers: { 'Content-Type': 'image/jpeg' },
+    });
+  });
+
+  // 漫画页图片：comic:///<encodeURIComponent(路径)> → 读取本地图片（仅限图片扩展名）
+  protocol.handle('comic', (request) => {
+    const filePath = comicFilePathFromUrl(request.url);
+    if (!filePath || !existsSync(filePath)) {
+      return new Response(null, { status: 404 });
+    }
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+    return new Response(new Uint8Array(readFileSync(filePath)), {
+      headers: { 'Content-Type': IMAGE_MIME[ext] ?? 'application/octet-stream' },
+    });
+  });
+
+  // 视频流：media://stream/<videoId> → 按 Range 分块返回本地视频文件，支持 seek
+  protocol.handle('media', (request) => {
+    const m = /^media:\/\/stream\/(\d+)/.exec(request.url);
+    if (!m) return new Response(null, { status: 400 });
+    const id = Number(m[1]);
+    let filePath: string | undefined;
+    try {
+      const row = getDb().prepare('SELECT path FROM videos WHERE id = ?').get(id) as { path?: string } | undefined;
+      filePath = row?.path;
+    } catch {
+      return new Response(null, { status: 500 });
+    }
+    if (!filePath || !existsSync(filePath)) return new Response(null, { status: 404 });
+
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+    const mime = VIDEO_MIME[ext] ?? 'application/octet-stream';
+    const total = statSync(filePath).size;
+    const range = request.headers.get('Range') || request.headers.get('range');
+
+    if (range) {
+      const rm = /bytes=(\d*)-(\d*)/.exec(range);
+      let start = rm && rm[1] ? parseInt(rm[1], 10) : 0;
+      let end = rm && rm[2] ? parseInt(rm[2], 10) : total - 1;
+      if (isNaN(start) || start < 0) start = 0;
+      if (isNaN(end) || end >= total) end = total - 1;
+      if (start > end || start >= total) {
+        return new Response(null, {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${total}`, 'Accept-Ranges': 'bytes' },
+        });
+      }
+      const stream = createReadStream(filePath, { start, end });
+      return new Response(Readable.toWeb(stream) as ReadableStream, {
+        status: 206,
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': String(end - start + 1),
+          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
+
+    const stream = createReadStream(filePath);
+    return new Response(Readable.toWeb(stream) as ReadableStream, {
+      status: 200,
+      headers: {
+        'Content-Type': mime,
+        'Content-Length': String(total),
+        'Accept-Ranges': 'bytes',
+      },
     });
   });
   initDatabase(); // Windows-only：启动时直接初始化 SQLite 数据库。
@@ -250,22 +336,24 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
     // 先快速结束旧进程，避免旧 mpv 的退出事件干扰新进程。
     await stopMpv();
 
-    console.log('[mpv] Video path:', videoPath);
+    const audioOnly = isAudioFile(videoPath);
+    console.log(`[mpv] ${audioOnly ? 'Audio' : 'Video'} path:`, videoPath);
 
     socketPath = `\\\\.\\pipe\\mpv-${process.pid}-${Date.now()}`;
 
     const args = [
       '--no-terminal',
       '--keep-open=yes',
-      '--force-window=immediate',
       '--no-config',
       '--osd-level=1',
       `--input-ipc-server=${socketPath}`,
       `--title=${MPV_WINDOW_TITLE}`,
       '--border=no',
-      '--fullscreen',
       '--show-in-taskbar=no',
       '--taskbar-progress=no',
+      ...(audioOnly
+        ? ['--no-video', '--force-window=no']
+        : ['--force-window=immediate', '--fullscreen']),
       videoPath,
     ];
 
@@ -292,6 +380,10 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
       mainWindow?.webContents.send('mpv-stopped');
     });
     currentProcess.on('error', (err) => console.error('[mpv] error:', err));
+
+    // 视频（非纯音频）播放期间，注册全局快捷键 B：截当前帧设为背景
+    if (audioOnly) unregisterMpvWallpaperShortcut();
+    else registerMpvWallpaperShortcut();
 
     // 全屏模式：立即返回，不等待 socket 连接（控制功能可后台异步建立）
     void waitAndConnectSocket(currentProcess, socketPath); // 异步执行，不阻塞响应
@@ -490,7 +582,7 @@ ipcMain.handle('select-import-source', async () => {
     buttons: ['导入视频文件', '导入文件夹', '取消'],
     defaultId: 0,
     cancelId: 2,
-    title: '导入视频',
+    title: '导入媒体',
     message: '请选择导入方式',
     detail: '选择“导入视频文件”可以看到并多选视频；选择“导入文件夹”会扫描整个文件夹。',
   });
@@ -506,7 +598,7 @@ ipcMain.handle('select-import-source', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Video files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'ts', 'webm', 'm4v', 'mpg', 'mpeg', 'rmvb', '3gp'] },
+      { name: 'Media files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'ts', 'webm', 'm4v', 'mpg', 'mpeg', 'rmvb', '3gp', 'mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'wma'] },
       { name: 'All files', extensions: ['*'] },
     ],
   });
@@ -552,6 +644,134 @@ ipcMain.handle('get-media-url', async (event, videoPath: string) => {
   return `file:///${videoPath.replace(/\\/g, '/')}`;
 });
 
+// 壁纸目录（userData/wallpapers）：存放「视频截帧设为背景」保存的图片
+function getWallpaperDir(): string {
+  const dir = join(app.getPath('userData'), 'wallpapers');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// 把一段 JPEG 字节写入壁纸目录，返回文件绝对路径
+function writeWallpaperJpeg(buf: Buffer): string {
+  const dir = getWallpaperDir();
+  const file = join(dir, `frame-${Date.now()}.jpg`);
+  writeFileSync(file, buf);
+  return file;
+}
+
+// 渲染进程（ShortsFeed）传来的 dataURL 截帧 → 保存为文件，返回路径
+ipcMain.handle('save-wallpaper-frame', async (event, dataUrl: string) => {
+  try {
+    const m = /^data:image\/\w+;base64,(.+)$/.exec(dataUrl || '');
+    if (!m) return { success: false, error: 'bad data url' };
+    const file = writeWallpaperJpeg(Buffer.from(m[1], 'base64'));
+    return { success: true, path: file };
+  } catch (error) {
+    console.error('[wallpaper] save frame failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// mpv 截帧设为背景：mpv 全屏时占据 OS 焦点，用全局快捷键触发
+let mpvScreenshotBusy = false;
+async function captureMpvFrameToWallpaper() {
+  if (!mpvProcess || !ipcSocket || mpvScreenshotBusy) return;
+  mpvScreenshotBusy = true;
+  try {
+    const dir = getWallpaperDir();
+    const file = join(dir, `frame-${Date.now()}.jpg`);
+    // 只截视频画面（不含 OSD/字幕）到指定文件
+    sendCommand(['screenshot-to-file', file, 'video']);
+    // mpv 异步写盘，轮询等待文件出现
+    let ok = false;
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      if (existsSync(file)) { ok = true; break; }
+    }
+    if (!ok) return;
+    const data = readFileSync(file);
+    const dataUrl = `data:image/jpeg;base64,${data.toString('base64')}`;
+    mainWindow?.webContents.send('wallpaper-captured', { path: file, dataUrl });
+  } catch (error) {
+    console.error('[wallpaper] mpv screenshot failed:', error);
+  } finally {
+    mpvScreenshotBusy = false;
+  }
+}
+
+// mpv 全屏时 app 收不到普通按键，故用系统级快捷键截帧设背景。
+// 必须带修饰键，否则会劫持全局单字母键导致别处无法打字。
+const WALLPAPER_ACCEL = 'CommandOrControl+Shift+B';
+function registerMpvWallpaperShortcut() {
+  try {
+    if (!globalShortcut.isRegistered(WALLPAPER_ACCEL)) {
+      globalShortcut.register(WALLPAPER_ACCEL, () => { void captureMpvFrameToWallpaper(); });
+    }
+  } catch (e) { console.error('[wallpaper] register shortcut failed:', e); }
+}
+function unregisterMpvWallpaperShortcut() {
+  try { globalShortcut.unregister(WALLPAPER_ACCEL); } catch { /* ignore */ }
+}
+
+// 读取文本文件内容，自动识别编码（UTF-8 / GB18030）。
+// 中文小说 txt 大多是 GBK/GB18030 编码，UTF-8 严格解码会失败，此时回退。
+ipcMain.handle('read-text-file', async (event, filePath: string) => {
+  try {
+    if (!filePath || !existsSync(filePath)) {
+      return { success: false, error: '文件不存在，所在磁盘可能未挂载' };
+    }
+    const buffer = readFileSync(filePath);
+    // 上限保护：超大文件（>40MB）暂不支持一次性加载
+    if (buffer.byteLength > 40 * 1024 * 1024) {
+      return { success: false, error: '文件过大（>40MB），暂不支持' };
+    }
+
+    let content: string;
+    let encoding: string;
+
+    // 1) BOM 检测：带 UTF-8 BOM 直接按 UTF-8
+    if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+      content = new TextDecoder('utf-8').decode(buffer.subarray(3));
+      encoding = 'utf-8';
+    } else if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+      content = new TextDecoder('utf-16le').decode(buffer.subarray(2));
+      encoding = 'utf-16le';
+    } else if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+      content = new TextDecoder('utf-16be').decode(buffer.subarray(2));
+      encoding = 'utf-16be';
+    } else {
+      // 2) 无 BOM：先尝试严格 UTF-8，失败（含非法字节序列）则回退 GB18030
+      try {
+        content = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+        encoding = 'utf-8';
+      } catch {
+        content = new TextDecoder('gb18030').decode(buffer);
+        encoding = 'gb18030';
+      }
+    }
+
+    return { success: true, content, encoding };
+  } catch (error) {
+    console.error('[text] read failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// 列出一部漫画（文件夹）里的所有页图片，返回自然排序后的 comic:// URL 数组
+ipcMain.handle('list-comic-pages', async (event, comicDir: string) => {
+  try {
+    if (!comicDir || !existsSync(comicDir)) {
+      return { success: false, error: '漫画文件夹不存在，所在磁盘可能未挂载', pages: [] };
+    }
+    const pages = listComicPages(comicDir);
+    if (pages.length === 0) return { success: false, error: '该文件夹下没有图片', pages: [] };
+    return { success: true, pages };
+  } catch (error) {
+    console.error('[comic] list pages failed:', error);
+    return { success: false, error: String(error), pages: [] };
+  }
+});
+
 // 选择文件夹（可多选）
 ipcMain.handle('select-folders', async () => {
   if (!mainWindow) return { canceled: true, paths: [] };
@@ -567,7 +787,7 @@ ipcMain.handle('select-video-files', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Video files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'ts', 'webm', 'm4v', 'mpg', 'mpeg', 'rmvb', '3gp'] },
+      { name: 'Media files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'ts', 'webm', 'm4v', 'mpg', 'mpeg', 'rmvb', '3gp', 'mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'wma'] },
       { name: 'All files', extensions: ['*'] },
     ],
   });
@@ -596,14 +816,14 @@ ipcMain.handle('import-video-files', async (event, filePaths: string[]) => {
   return [result];
 });
 
-// 获取所有标签
-ipcMain.handle('get-tags', async () => {
-  return getAllTags();
+// 获取所有标签（可按媒体类型过滤）
+ipcMain.handle('get-tags', async (event, mediaType?: MediaType) => {
+  return getAllTags(mediaType);
 });
 
-// 获取目录树
-ipcMain.handle('get-folder-tree', async () => {
-  return getFolderTree();
+// 获取目录树（可按媒体类型过滤）
+ipcMain.handle('get-folder-tree', async (event, mediaType?: MediaType) => {
+  return getFolderTree(mediaType);
 });
 
 // 查询视频列表
@@ -611,9 +831,9 @@ ipcMain.handle('get-videos', async (event, filter: VideoFilter) => {
   return getVideos(filter);
 });
 
-// 获取视频总数
-ipcMain.handle('get-video-count', async () => {
-  return getVideoCount();
+// 获取视频总数（可按媒体类型过滤）
+ipcMain.handle('get-video-count', async (event, mediaType?: MediaType) => {
+  return getVideoCount(mediaType);
 });
 
 ipcMain.handle('generate-thumbnails', async () => {
@@ -629,6 +849,7 @@ ipcMain.handle('regenerate-thumbnail', async (event, videoId: number) => {
 
   if (!row) return { success: false, error: '视频记录不存在' };
   if (!existsSync(row.path)) return { success: false, error: '视频文件当前不可用' };
+  if (isAudioFile(row.path)) return { success: false, error: '音频文件不需要生成缩略图' };
 
   try {
     const metadata = await probeVideoAsync(row.path);
@@ -715,6 +936,22 @@ ipcMain.handle('window-close', async () => {
 
 ipcMain.handle('window-is-maximized', async () => {
   return mainWindow?.isMaximized() ?? false;
+});
+
+// OS 级全屏：小说/漫画阅读器进入沉浸模式（隐藏任务栏与标题栏）
+ipcMain.handle('set-fullscreen', async (event, on: boolean) => {
+  mainWindow?.setFullScreen(on);
+  return mainWindow?.isFullScreen() ?? false;
+});
+
+ipcMain.handle('toggle-fullscreen', async () => {
+  if (!mainWindow) return false;
+  mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  return mainWindow.isFullScreen();
+});
+
+ipcMain.handle('get-fullscreen', async () => {
+  return mainWindow?.isFullScreen() ?? false;
 });
 
 ipcMain.handle('clear-cache', async () => {
@@ -817,6 +1054,7 @@ ipcMain.handle('check-removable-drives', async () => {
 });
 
 async function stopMpv() {
+  unregisterMpvWallpaperShortcut();
   if (ipcSocket) {
     ipcSocket.destroy();
     ipcSocket = null;
