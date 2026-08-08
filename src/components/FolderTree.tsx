@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { Heart, Trash2 } from 'lucide-react';
 import { Folder } from '../types';
 
 interface FolderTreeProps {
@@ -6,6 +7,10 @@ interface FolderTreeProps {
   selectedFolderIds: number[];
   onSelectionChange: (ids: number[]) => void;
   onDeleteFolder: (folder: Folder) => void;
+  favoritedCount?: number;
+  markedForDeletionCount?: number;
+  onShowFavorited?: () => void;
+  onShowMarkedForDeletion?: () => void;
 }
 
 interface TreeNode extends Folder { children: TreeNode[]; }
@@ -96,7 +101,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   );
 }
 
-export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder }: FolderTreeProps) {
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion }: FolderTreeProps) {
   const tree = useMemo(() => buildTree(folders), [folders]);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
@@ -175,6 +180,78 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
 
   return (
     <div style={{ padding: 12 }}>
+      {/* 快捷入口：收藏和删除标记 */}
+      {(onShowFavorited || onShowMarkedForDeletion) && (
+        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {onShowFavorited && (
+            <button
+              onClick={onShowFavorited}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 12px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 500,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-hover)';
+                e.currentTarget.style.borderColor = '#ef4444';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >
+              <Heart size={16} fill="#ef4444" color="#ef4444" />
+              <span style={{ flex: 1 }}>收藏夹</span>
+              {favoritedCount !== undefined && favoritedCount > 0 && (
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{favoritedCount}</span>
+              )}
+            </button>
+          )}
+          {onShowMarkedForDeletion && (
+            <button
+              onClick={onShowMarkedForDeletion}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 12px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 500,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-hover)';
+                e.currentTarget.style.borderColor = '#f59e0b';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >
+              <Trash2 size={16} color="#f59e0b" />
+              <span style={{ flex: 1 }}>标记删除</span>
+              {markedForDeletionCount !== undefined && markedForDeletionCount > 0 && (
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{markedForDeletionCount}</span>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>目录结构</span>
         {selectedFolderIds.length > 1 && (

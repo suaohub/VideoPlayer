@@ -100,17 +100,24 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
     onClose();
   }, [onClose]);
 
-  // 键盘：Esc 关闭 / 空格 暂停 / 左右 快进退
+  // 键盘：Esc 关闭 / 空格 暂停 / 左右 快进退 / Delete 标记删除
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { closePlayer(); return; }
       if (event.key === ' ') { event.preventDefault(); api.togglePause(); return; }
       if (event.key === 'ArrowLeft') { api.seek(Math.max(0, position - 5)); return; }
       if (event.key === 'ArrowRight') { api.seek(Math.min(duration, position + 5)); return; }
+      if (event.key === 'Delete') {
+        event.preventDefault();
+        api.toggleMarkedForDeletion(video.id).then(() => {
+          closePlayer();
+        });
+        return;
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closePlayer, position, duration]);
+  }, [closePlayer, position, duration, video.id]);
 
   const onSeekInput = (value: number) => { seekingRef.current = true; setPosition(value); };
   const onSeekCommit = (value: number) => {

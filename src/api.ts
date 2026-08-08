@@ -281,6 +281,26 @@ export const api = {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.batchUnfavorite(videoIds);
   },
+  async toggleMarkedForDeletion(videoId: number): Promise<{ success: boolean; marked?: boolean; error?: string }> {
+    if (USE_MOCK) return { success: true, marked: true };
+    return window.electronAPI.toggleMarkedForDeletion(videoId);
+  },
+  async getMarkedForDeletionCount(): Promise<number> {
+    if (USE_MOCK) return 0;
+    return window.electronAPI.getMarkedForDeletionCount();
+  },
+  async batchUnmarkForDeletion(videoIds: number[]): Promise<{ success: boolean; error?: string }> {
+    if (USE_MOCK) return { success: true };
+    return window.electronAPI.batchUnmarkForDeletion(videoIds);
+  },
+  async batchDeleteVideos(videoIds: number[]): Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }> {
+    if (USE_MOCK) return { success: true, deletedCount: 0, totalCount: 0 };
+    return window.electronAPI.batchDeleteVideos(videoIds);
+  },
+  async exportMarkedForDeletionList(): Promise<{ success: boolean; path?: string; count?: number; error?: string }> {
+    if (USE_MOCK) return { success: false, error: 'mock' };
+    return window.electronAPI.exportMarkedForDeletionList();
+  },
   async setTitlebarOverlay(opts: { color: string; symbolColor: string }): Promise<void> {
     if (window.electronAPI?.setTitlebarOverlay) await window.electronAPI.setTitlebarOverlay(opts);
   },

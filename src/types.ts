@@ -14,6 +14,7 @@ export interface Video {
   added_at: number;
   mtime: number;
   favorited: number;
+  marked_for_deletion: number;
 }
 
 // 标签
@@ -67,6 +68,7 @@ export interface VideoFilter {
   folderIds?: number[];       // 多选目录（含各自子目录）
   search?: string;
   favorited?: boolean;
+  markedForDeletion?: boolean;
   mediaType?: MediaType;
   sortBy?: SortBy;
   sortDir?: SortDir;
@@ -117,6 +119,11 @@ export interface ElectronAPI {
   toggleFavorite: (videoId: number) => Promise<{ success: boolean; favorited?: boolean; error?: string }>;
   getFavoritedCount: () => Promise<number>;
   batchUnfavorite: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
+  toggleMarkedForDeletion: (videoId: number) => Promise<{ success: boolean; marked?: boolean; error?: string }>;
+  getMarkedForDeletionCount: () => Promise<number>;
+  batchUnmarkForDeletion: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
+  batchDeleteVideos: (videoIds: number[]) => Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }>;
+  exportMarkedForDeletionList: () => Promise<{ success: boolean; path?: string; count?: number; error?: string }>;
   checkRemovableDrives: () => Promise<{ drives: string[]; mounted: string[] }>;
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }) => Promise<void>;
   minimizeWindow: () => Promise<{ success: boolean }>;

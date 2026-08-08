@@ -10,6 +10,7 @@ import { MusicPlayer } from './components/MusicPlayer';
 import { TextReader } from './components/TextReader';
 import { ComicReader } from './components/ComicReader';
 import { ShortsFeed } from './components/ShortsFeed';
+import { MarkedForDeletionManager } from './components/MarkedForDeletionManager';
 import { isAudioFile, isTextFile, isComicExt, isPlayableInBrowser } from './media';
 
 // 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
@@ -30,6 +31,8 @@ function App() {
   const [search, setSearch] = useState('');
   const [showFavorited, setShowFavorited] = useState(false);
   const [favoritedCount, setFavoritedCount] = useState(0);
+  const [showMarkedForDeletion, setShowMarkedForDeletion] = useState(false);
+  const [markedForDeletionCount, setMarkedForDeletionCount] = useState(0);
   // 排序
   const [sortBy, setSortBy] = useState<SortBy>('added');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -89,14 +92,16 @@ function App() {
 
   // 刷新标签、目录、视频总数（跟随当前媒体类型分类）
   const refreshAll = useCallback(async () => {
-    const [f, count, favCount] = await Promise.all([
+    const [f, count, favCount, markedCount] = await Promise.all([
       api.getFolderTree(mediaType),
       api.getVideoCount(mediaType),
       api.getFavoritedCount(),
+      api.getMarkedForDeletionCount(),
     ]);
     setFolders(f);
     setVideoCount(count);
     setFavoritedCount(favCount);
+    setMarkedForDeletionCount(markedCount);
   }, [mediaType]);
 
   // 根据过滤条件加载视频列表
@@ -105,6 +110,7 @@ function App() {
       folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
       search: search || undefined,
       favorited: showFavorited || undefined,
+      markedForDeletion: false, // 默认不显示已标记删除的视频
       mediaType,
       sortBy,
       sortDir,
@@ -487,6 +493,23 @@ function App() {
     }
   };
 
+  // 标记视频删除
+  const handleMarkForDeletion = async (videoId: number) => {
+    const result = await api.toggleMarkedForDeletion(videoId);
+    if (result.success) {
+      // 更新本地视频列表
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, marked_for_deletion: result.marked ? 1 : 0 } : v))
+      );
+      // 更新标记删除总数
+      setMarkedForDeletionCount((prev) => (result.marked ? prev + 1 : prev - 1));
+      // 从常规列表中移除已标记删除的视频
+      if (result.marked) {
+        setVideos((prev) => prev.filter((v) => v.id !== videoId));
+      }
+    }
+  };
+
   // 过滤掉未挂载磁盘上的视频（前端过滤，避免不必要的数据库查询）
   const visibleVideos = unmountedDrives.length === 0 ? videos : videos.filter(v => {
     const drive = v.path.match(/^([A-Za-z]:)/)?.[1]?.toUpperCase();
@@ -569,6 +592,10 @@ function App() {
               selectedFolderIds={selectedFolderIds}
               onSelectionChange={setSelectedFolderIds}
               onDeleteFolder={handleDeleteFolder}
+              favoritedCount={favoritedCount}
+              markedForDeletionCount={markedForDeletionCount}
+              onShowFavorited={() => setShowFavorited(true)}
+              onShowMarkedForDeletion={() => setShowMarkedForDeletion(true)}
             />
           </aside>
         )}
@@ -586,6 +613,7 @@ function App() {
             showFavorited={showFavorited}
             onRegenerateThumbnail={handleRegenerateThumbnail}
             regeneratingThumbnailId={regeneratingThumbnailId}
+            onMarkForDeletion={handleMarkForDeletion}
           />
         </main>
       </div>
@@ -617,6 +645,13 @@ function App() {
           videos={feedVideos}
           onClose={() => setFeedVideos(null)}
           onCaptureWallpaper={handleCaptureWallpaper}
+        />
+      )}
+
+      {showMarkedForDeletion && (
+        <MarkedForDeletionManager
+          onClose={() => setShowMarkedForDeletion(false)}
+          onRefresh={refreshVisibleData}
         />
       )}
 

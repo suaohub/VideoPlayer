@@ -18,6 +18,7 @@ export interface VideoRecord {
   added_at: number;
   mtime: number;
   favorited: number;
+  marked_for_deletion: number;
 }
 
 // 文件夹记录类型（原始目录树）
@@ -109,6 +110,12 @@ export function initDatabase() {
   if (!columns.some(c => c.name === 'favorited')) {
     db.exec(`ALTER TABLE videos ADD COLUMN favorited INTEGER DEFAULT 0;`);
     console.log('[db] Migration: added favorited column');
+  }
+
+  // 迁移：为旧数据库添加 marked_for_deletion 字段
+  if (!columns.some(c => c.name === 'marked_for_deletion')) {
+    db.exec(`ALTER TABLE videos ADD COLUMN marked_for_deletion INTEGER DEFAULT 0;`);
+    console.log('[db] Migration: added marked_for_deletion column');
   }
 
   console.log('[db] Initialized');

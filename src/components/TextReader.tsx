@@ -438,7 +438,7 @@ export function TextReader({ video, onClose }: TextReaderProps) {
     setIsFullscreen(on);
   }, []);
 
-  // 键盘：左右/PageUp/PageDown 翻页，F 全屏，Esc 关闭（全屏时先退全屏）
+  // 键盘：左右/PageUp/PageDown 翻页，F 全屏，Esc 关闭（全屏时先退全屏），Delete 标记删除
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -449,10 +449,15 @@ export function TextReader({ video, onClose }: TextReaderProps) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); prevPage(); }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); nextPage(); }
       if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); }
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        await api.toggleMarkedForDeletion(video.id);
+        closeReader();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [closeReader, prevPage, nextPage, toggleFullscreen]);
+  }, [closeReader, prevPage, nextPage, toggleFullscreen, video.id]);
 
   const changeFont = (delta: number) => {
     setFontSize((f) => {

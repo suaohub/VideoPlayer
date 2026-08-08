@@ -80,6 +80,7 @@ export interface VideoFilter {
   folderIds?: number[];     // 多选目录（含各自子目录）
   search?: string;          // 文件名搜索
   favorited?: boolean;      // 只显示收藏
+  markedForDeletion?: boolean; // 只显示标记删除
   mediaType?: MediaType;    // 媒体类型分类（all/video/audio/text）
   sortBy?: SortBy;          // 排序字段
   sortDir?: SortDir;        // 排序方向
@@ -97,7 +98,7 @@ const SORT_COLUMNS: Record<Exclude<SortBy, 'random'>, string> = {
 // 根据过滤条件查询视频列表
 export function getVideos(filter: VideoFilter = {}) {
   const db = getDb();
-  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, mediaType, sortBy = 'added', sortDir = 'desc' } = filter;
+  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, markedForDeletion, mediaType, sortBy = 'added', sortDir = 'desc' } = filter;
   // 合并单选/多选目录
   const folderIdList = folderIds && folderIds.length > 0
     ? folderIds
@@ -117,6 +118,14 @@ export function getVideos(filter: VideoFilter = {}) {
   // 收藏过滤
   if (favorited === true) {
     conditions.push(`v.favorited = 1`);
+  }
+
+  // 删除标记过滤
+  if (markedForDeletion === true) {
+    conditions.push(`v.marked_for_deletion = 1`);
+  } else if (markedForDeletion === false) {
+    // 默认不显示已标记删除的视频
+    conditions.push(`v.marked_for_deletion = 0`);
   }
 
   // 标签过滤
@@ -260,4 +269,62 @@ export function batchUnfavorite(videoIds: number[]): void {
   const db = getDb();
   const placeholders = videoIds.map(() => '?').join(',');
   db.prepare(`UPDATE videos SET favorited = 0 WHERE id IN (${placeholders})`).run(...videoIds);
+}
+
+// 切换视频删除标记状态
+export function toggleMarkedForDeletion(videoId: number): { marked: boolean } {
+  const db = getDb();
+  const row = db.prepare('SELECT marked_for_deletion FROM videos WHERE id = ?').get(videoId) as { marked_for_deletion: number } | undefined;
+  if (!row) throw new Error('Video not found');
+  const newState = row.marked_for_deletion === 1 ? 0 : 1;
+  db.prepare('UPDATE videos SET marked_for_deletion = ? WHERE id = ?').run(newState, videoId);
+  return { marked: newState === 1 };
+}
+
+// 获取标记删除视频总数
+export function getMarkedForDeletionCount(): number {
+  const db = getDb();
+  return (db.prepare('SELECT COUNT(*) as c FROM videos WHERE marked_for_deletion = 1').get() as { c: number }).c;
+}
+
+// 批量恢复（取消删除标记）
+export function batchUnmarkForDeletion(videoIds: number[]): void {
+  if (videoIds.length === 0) return;
+  const db = getDb();
+  const placeholders = videoIds.map(() => '?').join(',');
+  db.prepare(`UPDATE videos SET marked_for_deletion = 0 WHERE id IN (${placeholders})`).run(...videoIds);
+}
+
+// 批量彻底删除视频（从数据库和磁盘删除）
+export function batchDeleteVideos(videoIds: number[]): { thumbnailUrls: string[]; deletedPaths: string[] } {
+  if (videoIds.length === 0) return { thumbnailUrls: [], deletedPaths: [] };
+  const db = getDb();
+  const placeholders = videoIds.map(() => '?').join(',');
+
+  // 收集缩略图和文件路径
+  const rows = db.prepare(
+    `SELECT path, thumbnail_path FROM videos WHERE id IN (${placeholders})`
+  ).all(...videoIds) as { path: string; thumbnail_path: string | null }[];
+
+  const thumbnailUrls = rows.map((r) => r.thumbnail_path).filter(Boolean) as string[];
+  const deletedPaths = rows.map((r) => r.path);
+
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...videoIds);
+    db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...videoIds);
+    // 清理孤儿标签
+    db.prepare(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)`).run();
+  });
+  tx();
+
+  return { thumbnailUrls, deletedPaths };
+}
+
+// 导出标记删除的视频文件名列表
+export function exportMarkedForDeletionList(): string[] {
+  const db = getDb();
+  const rows = db.prepare(
+    'SELECT name FROM videos WHERE marked_for_deletion = 1 ORDER BY name'
+  ).all() as { name: string }[];
+  return rows.map((r) => r.name);
 }

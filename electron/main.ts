@@ -7,7 +7,7 @@ import { initDatabase, getDb } from './db';
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners } from './thumbnailQueue';
-import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, batchDeleteVideos, exportMarkedForDeletionList, VideoFilter } from './queries';
 import { isAudioFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream, statSync } from 'fs';
 import { Readable } from 'stream';
@@ -1051,6 +1051,110 @@ ipcMain.handle('check-removable-drives', async () => {
   const drives = rows.map(r => r.drive.toUpperCase());
   const mounted = drives.filter(d => existsSync(d));
   return { drives, mounted };
+});
+
+// 切换视频删除标记
+ipcMain.handle('toggle-marked-for-deletion', async (event, videoId: number) => {
+  try {
+    const result = toggleMarkedForDeletion(videoId);
+    return { success: true, marked: result.marked };
+  } catch (error) {
+    console.error('[toggle-marked-for-deletion] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// 获取标记删除视频总数
+ipcMain.handle('get-marked-for-deletion-count', async () => {
+  try {
+    return getMarkedForDeletionCount();
+  } catch (error) {
+    console.error('[get-marked-for-deletion-count] failed:', error);
+    return 0;
+  }
+});
+
+// 批量恢复（取消删除标记）
+ipcMain.handle('batch-unmark-for-deletion', async (event, videoIds: number[]) => {
+  try {
+    batchUnmarkForDeletion(videoIds);
+    return { success: true };
+  } catch (error) {
+    console.error('[batch-unmark-for-deletion] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// 批量彻底删除视频（从数据库和磁盘删除）
+ipcMain.handle('batch-delete-videos', async (event, videoIds: number[]) => {
+  try {
+    const { thumbnailUrls, deletedPaths } = batchDeleteVideos(videoIds);
+
+    // 删除缩略图文件
+    for (const url of thumbnailUrls) {
+      const file = thumbnailFilePathFromUrl(url);
+      if (file && existsSync(file)) {
+        try { unlinkSync(file); } catch { /* 忽略单个文件删除失败 */ }
+      }
+    }
+
+    // 删除视频文件本身
+    let deletedCount = 0;
+    const errors: string[] = [];
+    for (const path of deletedPaths) {
+      try {
+        if (existsSync(path)) {
+          unlinkSync(path);
+          deletedCount++;
+        }
+      } catch (error) {
+        errors.push(`${path}: ${error}`);
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount,
+      totalCount: deletedPaths.length,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  } catch (error) {
+    console.error('[batch-delete-videos] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// 导出标记删除的视频文件名列表
+ipcMain.handle('export-marked-for-deletion-list', async () => {
+  try {
+    const names = exportMarkedForDeletionList();
+    if (names.length === 0) {
+      return { success: false, error: '没有标记删除的视频' };
+    }
+
+    // 让用户选择保存位置
+    if (!mainWindow) return { success: false, error: 'no window' };
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `marked-for-deletion-${Date.now()}.txt`,
+      filters: [
+        { name: 'Text files', extensions: ['txt'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'canceled' };
+    }
+
+    // 写入文件
+    const content = names.join('\n');
+    writeFileSync(result.filePath, content, 'utf-8');
+
+    return { success: true, path: result.filePath, count: names.length };
+  } catch (error) {
+    console.error('[export-marked-for-deletion-list] failed:', error);
+    return { success: false, error: String(error) };
+  }
 });
 
 async function stopMpv() {

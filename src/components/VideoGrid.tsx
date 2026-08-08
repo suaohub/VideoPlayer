@@ -16,6 +16,10 @@ interface VideoGridProps {
   showFavorited: boolean;
   onRegenerateThumbnail: (videoId: number) => void;
   regeneratingThumbnailId: number | null;
+  selectionMode?: boolean;
+  selectedIds?: Set<number>;
+  onToggleSelect?: (videoId: number) => void;
+  onMarkForDeletion?: (videoId: number) => void;
 }
 
 const GAP = 12;
@@ -295,14 +299,21 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onMarkForDeletion }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   // 多选模式状态（仅在收藏夹视图激活）
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [internalSelectionMode, setInternalSelectionMode] = useState(false);
+  const [internalSelectedIds, setInternalSelectedIds] = useState<Set<number>>(new Set());
+
+  // 使用外部传入的选择状态（如果有），否则使用内部状态
+  const selectionMode = externalSelectionMode ?? internalSelectionMode;
+  const selectedIds = externalSelectedIds ?? internalSelectedIds;
+  const setSelectionMode = setInternalSelectionMode;
+  const setSelectedIds = setInternalSelectedIds;
+
   const focusedIndexRef = useRef(focusedIndex);
   focusedIndexRef.current = focusedIndex;
   const focusedVideoIdRef = useRef<number | null>(null);
@@ -588,6 +599,12 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       } else if (e.key === 'Escape' && selectionModeRef.current) {
         setSelectionMode(false);
         setSelectedIds(new Set());
+      } else if (e.key === 'Delete' && onMarkForDeletion) {
+        const current = focusedIndexRef.current;
+        const currentVideos = videosRef.current;
+        if (current >= 0 && currentVideos[current]) {
+          onMarkForDeletion(currentVideos[current].id);
+        }
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -610,12 +627,16 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   }, [move, startVerticalRepeat, stopVerticalRepeat]);
 
   const handleToggleSelect = (videoId: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(videoId)) next.delete(videoId);
-      else next.add(videoId);
-      return next;
-    });
+    if (externalOnToggleSelect) {
+      externalOnToggleSelect(videoId);
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(videoId)) next.delete(videoId);
+        else next.add(videoId);
+        return next;
+      });
+    }
   };
 
   const handleBatchDelete = () => {

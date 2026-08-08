@@ -54,17 +54,22 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
 
   // 键盘
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') { onClose(); return; }
       if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'J') { e.preventDefault(); goNext(); }
       else if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'K') { e.preventDefault(); goPrev(); }
       else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
       else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); captureWallpaper(); }
+      else if (e.key === 'Delete') {
+        e.preventDefault();
+        await api.toggleMarkedForDeletion(current.id);
+        showToast('已标记删除');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goNext, goPrev, onClose]);
+  }, [goNext, goPrev, onClose, current]);
 
   // 切换到当前项后：从头播放，尝试带声，失败则静音重试
   useEffect(() => {
