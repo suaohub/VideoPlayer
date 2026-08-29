@@ -15,6 +15,7 @@ export interface Video {
   mtime: number;
   favorited: number;
   marked_for_deletion: number;
+  organize_category_id?: number | null;
 }
 
 // 标签
@@ -22,6 +23,13 @@ export interface Tag {
   id: number;
   name: string;
   count: number;
+}
+
+export interface OrganizeCategory {
+  id: number;
+  name: string;
+  sort_order: number;
+  count?: number;
 }
 
 // 文件夹
@@ -53,6 +61,17 @@ export interface ImportSourceSelection {
   paths: string[];
 }
 
+export interface RefreshResult {
+  success: boolean;
+  roots?: number;
+  refreshedRoots?: number;
+  missingRoots?: string[];
+  scannedFiles?: number;
+  newFiles?: number;
+  deletedFiles?: number;
+  error?: string;
+}
+
 // 媒体类型分类
 export type MediaType = 'all' | 'video' | 'audio' | 'text' | 'comic';
 
@@ -68,6 +87,7 @@ export interface VideoFilter {
   folderIds?: number[];       // 多选目录（含各自子目录）
   search?: string;
   favorited?: boolean;
+  hideFavorited?: boolean;    // 隐藏收藏文件（普通列表筛选）
   markedForDeletion?: boolean;
   mediaType?: MediaType;
   sortBy?: SortBy;
@@ -80,6 +100,7 @@ export interface ElectronAPI {
   stopVideo: () => Promise<{ success: boolean }>;
   togglePause: () => Promise<{ success: boolean }>;
   seek: (seconds: number) => Promise<{ success: boolean }>;
+  seekRelative: (seconds: number) => Promise<{ success: boolean }>;
   setVolume: (volume: number) => Promise<{ success: boolean }>;
   setSpeed: (speed: number) => Promise<{ success: boolean }>;
   getMediaUrl: (videoPath: string) => Promise<string>;
@@ -98,9 +119,11 @@ export interface ElectronAPI {
   selectBackgroundImage: () => Promise<{ canceled: boolean; path: string | null }>;
   getBackgroundImageUrl: (imagePath: string) => Promise<string | null>;
   selectFolders: () => Promise<{ canceled: boolean; paths: string[] }>;
+  selectOrganizeOutputFolder: () => Promise<{ canceled: boolean; path: string | null }>;
   selectVideoFiles: () => Promise<{ canceled: boolean; paths: string[] }>;
   importFolders: (paths: string[]) => Promise<any[]>;
   importVideoFiles: (paths: string[]) => Promise<any[]>;
+  refreshImportedFolders: () => Promise<RefreshResult>;
   getTags: (mediaType?: MediaType) => Promise<Tag[]>;
   getFolderTree: (mediaType?: MediaType) => Promise<Folder[]>;
   getVideos: (filter: VideoFilter) => Promise<Video[]>;
@@ -115,6 +138,15 @@ export interface ElectronAPI {
   onThumbnailProgress: (cb: (data: ThumbnailProgress) => void) => (() => void) | void;
   clearCache: () => Promise<{ success: boolean; count?: number; error?: string }>;
   deleteFolder: (folderId: number) => Promise<{ success: boolean; videoCount?: number; thumbCount?: number; error?: string }>;
+  deleteFoldersFromDisk: (folderIds: number[]) => Promise<{
+    success: boolean;
+    deletedFolderCount?: number;
+    videoCount?: number;
+    thumbCount?: number;
+    errors?: string[];
+    failedFolderIds?: number[];
+    error?: string;
+  }>;
   deleteTag: (tagId: number) => Promise<{ success: boolean; error?: string }>;
   toggleFavorite: (videoId: number) => Promise<{ success: boolean; favorited?: boolean; error?: string }>;
   getFavoritedCount: () => Promise<number>;
@@ -123,6 +155,22 @@ export interface ElectronAPI {
   getMarkedForDeletionCount: () => Promise<number>;
   batchUnmarkForDeletion: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
   batchDeleteVideos: (videoIds: number[]) => Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }>;
+  deleteUnfavoritedVideosInFolder: (folderId: number) => Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }>;
+  getOrganizeCategories: () => Promise<OrganizeCategory[]>;
+  createOrganizeCategory: (name: string) => Promise<{ success: boolean; category?: OrganizeCategory; error?: string }>;
+  renameOrganizeCategory: (categoryId: number, name: string) => Promise<{ success: boolean; error?: string }>;
+  deleteOrganizeCategory: (categoryId: number) => Promise<{ success: boolean; error?: string }>;
+  setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; error?: string }>;
+  organizeFolder: (folderId: number, destinationRootPath?: string) => Promise<{
+    success: boolean;
+    movedCount?: number;
+    skippedCount?: number;
+    importedFolders?: number;
+    importedFiles?: number;
+    missingFolders?: string[];
+    errors?: string[];
+    error?: string;
+  }>;
   exportMarkedForDeletionList: () => Promise<{ success: boolean; path?: string; count?: number; error?: string }>;
   checkRemovableDrives: () => Promise<{ drives: string[]; mounted: string[] }>;
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }) => Promise<void>;

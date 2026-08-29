@@ -80,6 +80,7 @@ export interface VideoFilter {
   folderIds?: number[];     // 多选目录（含各自子目录）
   search?: string;          // 文件名搜索
   favorited?: boolean;      // 只显示收藏
+  hideFavorited?: boolean;  // 隐藏收藏
   markedForDeletion?: boolean; // 只显示标记删除
   mediaType?: MediaType;    // 媒体类型分类（all/video/audio/text）
   sortBy?: SortBy;          // 排序字段
@@ -98,13 +99,17 @@ const SORT_COLUMNS: Record<Exclude<SortBy, 'random'>, string> = {
 // 根据过滤条件查询视频列表
 export function getVideos(filter: VideoFilter = {}) {
   const db = getDb();
-  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, markedForDeletion, mediaType, sortBy = 'added', sortDir = 'desc' } = filter;
+  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, hideFavorited, markedForDeletion, mediaType, sortBy = 'added', sortDir = 'desc' } = filter;
   // 合并单选/多选目录
   const folderIdList = folderIds && folderIds.length > 0
     ? folderIds
     : (folderId != null ? [folderId] : []);
 
-  let sql = `SELECT DISTINCT v.* FROM videos v`;
+  let sql = `
+    SELECT DISTINCT v.*, voc.category_id as organize_category_id
+    FROM videos v
+    LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
+  `;
   const conditions: string[] = [];
   const params: any[] = [];
 
@@ -118,6 +123,8 @@ export function getVideos(filter: VideoFilter = {}) {
   // 收藏过滤
   if (favorited === true) {
     conditions.push(`v.favorited = 1`);
+  } else if (hideFavorited === true) {
+    conditions.push(`v.favorited = 0`);
   }
 
   // 删除标记过滤
@@ -215,6 +222,8 @@ export function deleteFolderCascade(folderId: number): { thumbnailUrls: string[]
   const tx = db.transaction(() => {
     db.prepare(`DELETE FROM video_tags WHERE video_id IN (SELECT id FROM videos WHERE ${subtreeFilter})`)
       .run(folder.path, like);
+    db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (SELECT id FROM videos WHERE ${subtreeFilter})`)
+      .run(folder.path, like);
     db.prepare(`DELETE FROM videos WHERE ${subtreeFilter}`).run(folder.path, like);
     db.prepare(`DELETE FROM folders WHERE path = ? OR path LIKE ?`).run(folder.path, like);
     // 清理孤儿标签（不再被任何视频引用）
@@ -223,6 +232,25 @@ export function deleteFolderCascade(folderId: number): { thumbnailUrls: string[]
   tx();
 
   return { thumbnailUrls, videoCount: rows.length };
+}
+
+export interface FolderDeleteTarget {
+  id: number;
+  path: string;
+  name: string;
+  parent_id: number | null;
+}
+
+// 获取批量删除目录所需的路径信息。实际磁盘删除由主进程执行。
+export function getFolderDeleteTargets(folderIds: number[]): FolderDeleteTarget[] {
+  const ids = folderIds.filter((id) => Number.isInteger(id));
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  return getDb().prepare(`
+    SELECT id, path, name, parent_id
+    FROM folders
+    WHERE id IN (${placeholders})
+  `).all(...ids) as FolderDeleteTarget[];
 }
 
 // 删除标签：仅移除标签本身及其与视频的关联，视频与缩略图保留。
@@ -311,6 +339,7 @@ export function batchDeleteVideos(videoIds: number[]): { thumbnailUrls: string[]
 
   const tx = db.transaction(() => {
     db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...videoIds);
+    db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...videoIds);
     db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...videoIds);
     // 清理孤儿标签
     db.prepare(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)`).run();
@@ -318,6 +347,215 @@ export function batchDeleteVideos(videoIds: number[]): { thumbnailUrls: string[]
   tx();
 
   return { thumbnailUrls, deletedPaths };
+}
+
+export function getOrganizeCategories() {
+  const db = getDb();
+  return db.prepare(`
+    SELECT c.id, c.name, c.sort_order, COUNT(voc.video_id) as count
+    FROM organize_categories c
+    LEFT JOIN video_organize_categories voc ON voc.category_id = c.id
+    GROUP BY c.id
+    ORDER BY c.sort_order ASC, c.name COLLATE NOCASE ASC
+  `).all();
+}
+
+export function createOrganizeCategory(name: string) {
+  const normalized = name.trim();
+  if (!normalized) throw new Error('分类名称不能为空');
+  if (/[\\/:*?"<>|]/.test(normalized) || normalized === '.' || normalized === '..') {
+    throw new Error('分类名称包含 Windows 不允许的字符');
+  }
+  const db = getDb();
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) as value FROM organize_categories').get() as { value: number };
+  const result = db.prepare(
+    'INSERT INTO organize_categories (name, sort_order) VALUES (?, ?)'
+  ).run(normalized, maxOrder.value + 1);
+  return db.prepare('SELECT id, name, sort_order FROM organize_categories WHERE id = ?').get(result.lastInsertRowid);
+}
+
+export function renameOrganizeCategory(categoryId: number, name: string) {
+  const normalized = name.trim();
+  if (!normalized) throw new Error('分类名称不能为空');
+  if (/[\\/:*?"<>|]/.test(normalized) || normalized === '.' || normalized === '..') {
+    throw new Error('分类名称包含 Windows 不允许的字符');
+  }
+  getDb().prepare('UPDATE organize_categories SET name = ? WHERE id = ?').run(normalized, categoryId);
+}
+
+export function deleteOrganizeCategory(categoryId: number) {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM video_organize_categories WHERE category_id = ?').run(categoryId);
+    db.prepare('DELETE FROM organize_categories WHERE id = ?').run(categoryId);
+  });
+  tx();
+}
+
+export function setVideoOrganizeCategory(videoId: number, categoryId: number | null) {
+  const db = getDb();
+  if (categoryId == null) {
+    db.prepare('DELETE FROM video_organize_categories WHERE video_id = ?').run(videoId);
+  } else {
+    db.prepare(`
+      INSERT INTO video_organize_categories (video_id, category_id)
+      VALUES (?, ?)
+      ON CONFLICT(video_id) DO UPDATE SET category_id = excluded.category_id
+    `).run(videoId, categoryId);
+  }
+}
+
+export interface OrganizeCandidate {
+  id: number;
+  path: string;
+  name: string;
+  category_id: number | null;
+  category_name: string | null;
+}
+
+export function getOrganizeCandidatesInFolder(folderId: number): OrganizeCandidate[] {
+  const db = getDb();
+  const folder = db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
+  if (!folder) return [];
+  const videoExt = extClause('video', 'v.ext');
+  const like = folder.path + path.sep + '%';
+  return db.prepare(`
+    SELECT v.id, v.path, v.name,
+           voc.category_id,
+           c.name as category_name
+    FROM videos v
+    LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
+    LEFT JOIN organize_categories c ON c.id = voc.category_id
+    WHERE ${videoExt.clause}
+      AND v.folder_id IN (
+        SELECT id FROM folders WHERE path = ? OR path LIKE ?
+      )
+    ORDER BY v.path COLLATE NOCASE
+  `).all(...videoExt.params, folder.path, like) as OrganizeCandidate[];
+}
+
+export function getOrCreateOrganizeFolder(
+  folderId: number,
+  categoryId: number,
+  destinationRootPath?: string,
+): { id: number; path: string } {
+  const db = getDb();
+  const parent = db.prepare(
+    'SELECT path, import_root_id FROM folders WHERE id = ?'
+  ).get(folderId) as { path: string; import_root_id: number | null } | undefined;
+  const category = db.prepare(
+    'SELECT name FROM organize_categories WHERE id = ?'
+  ).get(categoryId) as { name: string } | undefined;
+  if (!parent || !category) throw new Error('整理目录或分类不存在');
+
+  let destinationFolderId = folderId;
+  let importRootId = parent.import_root_id;
+  let rootPath = parent.path;
+
+  if (destinationRootPath?.trim()) {
+    rootPath = path.resolve(destinationRootPath);
+    const existingRoot = db.prepare(`
+      SELECT id, path, import_root_id
+      FROM folders
+      WHERE path = ? COLLATE NOCASE
+    `).get(rootPath) as {
+      id: number;
+      path: string;
+      import_root_id: number | null;
+    } | undefined;
+
+    if (existingRoot) {
+      destinationFolderId = existingRoot.id;
+      importRootId = existingRoot.import_root_id ?? existingRoot.id;
+      if (existingRoot.import_root_id == null) {
+        db.prepare('UPDATE folders SET import_root_id = ? WHERE id = ?')
+          .run(importRootId, existingRoot.id);
+      }
+      rootPath = existingRoot.path;
+    } else {
+      const rootName = path.basename(rootPath) || rootPath;
+      const rootResult = db.prepare(`
+        INSERT INTO folders (path, name, parent_id, import_root_id)
+        VALUES (?, ?, NULL, NULL)
+      `).run(rootPath, rootName);
+      destinationFolderId = Number(rootResult.lastInsertRowid);
+      importRootId = destinationFolderId;
+      db.prepare('UPDATE folders SET import_root_id = ? WHERE id = ?')
+        .run(importRootId, destinationFolderId);
+    }
+  }
+
+  const folderPath = path.join(rootPath, category.name);
+  const existing = db.prepare(`
+    SELECT id, path
+    FROM folders
+    WHERE path = ? COLLATE NOCASE
+  `).get(folderPath) as { id: number; path: string } | undefined;
+  if (existing) return { id: existing.id, path: existing.path };
+
+  const result = db.prepare(`
+    INSERT INTO folders (path, name, parent_id, import_root_id)
+    VALUES (?, ?, ?, ?)
+  `).run(folderPath, category.name, destinationFolderId, importRootId);
+  return { id: Number(result.lastInsertRowid), path: folderPath };
+}
+
+export function updateVideoPath(videoId: number, newPath: string, folderId: number): void {
+  getDb().prepare(
+    'UPDATE videos SET path = ?, name = ?, folder_id = ? WHERE id = ?'
+  ).run(newPath, path.basename(newPath), folderId, videoId);
+}
+
+export interface UnfavoritedFileCandidate {
+  id: number;
+  path: string;
+  thumbnail_path: string | null;
+}
+
+// 获取目录及其子目录内未收藏的文件，包含音频、小说和漫画目录记录。
+export function getUnfavoritedFileCandidatesInFolder(folderId: number): UnfavoritedFileCandidate[] {
+  const db = getDb();
+  const folder = db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
+  if (!folder) return [];
+
+  const like = folder.path + path.sep + '%';
+  return db.prepare(`
+    SELECT v.id, v.path, v.thumbnail_path
+    FROM videos v
+    WHERE v.favorited = 0
+      AND v.folder_id IN (
+        SELECT id FROM folders WHERE path = ? OR path LIKE ?
+      )
+    ORDER BY v.path COLLATE NOCASE
+  `).all(folder.path, like) as UnfavoritedFileCandidate[];
+}
+
+// 仅移除数据库记录，磁盘文件由主进程在确认实际删除成功后再清理。
+export function deleteVideoRecords(videoIds: number[]): { thumbnailUrls: string[]; deletedCount: number } {
+  if (videoIds.length === 0) return { thumbnailUrls: [], deletedCount: 0 };
+  const db = getDb();
+  const thumbnailUrls: string[] = [];
+  let deletedCount = 0;
+
+  const tx = db.transaction(() => {
+    for (let offset = 0; offset < videoIds.length; offset += 500) {
+      const batch = videoIds.slice(offset, offset + 500);
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = db.prepare(
+        `SELECT thumbnail_path FROM videos WHERE id IN (${placeholders})`
+      ).all(...batch) as { thumbnail_path: string | null }[];
+      thumbnailUrls.push(...rows.map((row) => row.thumbnail_path).filter(Boolean) as string[]);
+
+      db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      const result = db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...batch);
+      deletedCount += result.changes;
+    }
+    db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)').run();
+  });
+  tx();
+
+  return { thumbnailUrls, deletedCount };
 }
 
 // 导出标记删除的视频文件名列表

@@ -31,13 +31,14 @@ export function setThumbnailListeners(ready: ReadyListener, progress: ProgressLi
   onProgress = progress;
 }
 
-// SSD + GTX 1060：16 并发填补 GPU 空闲间隙，充分利用 NVDEC 吞吐量
-const CONCURRENCY = 16;
+// 缩略图属于后台任务，不能与 mpv 播放争抢磁盘、CPU 和解码器。
+const CONCURRENCY = 2;
 
 // 待处理队列（去重：已在队列或处理中的 id 不重复加入）
 const pending: number[] = [];
 const queued = new Set<number>();
 let active = 0;
+let paused = false;
 
 // 进度统计（一轮批次内累计）
 let doneCount = 0;
@@ -76,7 +77,8 @@ function maybeResetCounters() {
 }
 
 function pump() {
-  while (active < CONCURRENCY && pending.length > 0) {
+  if (paused) return;
+  while (!paused && active < CONCURRENCY && pending.length > 0) {
     const id = pending.shift()!;
     active++;
     processOne(id).finally(() => {
@@ -88,6 +90,12 @@ function pump() {
       pump();
     });
   }
+}
+
+// 播放期间暂停启动新的缩略图任务，已运行任务会自然结束。
+export function setThumbnailGenerationPaused(value: boolean) {
+  paused = value;
+  if (!paused) pump();
 }
 
 async function processOne(id: number) {

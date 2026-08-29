@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { Music2, BookOpen, RefreshCw } from 'lucide-react';
-import { Video } from '../types';
+import { Music2, BookOpen, RefreshCw, FolderKanban, X } from 'lucide-react';
+import { OrganizeCategory, Video } from '../types';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
 import { isAudioFile, isTextFile, isComicExt } from '../media';
@@ -20,6 +20,8 @@ interface VideoGridProps {
   selectedIds?: Set<number>;
   onToggleSelect?: (videoId: number) => void;
   onMarkForDeletion?: (videoId: number) => void;
+  organizeCategories?: OrganizeCategory[];
+  onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void;
 }
 
 const GAP = 12;
@@ -145,10 +147,13 @@ interface VideoCardProps {
   selectionMode: boolean;
   isSelected: boolean;
   onToggleSelect: (videoId: number) => void;
+  organizeCategories: OrganizeCategory[];
+  onSetOrganizeCategory: (videoId: number, categoryId: number | null) => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onSetOrganizeCategory }: VideoCardProps) {
   const [hover, setHover] = useState(false);
+  const [flipped, setFlipped] = useState(false);
   const durLabel = formatDuration(video.duration);
   const comicItem = isComicExt(video.ext);
   const thumbHeight = height - 46;
@@ -166,22 +171,27 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
       ref={cardRef}
       tabIndex={-1}
       onClick={handleClick}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!selectionMode) setFlipped(true);
+      }}
       onPointerMove={(event) => {
         onFocus();
         event.currentTarget.focus({ preventScroll: true });
         setHover(true);
       }}
       onMouseLeave={() => setHover(false)}
-      className={'video-card' + (focused ? ' video-card-focused' : '')}
+      className={'video-card glass' + (focused ? ' video-card-focused' : '')}
       style={{
         position: 'absolute',
         left: 0, top: 0,
         width, height,
         transform: `translate(${x}px, ${y}px)`,
-        background: 'var(--bg-card)',
         borderRadius: 10,
         overflow: 'hidden',
         cursor: 'pointer',
+        perspective: 1000,
         display: 'flex',
         flexDirection: 'column',
         boxShadow: focused
@@ -192,10 +202,79 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         transition: animate
           ? 'transform 0.32s cubic-bezier(0.22,0.61,0.36,1), width 0.32s cubic-bezier(0.22,0.61,0.36,1), height 0.32s cubic-bezier(0.22,0.61,0.36,1), box-shadow 0.15s ease'
           : 'box-shadow 0.15s ease',
-        border: '1px solid var(--border)',
         willChange: 'transform, width, height',
       }}
     >
+      {flipped ? (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            padding: 14,
+            background: 'var(--glass-bg-strong)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14 }}>
+            <FolderKanban size={17} />
+            <span style={{ flex: 1 }}>选择整理分类</span>
+            <button
+              onClick={() => setFlipped(false)}
+              title="取消"
+              style={{ border: 0, background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={video.name}>
+            {video.name}
+          </div>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button
+              onClick={() => { onSetOrganizeCategory(video.id, null); setFlipped(false); }}
+              style={{
+                textAlign: 'left', border: '1px solid var(--border)', borderRadius: 6,
+                padding: '7px 9px',
+                background: video.organize_category_id == null ? 'var(--accent)' : 'var(--bg-card)',
+                color: video.organize_category_id == null ? '#fff' : 'var(--text-primary)',
+                cursor: 'pointer',
+              }}
+            >
+              未分类
+            </button>
+            {organizeCategories.length > 0 ? organizeCategories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => { onSetOrganizeCategory(video.id, category.id); setFlipped(false); }}
+                style={{
+                  textAlign: 'left', border: '1px solid var(--border)', borderRadius: 6,
+                  padding: '7px 9px',
+                  background: video.organize_category_id === category.id ? 'var(--accent)' : 'var(--bg-card)',
+                  color: video.organize_category_id === category.id ? '#fff' : 'var(--text-primary)',
+                  cursor: 'pointer',
+                }}
+              >
+                {category.name}
+              </button>
+            )) : (
+              <div style={{
+                padding: '10px 9px',
+                border: '1px dashed var(--border)',
+                borderRadius: 6,
+                color: 'var(--text-secondary)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}>
+                还没有预设分类，请先到“设置 → 视频整理”中新建分类。
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ position: 'relative' }}>
         <Thumb video={video} height={thumbHeight} />
         {durLabel && (
@@ -235,15 +314,17 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
               style={{
                 position: 'absolute', top: 6, right: 44,
                 width: 32, height: 32,
-                background: 'rgba(0,0,0,0.6)',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'var(--glass-bg-strong)',
+                backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+                WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+                border: '1px solid var(--glass-border)',
                 borderRadius: '50%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: regenerating ? 'wait' : 'pointer',
                 transition: 'all 0.2s ease',
                 color: '#fff',
                 opacity: regenerating ? 0.7 : 1,
+                boxShadow: 'var(--glass-highlight)',
               }}
               title="重新生成缩略图"
             >
@@ -255,14 +336,16 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
             style={{
               position: 'absolute', top: 6, right: 6,
               width: 32, height: 32,
-              background: 'rgba(0,0,0,0.6)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+              WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+              border: '1px solid var(--glass-border)',
               borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               color: video.favorited ? '#ef4444' : '#fff',
+              boxShadow: 'var(--glass-highlight)',
             }}
             title={video.favorited ? '取消收藏' : '收藏'}
           >
@@ -295,11 +378,13 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
           )}
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onMarkForDeletion }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onMarkForDeletion, organizeCategories = [], onSetOrganizeCategory = () => {} }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -654,15 +739,17 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          background: 'var(--bg-toolbar)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+          WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
           borderRadius: 8,
           padding: '8px 12px',
           marginBottom: 12,
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          boxShadow: 'var(--shadow)',
-          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow), var(--glass-highlight)',
+          border: '1px solid var(--glass-border)',
         }}>
           {!selectionMode ? (
             <button
@@ -743,7 +830,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           color: 'var(--text-secondary)', gap: 12,
         }}>
           <div style={{ fontSize: 48 }}>🎬</div>
-          <div>没有符合条件的视频</div>
+          <div>没有符合条件的文件</div>
         </div>
       ) : (
         <div style={{ position: 'relative', height: totalHeight }}>
@@ -776,6 +863,8 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 selectionMode={selectionMode}
                 isSelected={selectedIds.has(L.video.id)}
                 onToggleSelect={handleToggleSelect}
+                organizeCategories={organizeCategories}
+                onSetOrganizeCategory={onSetOrganizeCategory}
               />
             );
           })}

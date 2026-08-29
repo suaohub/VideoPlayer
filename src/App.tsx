@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import './themes.css';
-import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir } from './types';
+import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { FolderTree } from './components/FolderTree';
@@ -30,6 +30,7 @@ function App() {
   const [mediaType, setMediaType] = useState<MediaType>('all');
   const [search, setSearch] = useState('');
   const [showFavorited, setShowFavorited] = useState(false);
+  const [showFavoritedInList, setShowFavoritedInList] = useState(true);
   const [favoritedCount, setFavoritedCount] = useState(0);
   const [showMarkedForDeletion, setShowMarkedForDeletion] = useState(false);
   const [markedForDeletionCount, setMarkedForDeletionCount] = useState(0);
@@ -42,6 +43,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [thumbProgress, setThumbProgress] = useState<{ done: number; total: number } | null>(null);
   // 卡片大小（即瀑布流列宽，px）。越大卡片越大、每行越少。
@@ -65,6 +67,9 @@ function App() {
   const [readingComic, setReadingComic] = useState<Video | null>(null);
   // 刷视频模式：非空数组时渲染 ShortsFeed
   const [feedVideos, setFeedVideos] = useState<Video[] | null>(null);
+  const [organizeCategories, setOrganizeCategories] = useState<OrganizeCategory[]>([]);
+  const [organizeOutputPath, setOrganizeOutputPath] = useState<string | null>(null);
+  const [organizing, setOrganizing] = useState(false);
 
   // 定期检测磁盘挂载状态（启动时 + 每30秒一次）
   const checkDrives = useCallback(async () => {
@@ -110,19 +115,24 @@ function App() {
       folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
       search: search || undefined,
       favorited: showFavorited || undefined,
-      markedForDeletion: false, // 默认不显示已标记删除的视频
+      hideFavorited: !showFavorited && !showFavoritedInList ? true : undefined,
+      markedForDeletion: false, // 默认不显示已标记删除的文件
       mediaType,
       sortBy,
       sortDir,
     };
     const list = await api.getVideos(filter);
     setVideos(list);
-  }, [selectedFolderIds, search, showFavorited, mediaType, sortBy, sortDir]);
+  }, [selectedFolderIds, search, showFavorited, showFavoritedInList, mediaType, sortBy, sortDir]);
 
   const refreshVisibleData = useCallback(async () => {
     await refreshAll();
     await loadVideos();
   }, [refreshAll, loadVideos]);
+
+  const refreshOrganizeCategories = useCallback(async () => {
+    setOrganizeCategories(await api.getOrganizeCategories());
+  }, []);
 
   // 打开刷视频模式：按当前过滤取视频，再筛出浏览器可解码的格式
   const handleOpenFeed = useCallback(async () => {
@@ -130,6 +140,7 @@ function App() {
       folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
       search: search || undefined,
       favorited: showFavorited || undefined,
+      hideFavorited: !showFavorited && !showFavoritedInList ? true : undefined,
       mediaType: 'video',
       sortBy,
       sortDir,
@@ -137,7 +148,7 @@ function App() {
     const list = await api.getVideos(filter);
     const playable = list.filter((v) => isPlayableInBrowser(v.path));
     setFeedVideos(playable);
-  }, [selectedFolderIds, search, showFavorited, sortBy, sortDir]);
+  }, [selectedFolderIds, search, showFavorited, showFavoritedInList, sortBy, sortDir]);
 
   const loadAllVideos = useCallback(async () => {
     await refreshAll();
@@ -230,11 +241,16 @@ function App() {
           await api.setSetting('wallpaperPath', '');
         }
       }
+      const savedOrganizeOutputPath = await api.getSetting('organizeOutputPath');
+      if (savedOrganizeOutputPath) {
+        setOrganizeOutputPath(savedOrganizeOutputPath);
+      }
       setPreferencesLoaded(true);
+      await refreshOrganizeCategories();
       await refreshAll();
       await loadVideos();
     })();
-  }, [refreshAll, loadVideos]);
+  }, [refreshAll, loadVideos, refreshOrganizeCategories]);
 
   // 导入进度监听
   useEffect(() => {
@@ -351,6 +367,18 @@ function App() {
     await api.setSetting('wallpaperPath', '');
   };
 
+  const handleSelectOrganizeOutputFolder = async () => {
+    const result = await api.selectOrganizeOutputFolder();
+    if (result.canceled || !result.path) return;
+    setOrganizeOutputPath(result.path);
+    await api.setSetting('organizeOutputPath', result.path);
+  };
+
+  const handleClearOrganizeOutputFolder = async () => {
+    setOrganizeOutputPath(null);
+    await api.setSetting('organizeOutputPath', '');
+  };
+
   const handleRegenerateThumbnail = async (videoId: number) => {
     if (regeneratingThumbnailId != null) return;
     setRegeneratingThumbnailId(videoId);
@@ -386,6 +414,39 @@ function App() {
     setSelectedFolderIds([]);
     setSearch('');
     setShowFavorited(false);
+    setShowFavoritedInList(true);
+  };
+
+  const handleRefreshImportedFolders = async () => {
+    if (refreshing || importing) return;
+    setRefreshing(true);
+    setImporting(true);
+    setImportProgress(null);
+    try {
+      const result = await api.refreshImportedFolders();
+      if (!result.success) {
+        alert(`刷新失败：${result.error ?? '未知错误'}`);
+        return;
+      }
+
+      await refreshVisibleData();
+      const missingRoots = result.missingRoots ?? [];
+      const details = [
+        `发现新增 ${result.newFiles ?? 0} 个文件`,
+        `清理 ${result.deletedFiles ?? 0} 个文件记录`,
+        missingRoots.length > 0
+          ? `未找到导入目录：${missingRoots.slice(0, 2).join('、')}${missingRoots.length > 2 ? ' 等' : ''}`
+          : '',
+      ].filter(Boolean).join('，');
+      alert(`刷新完成：${details}。`);
+    } catch (error) {
+      console.error('[refresh] failed', error);
+      alert(`刷新失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setRefreshing(false);
+      setImporting(false);
+      setImportProgress(null);
+    }
   };
 
   // 随机打乱视频顺序
@@ -439,43 +500,210 @@ function App() {
     }
   };
 
-  // 删除单个目录（含子目录）：删除视频记录、缩略图、标签关联，保留源文件
+  // 删除单个目录（含子目录）：删除文件记录、缩略图、标签关联，保留源文件
   const handleDeleteFolder = async (folder: Folder) => {
     if (!confirm(
       `删除目录「${folder.name}」？\n\n` +
       `这将删除该目录及其所有子目录下：\n` +
-      `• 视频的导入记录\n` +
+      `• 文件的导入记录\n` +
       `• 已生成的缩略图缓存\n` +
       `• 相关的标签关联（不再被使用的标签会一并清理）\n\n` +
-      `磁盘上的视频文件本身不会被删除，重新导入即可恢复。`
+      `磁盘上的文件本身不会被删除，重新导入即可恢复。`
     )) return;
     const result = await api.deleteFolder(folder.id);
     if (result.success) {
       setSelectedFolderIds((prev) => prev.filter((id) => id !== folder.id));
       await refreshVisibleData();
-      alert(`已删除目录「${folder.name}」：清理了 ${result.videoCount ?? 0} 条视频记录、${result.thumbCount ?? 0} 张缩略图。`);
+      alert(`已删除目录「${folder.name}」：清理了 ${result.videoCount ?? 0} 条文件记录、${result.thumbCount ?? 0} 张缩略图。`);
     } else {
       alert(`删除失败：${result.error}`);
     }
   };
 
-  // 切换视频收藏状态
+  // 永久删除所选目录的磁盘内容，并在物理删除成功后清理导入记录。
+  const handleDeleteFoldersFromDisk = async (folderIds: number[]) => {
+    const ids = Array.from(new Set(folderIds.filter((id) => Number.isInteger(id))));
+    if (ids.length === 0) return;
+
+    const selectedFolders = folders.filter((folder) => ids.includes(folder.id));
+    const names = selectedFolders.map((folder) => `「${folder.name}」`).join('、');
+    const scope = ids.length === 1
+      ? `目录 ${names} 及其所有子目录`
+      : `选中的 ${ids.length} 个目录及其所有子目录`;
+    if (!confirm(
+      `永久删除${scope}？\n\n` +
+      `将从硬盘删除目录中的所有文件和文件夹，同时清理对应的文件导入记录、缩略图和标签关联。\n` +
+      `已删除的数据无法恢复，请确认重要文件已经备份。`
+    )) return;
+
+    const result = await api.deleteFoldersFromDisk(ids);
+    const failedIds = new Set(result.failedFolderIds ?? []);
+    setSelectedFolderIds((prev) => prev.filter((id) => failedIds.has(id)));
+    await refreshVisibleData();
+
+    if (result.error) {
+      alert(`永久删除失败：${result.error}`);
+      return;
+    }
+    if (result.errors && result.errors.length > 0) {
+      alert(
+        `已删除 ${result.deletedFolderCount ?? 0} 个目录，清理 ${result.videoCount ?? 0} 条文件记录。\n\n` +
+        `${result.errors.join('\n')}`
+      );
+      return;
+    }
+    alert(
+      `已永久删除 ${result.deletedFolderCount ?? 0} 个目录，` +
+      `清理 ${result.videoCount ?? 0} 条文件记录、${result.thumbCount ?? 0} 张缩略图。`
+    );
+  };
+
+  const handleSetOrganizeCategory = async (videoId: number, categoryId: number | null) => {
+    const result = await api.setVideoOrganizeCategory(videoId, categoryId);
+    if (!result.success) {
+      alert(`设置整理分类失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+    setVideos((prev) => prev.map((video) => (
+      video.id === videoId ? { ...video, organize_category_id: categoryId } : video
+    )));
+    setOrganizeCategories((prev) => prev.map((category) => {
+      const video = videos.find((item) => item.id === videoId);
+      if (!video) return category;
+      if (video.organize_category_id === category.id && categoryId !== category.id) {
+        return { ...category, count: Math.max(0, (category.count ?? 0) - 1) };
+      }
+      if (video.organize_category_id !== category.id && categoryId === category.id) {
+        return { ...category, count: (category.count ?? 0) + 1 };
+      }
+      return category;
+    }));
+  };
+
+  const handleCreateOrganizeCategory = async (name: string) => {
+    const result = await api.createOrganizeCategory(name);
+    if (!result.success) {
+      alert(`新建分类失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+    await refreshOrganizeCategories();
+  };
+
+  const handleRenameOrganizeCategory = async (categoryId: number, name: string) => {
+    const result = await api.renameOrganizeCategory(categoryId, name);
+    if (!result.success) {
+      alert(`重命名分类失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+    await refreshOrganizeCategories();
+  };
+
+  const handleDeleteOrganizeCategory = async (categoryId: number) => {
+    const result = await api.deleteOrganizeCategory(categoryId);
+    if (!result.success) {
+      alert(`删除分类失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+    setVideos((prev) => prev.map((video) => (
+      video.organize_category_id === categoryId
+        ? { ...video, organize_category_id: null }
+        : video
+    )));
+    await refreshOrganizeCategories();
+  };
+
+  const handleOrganizeFolder = async () => {
+    if (selectedFolderIds.length !== 1) {
+      alert('请先在目录树中单选一个目录。');
+      return;
+    }
+    const folder = folders.find((item) => item.id === selectedFolderIds[0]);
+    if (!folder) return;
+    if (!confirm(
+      `确认整理目录「${folder.name}」及其子目录中的视频？\n\n` +
+      `程序会按视频卡片上选择的整理分类创建子文件夹并移动文件。\n` +
+      `未分类视频不会移动，收藏和原始标签会保留。`
+    )) return;
+
+    setOrganizing(true);
+    try {
+      const result = await api.organizeFolder(folder.id, organizeOutputPath ?? undefined);
+      if (!result.success) {
+        alert(`整理失败：${result.error ?? '未知错误'}`);
+        return;
+      }
+      await refreshVisibleData();
+      await refreshOrganizeCategories();
+      const detail = result.errors?.length
+        ? `\n\n${result.errors.length} 个文件未能移动。`
+        : '';
+      const importDetail = result.importedFolders
+        ? `\n已自动导入 ${result.importedFolders} 个整理目录，发现 ${result.importedFiles ?? 0} 个新文件。`
+        : '';
+      const missingDetail = result.missingFolders?.length
+        ? `\n有 ${result.missingFolders.length} 个整理目录未找到。`
+        : '';
+      alert(
+        `整理完成：移动 ${result.movedCount ?? 0} 个，跳过 ${result.skippedCount ?? 0} 个。` +
+        `${importDetail}${missingDetail}${detail}`,
+      );
+    } finally {
+      setOrganizing(false);
+      setImportProgress(null);
+    }
+  };
+
+  // 从磁盘删除目录及其子目录内所有未收藏的文件，收藏文件不会受影响。
+  const handleDeleteUnfavoritedVideos = async (folder: Folder) => {
+    if (!confirm(
+      `确认删除目录「${folder.name}」及其子目录中的所有未收藏文件？\n\n` +
+      `这会从磁盘永久删除未收藏的文件，并清理对应的库记录和缩略图。\n` +
+      `已收藏的文件不会被删除，此操作无法撤销。`
+    )) return;
+
+    const result = await api.deleteUnfavoritedVideosInFolder(folder.id);
+    if (!result.success) {
+      alert(`删除未收藏文件失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+    if ((result.totalCount ?? 0) === 0) {
+      alert(`目录「${folder.name}」及其子目录中没有可删除的未收藏文件。`);
+      return;
+    }
+    const detail = result.errors && result.errors.length > 0
+      ? `\n\n有 ${result.errors.length} 个文件删除失败，仍保留在列表中。`
+      : '';
+    alert(`已从磁盘删除 ${result.deletedCount ?? 0}/${result.totalCount ?? 0} 个未收藏文件。${detail}`);
+    await refreshVisibleData();
+  };
+
+  // 切换文件收藏状态
   const handleToggleFavorite = async (videoId: number) => {
     const result = await api.toggleFavorite(videoId);
     if (result.success) {
-      // 更新本地视频列表中的收藏状态
-      setVideos((prev) =>
-        prev.map((v) => (v.id === videoId ? { ...v, favorited: result.favorited ? 1 : 0 } : v))
-      );
+      const favorited = result.favorited === true;
+      const shouldRemoveFromList =
+        (showFavorited && !favorited) ||
+        (!showFavorited && !showFavoritedInList && favorited);
+
+      // 当前筛选不再匹配时立即移除卡片，避免必须重新加载列表。
+      setVideos((prev) => {
+        if (shouldRemoveFromList) {
+          return prev.filter((v) => v.id !== videoId);
+        }
+        return prev.map((v) => (
+          v.id === videoId ? { ...v, favorited: favorited ? 1 : 0 } : v
+        ));
+      });
       // 更新收藏总数
-      setFavoritedCount((prev) => (result.favorited ? prev + 1 : prev - 1));
+      setFavoritedCount((prev) => (favorited ? prev + 1 : Math.max(0, prev - 1)));
     }
   };
 
   // 批量取消收藏
   const handleBatchUnfavorite = async (videoIds: number[]) => {
     if (videoIds.length === 0) return;
-    if (!confirm(`确认将 ${videoIds.length} 个视频移出收藏夹？`)) return;
+    if (!confirm(`确认将 ${videoIds.length} 个文件移出收藏夹？`)) return;
     const result = await api.batchUnfavorite(videoIds);
     if (result.success) {
       // 更新本地视频列表
@@ -493,7 +721,7 @@ function App() {
     }
   };
 
-  // 标记视频删除
+  // 标记文件删除
   const handleMarkForDeletion = async (videoId: number) => {
     const result = await api.toggleMarkedForDeletion(videoId);
     if (result.success) {
@@ -503,14 +731,14 @@ function App() {
       );
       // 更新标记删除总数
       setMarkedForDeletionCount((prev) => (result.marked ? prev + 1 : prev - 1));
-      // 从常规列表中移除已标记删除的视频
+      // 从常规列表中移除已标记删除的文件
       if (result.marked) {
         setVideos((prev) => prev.filter((v) => v.id !== videoId));
       }
     }
   };
 
-  // 过滤掉未挂载磁盘上的视频（前端过滤，避免不必要的数据库查询）
+  // 过滤掉未挂载磁盘上的文件（前端过滤，避免不必要的数据库查询）
   const visibleVideos = unmountedDrives.length === 0 ? videos : videos.filter(v => {
     const drive = v.path.match(/^([A-Za-z]:)/)?.[1]?.toUpperCase();
     if (!drive) return true; // 非驱动器路径（相对路径等）保留
@@ -546,6 +774,8 @@ function App() {
         onShuffle={shuffleVideos}
         onClearFilter={clearFilter}
         onOpenSettings={() => setSettingsOpen(true)}
+        onRefresh={handleRefreshImportedFolders}
+        refreshing={refreshing}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         mediaType={mediaType}
@@ -567,6 +797,8 @@ function App() {
         unmountedDrives={unmountedDrives}
         showFavorited={showFavorited}
         onShowFavoritedChange={setShowFavorited}
+        showFavoritedInList={showFavoritedInList}
+        onShowFavoritedInListChange={setShowFavoritedInList}
         favoritedCount={favoritedCount}
         toolbarOpacity={toolbarOpacity}
         toolbarBlur={toolbarBlur}
@@ -581,9 +813,11 @@ function App() {
         {sidebarOpen && (
           <aside style={{
             width: 260,
-            borderRight: '1px solid var(--border)',
-            background: `color-mix(in srgb, var(--bg-secondary) ${toolbarOpacity}%, transparent)`,
-            backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.08)` : 'none',
+            borderRight: '1px solid var(--glass-border)',
+            background: `color-mix(in srgb, var(--glass-bg-light) ${toolbarOpacity}%, transparent)`,
+            backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
+            WebkitBackdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
+            boxShadow: 'var(--glass-highlight)',
             overflowY: 'auto',
             flexShrink: 0,
           }}>
@@ -592,9 +826,14 @@ function App() {
               selectedFolderIds={selectedFolderIds}
               onSelectionChange={setSelectedFolderIds}
               onDeleteFolder={handleDeleteFolder}
+              onDeleteFoldersFromDisk={handleDeleteFoldersFromDisk}
+              onDeleteUnfavoritedVideos={handleDeleteUnfavoritedVideos}
               favoritedCount={favoritedCount}
               markedForDeletionCount={markedForDeletionCount}
-              onShowFavorited={() => setShowFavorited(true)}
+              onShowFavorited={() => {
+                setShowFavoritedInList(true);
+                setShowFavorited(true);
+              }}
               onShowMarkedForDeletion={() => setShowMarkedForDeletion(true)}
             />
           </aside>
@@ -614,6 +853,8 @@ function App() {
             onRegenerateThumbnail={handleRegenerateThumbnail}
             regeneratingThumbnailId={regeneratingThumbnailId}
             onMarkForDeletion={handleMarkForDeletion}
+            organizeCategories={organizeCategories}
+            onSetOrganizeCategory={handleSetOrganizeCategory}
           />
         </main>
       </div>
@@ -671,6 +912,18 @@ function App() {
           onToolbarOpacityChange={setToolbarOpacity}
           toolbarBlur={toolbarBlur}
           onToolbarBlurChange={setToolbarBlur}
+          organizeCategories={organizeCategories}
+          selectedFolderName={selectedFolderIds.length === 1
+            ? folders.find((folder) => folder.id === selectedFolderIds[0])?.name ?? null
+            : null}
+          onCreateOrganizeCategory={handleCreateOrganizeCategory}
+          onRenameOrganizeCategory={handleRenameOrganizeCategory}
+          onDeleteOrganizeCategory={handleDeleteOrganizeCategory}
+          organizeOutputPath={organizeOutputPath}
+          onSelectOrganizeOutputFolder={handleSelectOrganizeOutputFolder}
+          onClearOrganizeOutputFolder={handleClearOrganizeOutputFolder}
+          onOrganizeFolder={handleOrganizeFolder}
+          organizing={organizing}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import { Video, Tag, Folder, VideoFilter, ImportSourceSelection } from './types';
+import { Video, Tag, Folder, VideoFilter, ImportSourceSelection, RefreshResult } from './types';
 import { generateMockData } from './mock/mockData';
 
 // ⚠️ 开发开关：需要纯 UI 预览时可临时改为 true；正式运行走真实 IPC。
@@ -43,6 +43,13 @@ function mockGetVideos(filter: VideoFilter): Video[] {
     list = list.filter((v) => v.name.toLowerCase().includes(s));
   }
 
+  // 收藏过滤
+  if (filter.favorited === true) {
+    list = list.filter((v) => v.favorited === 1);
+  } else if (filter.hideFavorited === true) {
+    list = list.filter((v) => v.favorited !== 1);
+  }
+
   // 排序
   const sortBy = filter.sortBy ?? 'added';
   const sortDir = filter.sortDir ?? 'desc';
@@ -78,6 +85,30 @@ export const api = {
   async getTags(mediaType?: import('./types').MediaType): Promise<Tag[]> {
     if (USE_MOCK) return dataset.tags;
     return window.electronAPI.getTags(mediaType);
+  },
+  async getOrganizeCategories(): Promise<import('./types').OrganizeCategory[]> {
+    if (USE_MOCK) return [];
+    return window.electronAPI.getOrganizeCategories();
+  },
+  async createOrganizeCategory(name: string) {
+    if (USE_MOCK) return { success: true, category: { id: Date.now(), name, sort_order: 0 } };
+    return window.electronAPI.createOrganizeCategory(name);
+  },
+  async renameOrganizeCategory(categoryId: number, name: string) {
+    if (USE_MOCK) return { success: true };
+    return window.electronAPI.renameOrganizeCategory(categoryId, name);
+  },
+  async deleteOrganizeCategory(categoryId: number) {
+    if (USE_MOCK) return { success: true };
+    return window.electronAPI.deleteOrganizeCategory(categoryId);
+  },
+  async setVideoOrganizeCategory(videoId: number, categoryId: number | null) {
+    if (USE_MOCK) return { success: true, categoryId };
+    return window.electronAPI.setVideoOrganizeCategory(videoId, categoryId);
+  },
+  async organizeFolder(folderId: number, destinationRootPath?: string) {
+    if (USE_MOCK) return { success: true, movedCount: 0, skippedCount: 0 };
+    return window.electronAPI.organizeFolder(folderId, destinationRootPath);
   },
   async getFolderTree(mediaType?: import('./types').MediaType): Promise<Folder[]> {
     if (USE_MOCK) return dataset.folders;
@@ -129,6 +160,13 @@ export const api = {
     }
     return window.electronAPI.selectFolders();
   },
+  async selectOrganizeOutputFolder(): Promise<{ canceled: boolean; path: string | null }> {
+    if (USE_MOCK) {
+      alert('当前为 UI 预览模式（mock 数据），导入功能需在真实环境运行。');
+      return { canceled: true, path: null };
+    }
+    return window.electronAPI.selectOrganizeOutputFolder();
+  },
   async selectVideoFiles(): Promise<{ canceled: boolean; paths: string[] }> {
     if (USE_MOCK) {
       alert('当前为 UI 预览模式（mock 数据），导入功能需在真实环境运行。');
@@ -143,6 +181,12 @@ export const api = {
   async importVideoFiles(paths: string[]): Promise<any[]> {
     if (USE_MOCK) return [];
     return window.electronAPI.importVideoFiles(paths);
+  },
+  async refreshImportedFolders(): Promise<RefreshResult> {
+    if (USE_MOCK) {
+      return { success: true, roots: 0, refreshedRoots: 0, scannedFiles: 0, newFiles: 0, deletedFiles: 0 };
+    }
+    return window.electronAPI.refreshImportedFolders();
   },
 
   // 播放控制（真实视频用真播放，占位视频提示）
@@ -210,6 +254,10 @@ export const api = {
     if (window.electronAPI?.seek) return window.electronAPI.seek(seconds);
     return { success: true };
   },
+  async seekRelative(seconds: number): Promise<{ success: boolean }> {
+    if (window.electronAPI?.seekRelative) return window.electronAPI.seekRelative(seconds);
+    return { success: true };
+  },
   async setVolume(volume: number): Promise<{ success: boolean }> {
     if (window.electronAPI?.setVolume) return window.electronAPI.setVolume(volume);
     return { success: true };
@@ -265,6 +313,18 @@ export const api = {
     if (USE_MOCK) return { success: true, videoCount: 0, thumbCount: 0 };
     return window.electronAPI.deleteFolder(folderId);
   },
+  async deleteFoldersFromDisk(folderIds: number[]): Promise<{
+    success: boolean;
+    deletedFolderCount?: number;
+    videoCount?: number;
+    thumbCount?: number;
+    errors?: string[];
+    failedFolderIds?: number[];
+    error?: string;
+  }> {
+    if (USE_MOCK) return { success: true, deletedFolderCount: folderIds.length, videoCount: 0, thumbCount: 0 };
+    return window.electronAPI.deleteFoldersFromDisk(folderIds);
+  },
   async deleteTag(tagId: number): Promise<{ success: boolean; error?: string }> {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.deleteTag(tagId);
@@ -296,6 +356,10 @@ export const api = {
   async batchDeleteVideos(videoIds: number[]): Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }> {
     if (USE_MOCK) return { success: true, deletedCount: 0, totalCount: 0 };
     return window.electronAPI.batchDeleteVideos(videoIds);
+  },
+  async deleteUnfavoritedVideosInFolder(folderId: number): Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }> {
+    if (USE_MOCK) return { success: true, deletedCount: 0, totalCount: 0 };
+    return window.electronAPI.deleteUnfavoritedVideosInFolder(folderId);
   },
   async exportMarkedForDeletionList(): Promise<{ success: boolean; path?: string; count?: number; error?: string }> {
     if (USE_MOCK) return { success: false, error: 'mock' };

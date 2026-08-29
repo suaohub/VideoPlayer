@@ -7,6 +7,8 @@ interface FolderTreeProps {
   selectedFolderIds: number[];
   onSelectionChange: (ids: number[]) => void;
   onDeleteFolder: (folder: Folder) => void;
+  onDeleteFoldersFromDisk: (folderIds: number[]) => void;
+  onDeleteUnfavoritedVideos: (folder: Folder) => void;
   favoritedCount?: number;
   markedForDeletionCount?: number;
   onShowFavorited?: () => void;
@@ -101,7 +103,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   );
 }
 
-export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion }: FolderTreeProps) {
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion }: FolderTreeProps) {
   const tree = useMemo(() => buildTree(folders), [folders]);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
@@ -168,7 +170,7 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
     };
   }, [menu]);
 
-  const MENU_W = 160, MENU_H = 92;
+  const MENU_W = 250, MENU_H = 178;
   const mx = menu ? Math.min(menu.x, window.innerWidth - MENU_W - 8) : 0;
   const my = menu ? Math.min(menu.y, window.innerHeight - MENU_H - 8) : 0;
 
@@ -252,11 +254,34 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>目录结构</span>
         {selectedFolderIds.length > 1 && (
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>已选 {selectedFolderIds.length} 项</span>
         )}
+        <button
+          type="button"
+          disabled={selectedFolderIds.length === 0}
+          onClick={() => onDeleteFoldersFromDisk(selectedFolderIds)}
+          title={selectedFolderIds.length > 0 ? '永久删除所选目录及磁盘内容' : '请先选择目录'}
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '5px 8px',
+            border: '1px solid rgba(229,115,95,0.45)',
+            borderRadius: 6,
+            background: 'transparent',
+            color: selectedFolderIds.length > 0 ? '#e5735f' : 'var(--text-secondary)',
+            opacity: selectedFolderIds.length > 0 ? 1 : 0.55,
+            cursor: selectedFolderIds.length > 0 ? 'pointer' : 'not-allowed',
+            fontSize: 12,
+          }}
+        >
+          <Trash2 size={14} />
+          <span>删除磁盘内容</span>
+        </button>
       </div>
       {tree.length === 0 && (
         <div style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', marginTop: 20 }}>
@@ -308,6 +333,28 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
             onClick={() => { onDeleteFolder(menu.node); setMenu(null); }}
           >
             删除目录
+          </button>
+          <button
+            style={{ ...itemStyle, color: '#dc4c3e', fontWeight: 600 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => {
+              const ids = selectedFolderIds.includes(menu.node.id)
+                ? selectedFolderIds
+                : [menu.node.id];
+              onDeleteFoldersFromDisk(ids);
+              setMenu(null);
+            }}
+          >
+            永久删除磁盘内容
+          </button>
+          <button
+            style={{ ...itemStyle, color: '#ef4444' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => { onDeleteUnfavoritedVideos(menu.node); setMenu(null); }}
+          >
+            删除未收藏文件（含子目录）
           </button>
         </div>
       )}

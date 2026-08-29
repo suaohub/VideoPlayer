@@ -21,7 +21,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
       const list = await api.getVideos({ markedForDeletion: true });
       setVideos(list);
     } catch (error) {
-      console.error('Failed to load marked videos:', error);
+      console.error('Failed to load marked files:', error);
     } finally {
       setLoading(false);
     }
@@ -50,7 +50,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
 
   const handleRestore = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`确认恢复 ${selectedIds.size} 个视频到正常列表？`)) return;
+    if (!confirm(`确认恢复 ${selectedIds.size} 个文件到正常列表？`)) return;
 
     try {
       const result = await api.batchUnmarkForDeletion(Array.from(selectedIds));
@@ -69,7 +69,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
   const handleDelete = async () => {
     if (selectedIds.size === 0) return;
     if (!confirm(
-      `⚠️ 危险操作 ⚠️\n\n确认彻底删除 ${selectedIds.size} 个视频？\n\n这将从磁盘永久删除这些文件，无法恢复！`
+      `⚠️ 危险操作 ⚠️\n\n确认彻底删除 ${selectedIds.size} 个文件？\n\n这将从磁盘永久删除这些文件，无法恢复！`
     )) return;
 
     try {
@@ -104,17 +104,20 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
       {/* 顶部工具栏 */}
       <div style={{
         height: 60,
-        borderBottom: '1px solid var(--border)',
+        borderBottom: '1px solid var(--glass-border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 20px',
-        background: 'var(--bg-toolbar)',
+        background: 'var(--glass-bg-medium)',
+        backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+        WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+        boxShadow: 'var(--glass-highlight)',
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-            标记删除的视频
+            标记删除的文件
           </h2>
           <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
             共 {videos.length} 个
@@ -145,11 +148,13 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
       {/* 操作栏 */}
       <div style={{
         padding: '12px 20px',
-        borderBottom: '1px solid var(--border)',
+        borderBottom: '1px solid var(--glass-border)',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        background: 'var(--bg-secondary)',
+        background: 'var(--glass-bg-light)',
+        backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+        WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
         flexShrink: 0,
       }}>
         <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
@@ -257,7 +262,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
         </button>
       </div>
 
-      {/* 视频列表 */}
+      {/* 文件列表 */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         {loading ? (
           <div style={{
@@ -280,7 +285,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
             gap: 12,
           }}>
             <Trash2 size={48} strokeWidth={1.5} />
-            <div>没有标记删除的视频</div>
+            <div>没有标记删除的文件</div>
           </div>
         ) : (
           <VideoGrid

@@ -16,6 +16,24 @@ export interface ScanResult {
   tags: number;
 }
 
+export interface RefreshResult {
+  roots: number;
+  refreshedRoots: number;
+  missingRoots: string[];
+  scannedFiles: number;
+  newFiles: number;
+  deletedFiles: number;
+  deletedThumbnailUrls: string[];
+}
+
+export interface ImportedSubfoldersResult {
+  folders: number;
+  refreshedFolders: number;
+  missingFolders: string[];
+  scannedFiles: number;
+  newFiles: number;
+}
+
 // 扫描进度回调
 export type ProgressCallback = (current: number, total: number, currentFile: string) => void;
 
@@ -114,7 +132,7 @@ function ensureFolder(
   const parentPath = path.dirname(folderPath);
   let parentId: number | null = null;
   // 只在导入根目录范围内向上建父级
-  if (folderPath !== importRootPath && parentPath.startsWith(importRootPath)) {
+  if (folderPath !== importRootPath && isPathInsideRoot(parentPath, importRootPath)) {
     parentId = ensureFolder(parentPath, importRootPath, importRootId);
   }
 
@@ -148,6 +166,11 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
     INSERT OR IGNORE INTO videos (path, name, ext, size, folder_id, added_at, mtime)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
+  const updateVideo = db.prepare(`
+    UPDATE videos
+    SET name = ?, ext = ?, size = ?, folder_id = ?, mtime = ?
+    WHERE path = ?
+  `);
   const getVideoId = db.prepare('SELECT id FROM videos WHERE path = ?');
   const linkTag = db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)');
   const importedVideoIds: number[] = [];
@@ -176,6 +199,7 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
       );
 
       if (result.changes > 0) newVideos++;
+      updateVideo.run(name, ext, stat.size, folderId, Math.floor(stat.mtimeMs), filePath);
 
       // 获取 video id
       const videoRow = getVideoId.get(filePath) as { id: number };
@@ -234,6 +258,11 @@ function importComicFolders(importRootPath: string, comics: ComicFolder[], rootI
     INSERT OR IGNORE INTO videos (path, name, ext, size, thumbnail_path, folder_id, added_at, mtime)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  const updateComic = db.prepare(`
+    UPDATE videos
+    SET name = ?, ext = ?, size = ?, thumbnail_path = ?, folder_id = ?, mtime = ?
+    WHERE path = ?
+  `);
   const getId = db.prepare('SELECT id FROM videos WHERE path = ?');
   const linkTag = db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)');
 
@@ -254,6 +283,15 @@ function importComicFolders(importRootPath: string, comics: ComicFolder[], rootI
         folderId, Date.now(), Math.floor(stat.mtimeMs),
       );
       if (result.changes > 0) newComics++;
+      updateComic.run(
+        name,
+        COMIC_EXT,
+        comic.pageCount,
+        comicImageUrl(comic.firstImage),
+        folderId,
+        Math.floor(stat.mtimeMs),
+        comic.dir,
+      );
 
       const row = getId.get(comic.dir) as { id: number } | undefined;
       if (!row) continue;
@@ -270,19 +308,14 @@ function importComicFolders(importRootPath: string, comics: ComicFolder[], rootI
   return newComics;
 }
 
-// 导入一个文件夹（视频/音频/小说 + 漫画）
-export function importFolder(importRootPath: string, onProgress?: ProgressCallback): ScanResult {
-  console.log('[scanner] Importing folder:', importRootPath);
-
-  // 收集所有视频文件
-  const videoFiles = collectVideoFiles(importRootPath);
-  console.log('[scanner] Found', videoFiles.length, 'video files');
-
+function importScannedFolder(
+  importRootPath: string,
+  videoFiles: string[],
+  comics: ComicFolder[],
+  onProgress?: ProgressCallback,
+): ScanResult {
   const result = importVideoFiles(importRootPath, videoFiles, onProgress);
 
-  // 再收集漫画文件夹
-  const comics = collectComicFolders(importRootPath);
-  console.log('[scanner] Found', comics.length, 'comic folders');
   if (comics.length > 0) {
     const db = getDb();
     const rootRow = db.prepare('SELECT id FROM folders WHERE path = ?').get(importRootPath) as { id: number } | undefined;
@@ -294,6 +327,277 @@ export function importFolder(importRootPath: string, onProgress?: ProgressCallba
     result.tags = (db.prepare('SELECT COUNT(*) as c FROM tags').get() as { c: number }).c;
   }
   return result;
+}
+
+// 导入一个文件夹（视频/音频/小说 + 漫画）
+export function importFolder(importRootPath: string, onProgress?: ProgressCallback): ScanResult {
+  console.log('[scanner] Importing folder:', importRootPath);
+
+  const videoFiles = collectVideoFiles(importRootPath);
+  const comics = collectComicFolders(importRootPath);
+  console.log('[scanner] Found', videoFiles.length, 'media files and', comics.length, 'comic folders');
+
+  return importScannedFolder(importRootPath, videoFiles, comics, onProgress);
+}
+
+function isPathInsideRoot(targetPath: string, rootPath: string): boolean {
+  const target = path.resolve(targetPath);
+  const root = path.resolve(rootPath);
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function pathKey(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function cleanupStaleRecords(importRootPath: string, validComicPaths: Set<string>) {
+  const db = getDb();
+  const like = importRootPath + path.sep + '%';
+  const rows = db.prepare(`
+    SELECT id, path, ext, thumbnail_path
+    FROM videos
+    WHERE path = ? OR path LIKE ?
+  `).all(importRootPath, like) as Array<{
+    id: number;
+    path: string;
+    ext: string | null;
+    thumbnail_path: string | null;
+  }>;
+
+  const stale = rows.filter((row) => {
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(row.path);
+    } catch {
+      return true;
+    }
+    if (row.ext?.toLowerCase() === COMIC_EXT) {
+      return !stat.isDirectory() || !validComicPaths.has(pathKey(row.path));
+    }
+    return !stat.isFile();
+  });
+  if (stale.length === 0) return { deletedFiles: 0, deletedThumbnailUrls: [] as string[] };
+
+  const ids = stale.map((row) => row.id);
+  const thumbnailUrls = stale
+    .map((row) => row.thumbnail_path)
+    .filter(Boolean) as string[];
+  const tx = db.transaction(() => {
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const batch = ids.slice(offset, offset + 500);
+      const placeholders = batch.map(() => '?').join(',');
+      db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...batch);
+    }
+    db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)').run();
+  });
+  tx();
+
+  return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
+}
+
+function cleanupEmptyFolders(importRootPaths: Set<string>) {
+  const db = getDb();
+  const allFolders = db.prepare(`
+    SELECT id, path
+    FROM folders
+    ORDER BY length(path) DESC
+  `).all() as Array<{ id: number; path: string }>;
+  const rootPaths = Array.from(importRootPaths);
+
+  const candidates = allFolders.filter((folder) => (
+    rootPaths.some((rootPath) => isPathInsideRoot(folder.path, rootPath))
+  ));
+
+  const removeEmpty = db.transaction(() => {
+    for (const folder of candidates) {
+      if (importRootPaths.has(pathKey(folder.path))) continue;
+      const hasFiles = db.prepare('SELECT 1 FROM videos WHERE folder_id = ? LIMIT 1').get(folder.id);
+      if (hasFiles) continue;
+      const hasChildren = db.prepare('SELECT 1 FROM folders WHERE parent_id = ? LIMIT 1').get(folder.id);
+      if (hasChildren) continue;
+      db.prepare('DELETE FROM folders WHERE id = ?').run(folder.id);
+    }
+  });
+  removeEmpty();
+}
+
+// 根据数据库中保存的导入根目录重新扫描硬盘，增量发现新增文件并清理已删除记录。
+// 同路径记录只更新文件元数据，不触碰收藏、删除标记和整理分类。
+export function refreshImportedFolders(onProgress?: ProgressCallback): RefreshResult {
+  const db = getDb();
+  const roots = db.prepare(`
+    SELECT id, path
+    FROM folders
+    WHERE id = import_root_id OR (import_root_id IS NULL AND parent_id IS NULL)
+    ORDER BY length(path) ASC
+  `).all() as Array<{ id: number; path: string }>;
+
+  const rootCandidates = Array.from(
+    new Map(
+      roots.map((root) => [path.resolve(root.path), { ...root, resolvedPath: path.resolve(root.path) }]),
+    ).values(),
+  ).sort((a, b) => a.resolvedPath.length - b.resolvedPath.length);
+  // 如果同时导入了父目录和子目录，父目录扫描已经覆盖子目录，避免重复扫描和重复生成缩略图。
+  const uniqueRoots = rootCandidates.filter((root, index) => (
+    !rootCandidates.slice(0, index).some((parent) => (
+      isPathInsideRoot(root.resolvedPath, parent.resolvedPath)
+    ))
+  ));
+  const rootPaths = new Set(uniqueRoots.map((root) => pathKey(root.resolvedPath)));
+  const missingRoots: string[] = [];
+  let refreshedRoots = 0;
+  let scannedFiles = 0;
+  let newFiles = 0;
+  let deletedFiles = 0;
+  const deletedThumbnailUrls: string[] = [];
+  const scanPlans: Array<{
+    root: typeof uniqueRoots[number];
+    files: string[];
+    comics: ComicFolder[];
+  }> = [];
+
+  for (const root of uniqueRoots) {
+    try {
+      if (!fs.existsSync(root.path) || !fs.statSync(root.path).isDirectory()) {
+        missingRoots.push(root.path);
+        continue;
+      }
+      scanPlans.push({
+        root,
+        files: collectVideoFiles(root.path),
+        comics: collectComicFolders(root.path),
+      });
+    } catch {
+      missingRoots.push(root.path);
+    }
+  }
+
+  const progressTotal = scanPlans.reduce((total, plan) => total + plan.files.length, 0);
+  let progressCurrent = 0;
+
+  for (const plan of scanPlans) {
+    const { root, files, comics } = plan;
+    const result = importScannedFolder(root.path, files, comics, (current, _total, file) => {
+      onProgress?.(progressCurrent + current, progressTotal, file);
+    });
+    progressCurrent += files.length;
+    scannedFiles += files.length + comics.length;
+    newFiles += result.newVideos;
+    refreshedRoots++;
+
+    const validComicPaths = new Set(comics.map((comic) => pathKey(comic.dir)));
+    const cleanup = cleanupStaleRecords(root.path, validComicPaths);
+    deletedFiles += cleanup.deletedFiles;
+    deletedThumbnailUrls.push(...cleanup.deletedThumbnailUrls);
+  }
+
+  cleanupEmptyFolders(rootPaths);
+  enqueueMissingThumbnails();
+
+  return {
+    roots: uniqueRoots.length,
+    refreshedRoots,
+    missingRoots,
+    scannedFiles,
+    newFiles,
+    deletedFiles,
+    deletedThumbnailUrls,
+  };
+}
+
+// 只扫描已有导入根目录下的指定子目录。
+// 这些目录沿用原导入根目录，不会被登记成新的独立导入根目录。
+export function refreshImportedSubfolders(
+  folderPaths: string[],
+  onProgress?: ProgressCallback,
+  cleanupRootPaths: string[] = [],
+): ImportedSubfoldersResult {
+  const db = getDb();
+  const uniquePaths = Array.from(
+    new Map(
+      folderPaths
+        .map((folderPath) => path.resolve(folderPath))
+        .map((folderPath) => [pathKey(folderPath), folderPath] as const),
+    ).values(),
+  ).sort((a, b) => a.length - b.length);
+
+  // 目录之间存在包含关系时，只扫描外层目录，避免重复导入和重复生成缩略图。
+  const effectivePaths = uniquePaths.filter((folderPath, index) => (
+    !uniquePaths.slice(0, index).some((parentPath) => (
+      isPathInsideRoot(folderPath, parentPath)
+    ))
+  ));
+
+  const scanPlans: Array<{
+    folderPath: string;
+    importRootPath: string;
+    files: string[];
+    comics: ComicFolder[];
+  }> = [];
+  const missingFolders: string[] = [];
+
+  for (const folderPath of effectivePaths) {
+    const folder = db.prepare(`
+      SELECT f.path, root.path as import_root_path
+      FROM folders f
+      LEFT JOIN folders root ON root.id = f.import_root_id
+      WHERE f.path = ?
+    `).get(folderPath) as { path: string; import_root_path: string | null } | undefined;
+
+    if (!folder?.import_root_path) {
+      missingFolders.push(folderPath);
+      continue;
+    }
+
+    try {
+      if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+        missingFolders.push(folderPath);
+        continue;
+      }
+      scanPlans.push({
+        folderPath,
+        importRootPath: folder.import_root_path,
+        files: collectVideoFiles(folderPath),
+        comics: collectComicFolders(folderPath),
+      });
+    } catch {
+      missingFolders.push(folderPath);
+    }
+  }
+
+  const progressTotal = scanPlans.reduce((total, plan) => total + plan.files.length, 0);
+  let progressCurrent = 0;
+  let scannedFiles = 0;
+  let newFiles = 0;
+
+  for (const plan of scanPlans) {
+    const result = importScannedFolder(plan.importRootPath, plan.files, plan.comics, (current, _total, file) => {
+      onProgress?.(progressCurrent + current, progressTotal, file);
+    });
+    progressCurrent += plan.files.length;
+    scannedFiles += plan.files.length + plan.comics.length;
+    newFiles += result.newVideos;
+  }
+
+  cleanupEmptyFolders(new Set(
+    [
+      ...scanPlans.map((plan) => pathKey(plan.importRootPath)),
+      ...cleanupRootPaths.map((rootPath) => pathKey(rootPath)),
+    ],
+  ));
+  enqueueMissingThumbnails();
+
+  return {
+    folders: effectivePaths.length,
+    refreshedFolders: scanPlans.length,
+    missingFolders,
+    scannedFiles,
+    newFiles,
+  };
 }
 
 // 导入用户直接选择的视频文件

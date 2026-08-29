@@ -105,8 +105,8 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { closePlayer(); return; }
       if (event.key === ' ') { event.preventDefault(); api.togglePause(); return; }
-      if (event.key === 'ArrowLeft') { api.seek(Math.max(0, position - 5)); return; }
-      if (event.key === 'ArrowRight') { api.seek(Math.min(duration, position + 5)); return; }
+      if (event.key === 'ArrowLeft') { api.seekRelative(-5); return; }
+      if (event.key === 'ArrowRight') { api.seekRelative(5); return; }
       if (event.key === 'Delete') {
         event.preventDefault();
         api.toggleMarkedForDeletion(video.id).then(() => {

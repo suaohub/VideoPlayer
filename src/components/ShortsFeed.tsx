@@ -52,12 +52,23 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
   const goNext = useCallback(() => go(index + 1), [go, index]);
   const goPrev = useCallback(() => go(index - 1), [go, index]);
 
+  const seekBy = useCallback((delta: number) => {
+    const el = videoRef.current;
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    const nextTime = Math.max(0, Math.min(el.duration, el.currentTime + delta));
+    el.currentTime = nextTime;
+    setProgress(nextTime / el.duration);
+    setDuration(el.duration);
+  }, []);
+
   // 键盘
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') { onClose(); return; }
       if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'J') { e.preventDefault(); goNext(); }
       else if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'K') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-5); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(5); }
       else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
       else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); captureWallpaper(); }
       else if (e.key === 'Delete') {
@@ -69,7 +80,7 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goNext, goPrev, onClose, current]);
+  }, [goNext, goPrev, onClose, current, seekBy]);
 
   // 切换到当前项后：从头播放，尝试带声，失败则静音重试
   useEffect(() => {
@@ -155,13 +166,21 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
     setDuration(el.duration);
   }, []);
 
-  const onSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const onSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const el = videoRef.current;
     if (!el || !el.duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const pct = Math.max(0, Math.min(1, Number(e.currentTarget.value)));
     el.currentTime = pct * el.duration;
     setProgress(pct);
+  }, []);
+
+  const formatTime = useCallback((seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const total = Math.floor(seconds);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = String(total % 60).padStart(2, '0');
+    return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -258,11 +277,22 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
       <div className="shorts-bottom">
         <div className="shorts-meta">
           <span className="shorts-name">{current?.name}</span>
-          <span className="shorts-count">{index + 1} / {count}</span>
+          <span className="shorts-count">
+            {formatTime(progress * duration)} / {formatTime(duration)} · {index + 1} / {count}
+          </span>
         </div>
-        <div className="shorts-progress" onClick={onSeek}>
-          <div className="shorts-progress-fill" style={{ width: `${progress * 100}%` }} />
-        </div>
+        <input
+          className="shorts-progress"
+          type="range"
+          min="0"
+          max="1"
+          step="0.001"
+          value={progress}
+          disabled={!duration}
+          onChange={onSeek}
+          style={{ ['--progress' as string]: `${progress * 100}%` }}
+          aria-label="视频播放进度"
+        />
       </div>
     </div>
   );

@@ -92,6 +92,24 @@ export function initDatabase() {
     );
   `);
 
+  // 整理分类：每个视频最多关联一个分类，和扫描得到的原始标签分开保存。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS organize_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      sort_order INTEGER DEFAULT 0
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS video_organize_categories (
+      video_id INTEGER PRIMARY KEY,
+      category_id INTEGER NOT NULL,
+      FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES organize_categories(id) ON DELETE CASCADE
+    );
+  `);
+
   // 设置表（主题、全屏模式等偏好）
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -104,6 +122,7 @@ export function initDatabase() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_videos_folder ON videos(folder_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_video_tags_tag ON video_tags(tag_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_video_organize_category ON video_organize_categories(category_id);`);
 
   // 迁移：为旧数据库添加 favorited 字段
   const columns = db.pragma('table_info(videos)') as Array<{ name: string }>;

@@ -1,6 +1,6 @@
 import {
   Shuffle, FilterX, Search, Sun, Moon, Heart, Grid3x3, Square,
-  Loader2, TriangleAlert, Waves, Trees, Sunset, Circle, Zap, ChevronDown,
+  Loader2, RefreshCw, TriangleAlert, Waves, Trees, Sunset, Circle, Zap, ChevronDown,
   X, Minus, Maximize2, Minimize2, Settings, FolderTree as FolderTreeIcon,
   LayoutGrid, Film, Music2, BookOpen, Images, Clapperboard,
   ArrowDownUp, ArrowUp, ArrowDown, Clock, CaseSensitive, HardDrive, Timer, CalendarClock, Dices,
@@ -14,6 +14,8 @@ interface ToolbarProps {
   onShuffle: () => void;
   onClearFilter: () => void;
   onOpenSettings: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
   mediaType: MediaType;
@@ -35,6 +37,8 @@ interface ToolbarProps {
   unmountedDrives: string[];
   showFavorited: boolean;
   onShowFavoritedChange: (show: boolean) => void;
+  showFavoritedInList: boolean;
+  onShowFavoritedInListChange: (show: boolean) => void;
   favoritedCount: number;
   toolbarOpacity: number;
   toolbarBlur: number;
@@ -83,13 +87,13 @@ const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
 export function Toolbar(props: ToolbarProps) {
   const {
-    theme, onThemeChange, onShuffle, onClearFilter, onOpenSettings,
+    theme, onThemeChange, onShuffle, onClearFilter, onOpenSettings, onRefresh, refreshing,
     sidebarOpen, onSidebarOpenChange, mediaType, onMediaTypeChange,
     sortBy, onSortByChange, sortDir, onSortDirChange, onOpenFeed,
     search, onSearchChange, videoCount, filteredCount,
     importing, importProgress, thumbProgress,
     cardSize, onCardSizeChange, unmountedDrives,
-    showFavorited, onShowFavoritedChange, favoritedCount,
+    showFavorited, onShowFavoritedChange, showFavoritedInList, onShowFavoritedInListChange, favoritedCount,
     toolbarOpacity, toolbarBlur,
     isMaximized, onMinimize, onToggleMaximize, onClose,
   } = props;
@@ -170,21 +174,40 @@ export function Toolbar(props: ToolbarProps) {
     width: '100%',
   });
 
+  // 下拉浮层：玻璃拟态，三个下拉共用
+  const menuFloaterStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 'calc(100% + 6px)',
+    background: 'var(--glass-bg-strong)',
+    backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+    WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+    border: '1px solid var(--glass-border)',
+    borderRadius: 10,
+    boxShadow: 'var(--shadow), var(--glass-highlight)',
+    padding: 6,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    zIndex: 50,
+  };
+
   return (
     <header style={{
       position: 'relative',
       zIndex: 20,
       overflow: 'visible',
-      background: `color-mix(in srgb, var(--bg-toolbar) ${toolbarOpacity}%, transparent)`,
-      backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.08)` : 'none',
-      borderBottom: '1px solid var(--border)',
+      background: `color-mix(in srgb, var(--glass-bg-medium) ${toolbarOpacity}%, transparent)`,
+      backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
+      WebkitBackdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
+      borderBottom: '1px solid var(--glass-border)',
+      boxShadow: 'var(--glass-highlight)',
       padding: '12px 16px',
       paddingTop: '52px', // 为 Windows 原生标题栏控件留出空间
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       flexWrap: 'wrap',
-      boxShadow: 'var(--shadow)',
+      boxShadow: 'var(--shadow), var(--glass-highlight)',
       flexShrink: 0,
       WebkitAppRegion: 'drag', // 顶部可拖拽移动窗口
     }}>
@@ -218,21 +241,7 @@ export function Toolbar(props: ToolbarProps) {
           }} />
         </button>
         {mediaOpen && (
-          <div style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0,
-            minWidth: 150,
-            background: 'var(--bg-toolbar)',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            boxShadow: 'var(--shadow)',
-            padding: 6,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            zIndex: 50,
-          }}>
+          <div style={{ ...menuFloaterStyle, left: 0, minWidth: 150 }}>
             {MEDIA_TABS.map((m) => {
               const active = mediaType === m.value;
               return (
@@ -278,21 +287,7 @@ export function Toolbar(props: ToolbarProps) {
           </button>
         )}
         {sortOpen && (
-          <div style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0,
-            minWidth: 150,
-            background: 'var(--bg-toolbar)',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            boxShadow: 'var(--shadow)',
-            padding: 6,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            zIndex: 50,
-          }}>
+          <div style={{ ...menuFloaterStyle, left: 0, minWidth: 150 }}>
             {SORT_OPTIONS.map((s) => {
               const active = sortBy === s.value;
               return (
@@ -338,6 +333,80 @@ export function Toolbar(props: ToolbarProps) {
       >
         <Heart {...ICON} fill={showFavorited ? 'currentColor' : 'none'} />
       </button>
+
+      {/* 根据已经导入的目录重新扫描 */}
+      <button
+        onClick={onRefresh}
+        disabled={refreshing || importing}
+        style={{
+          ...(refreshing ? activeBtnStyle : btnStyle),
+          WebkitAppRegion: 'no-drag',
+          opacity: refreshing || importing ? 0.7 : 1,
+          cursor: refreshing || importing ? 'wait' : 'pointer',
+        }}
+        title={refreshing ? '正在刷新已导入目录' : '刷新已导入目录'}
+      >
+        <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} />
+        <span>刷新</span>
+      </button>
+
+      {/* 显示收藏开关：只影响普通卡片列表，不改变收藏状态 */}
+      <label
+        style={{
+          ...btnStyle,
+          gap: 8,
+          cursor: 'pointer',
+          userSelect: 'none',
+          WebkitAppRegion: 'no-drag',
+        }}
+        title={showFavoritedInList ? '关闭后隐藏收藏文件' : '开启后显示收藏文件'}
+      >
+        <span>显示收藏</span>
+        <span style={{
+          position: 'relative',
+          display: 'inline-flex',
+          width: 34,
+          height: 20,
+          flexShrink: 0,
+        }}>
+          <input
+            type="checkbox"
+            checked={showFavoritedInList}
+            onChange={(e) => onShowFavoritedInListChange(e.target.checked)}
+            aria-label="显示收藏"
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              width: '100%',
+              height: '100%',
+              margin: 0,
+              cursor: 'pointer',
+              zIndex: 1,
+            }}
+          />
+          <span style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: 999,
+            background: showFavoritedInList ? 'var(--accent)' : 'var(--bg-primary)',
+            border: `1px solid ${showFavoritedInList ? 'var(--accent)' : 'var(--border)'}`,
+            transition: 'all 0.15s',
+            boxSizing: 'border-box',
+          }}>
+            <span style={{
+              display: 'block',
+              width: 14,
+              height: 14,
+              margin: 2,
+              borderRadius: '50%',
+              background: '#fff',
+              transform: showFavoritedInList ? 'translateX(14px)' : 'translateX(0)',
+              transition: 'transform 0.15s',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+            }} />
+          </span>
+        </span>
+      </label>
 
       {/* 随机打乱（纯图标） */}
       <button
@@ -392,7 +461,7 @@ export function Toolbar(props: ToolbarProps) {
           borderRadius: 6, padding: '4px 10px',
         }}>
           <TriangleAlert size={14} strokeWidth={2} />
-          未连接：{unmountedDrives.join('、')} 的视频已隐藏
+          未连接：{unmountedDrives.join('、')} 的文件已隐藏
         </span>
       )}
 
@@ -436,21 +505,7 @@ export function Toolbar(props: ToolbarProps) {
           }} />
         </button>
         {themeOpen && (
-          <div style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            right: 0,
-            minWidth: 160,
-            background: 'var(--bg-toolbar)',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            boxShadow: 'var(--shadow)',
-            padding: 6,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            zIndex: 50,
-          }}>
+          <div style={{ ...menuFloaterStyle, right: 0, minWidth: 160 }}>
             {THEMES.map((t) => {
               const active = theme === t.value;
               return (

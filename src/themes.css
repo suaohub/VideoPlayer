@@ -2,7 +2,7 @@
 
 /* 白天主题：浅色、清爽 */
 [data-theme='day'] {
-  --bg-primary: #f5f6fa;
+  --bg-primary: linear-gradient(150deg, #eef1f8 0%, #f5f6fa 50%, #e9edf6 100%);
   --bg-secondary: #ffffff;
   --bg-toolbar: #ffffff;
   --bg-card: #ffffff;
@@ -15,11 +15,20 @@
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.1);
   --focus-ring: #4f46e5;
+  /* 玻璃拟态：浅底用低 alpha 白高光，避免过曝 */
+  --glass-bg-light: rgba(255, 255, 255, 0.45);
+  --glass-bg-medium: rgba(255, 255, 255, 0.62);
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-blur: 18px;
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --glass-radius: 14px;
 }
 
 /* 夜间主题：深色、护眼 */
 [data-theme='night'] {
-  --bg-primary: #0f1117;
+  --bg-primary: linear-gradient(155deg, #0c0e14 0%, #0f1117 50%, #12151d 100%);
   --bg-secondary: #161922;
   --bg-toolbar: #1a1e29;
   --bg-card: #1e222e;
@@ -32,6 +41,14 @@
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.3);
   --focus-ring: #818cf8;
+  --glass-bg-light: rgba(26, 30, 41, 0.35);
+  --glass-bg-medium: rgba(26, 30, 41, 0.55);
+  --glass-bg: rgba(26, 30, 41, 0.55);
+  --glass-bg-strong: rgba(22, 25, 34, 0.82);
+  --glass-blur: 18px;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --glass-radius: 14px;
 }
 
 /* 浪漫情趣主题：暖色、紫红渐变、柔光 */
@@ -49,6 +66,14 @@
   --shadow: 0 8px 32px rgba(180, 60, 130, 0.3);
   --shadow-card: 0 4px 20px rgba(180, 60, 130, 0.25);
   --focus-ring: #ff6b9d;
+  --glass-bg-light: rgba(80, 40, 70, 0.28);
+  --glass-bg-medium: rgba(80, 40, 70, 0.42);
+  --glass-bg: rgba(80, 40, 70, 0.42);
+  --glass-bg-strong: rgba(70, 35, 60, 0.78);
+  --glass-blur: 20px;
+  --glass-border: rgba(255, 180, 220, 0.18);
+  --glass-highlight: inset 0 1px 0 rgba(255, 200, 230, 0.14);
+  --glass-radius: 14px;
 }
 
 /* 海洋主题：深蓝青绿，冷静清澈 */
@@ -66,6 +91,14 @@
   --shadow: 0 8px 28px rgba(10, 60, 90, 0.45);
   --shadow-card: 0 3px 12px rgba(10, 50, 80, 0.35);
   --focus-ring: #22d3ee;
+  --glass-bg-light: rgba(18, 46, 68, 0.3);
+  --glass-bg-medium: rgba(18, 46, 68, 0.45);
+  --glass-bg: rgba(18, 46, 68, 0.45);
+  --glass-bg-strong: rgba(14, 38, 58, 0.8);
+  --glass-blur: 20px;
+  --glass-border: rgba(130, 200, 235, 0.18);
+  --glass-highlight: inset 0 1px 0 rgba(160, 220, 245, 0.14);
+  --glass-radius: 14px;
 }
 
 /* 森林主题：墨绿沉稳，护眼自然 */
@@ -83,6 +116,14 @@
   --shadow: 0 8px 28px rgba(10, 50, 25, 0.45);
   --shadow-card: 0 3px 12px rgba(10, 40, 20, 0.35);
   --focus-ring: #4ade80;
+  --glass-bg-light: rgba(26, 48, 34, 0.3);
+  --glass-bg-medium: rgba(26, 48, 34, 0.45);
+  --glass-bg: rgba(26, 48, 34, 0.45);
+  --glass-bg-strong: rgba(22, 42, 30, 0.8);
+  --glass-blur: 20px;
+  --glass-border: rgba(140, 200, 150, 0.18);
+  --glass-highlight: inset 0 1px 0 rgba(170, 220, 175, 0.13);
+  --glass-radius: 14px;
 }
 
 /* 日落主题：暖橙琥珀，温柔黄昏 */
@@ -100,11 +141,19 @@
   --shadow: 0 8px 30px rgba(140, 70, 20, 0.35);
   --shadow-card: 0 4px 16px rgba(140, 70, 20, 0.28);
   --focus-ring: #fb923c;
+  --glass-bg-light: rgba(80, 44, 26, 0.28);
+  --glass-bg-medium: rgba(80, 44, 26, 0.42);
+  --glass-bg: rgba(80, 44, 26, 0.42);
+  --glass-bg-strong: rgba(70, 38, 22, 0.8);
+  --glass-blur: 20px;
+  --glass-border: rgba(240, 180, 130, 0.18);
+  --glass-highlight: inset 0 1px 0 rgba(255, 205, 160, 0.14);
+  --glass-radius: 14px;
 }
 
 /* 极简灰主题：中性石板，专注内容 */
 [data-theme='slate'] {
-  --bg-primary: #1c1c1e;
+  --bg-primary: linear-gradient(155deg, #191919 0%, #1c1c1e 50%, #212124 100%);
   --bg-secondary: #242427;
   --bg-toolbar: #2a2a2e;
   --bg-card: #2e2e33;
@@ -117,6 +166,14 @@
   --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.35);
   --focus-ring: #d4d4d8;
+  --glass-bg-light: rgba(46, 46, 51, 0.35);
+  --glass-bg-medium: rgba(46, 46, 51, 0.55);
+  --glass-bg: rgba(46, 46, 51, 0.55);
+  --glass-bg-strong: rgba(42, 42, 46, 0.82);
+  --glass-blur: 18px;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --glass-radius: 14px;
 }
 
 /* 赛博霓虹主题：暗底霓虹，强烈科技感 */
@@ -134,6 +191,14 @@
   --shadow: 0 8px 32px rgba(240, 0, 184, 0.28);
   --shadow-card: 0 3px 16px rgba(120, 40, 220, 0.3);
   --focus-ring: #00f0ff;
+  --glass-bg-light: rgba(32, 16, 60, 0.32);
+  --glass-bg-medium: rgba(32, 16, 60, 0.48);
+  --glass-bg: rgba(32, 16, 60, 0.48);
+  --glass-bg-strong: rgba(26, 13, 52, 0.82);
+  --glass-blur: 22px;
+  --glass-border: rgba(190, 120, 255, 0.24);
+  --glass-highlight: inset 0 1px 0 rgba(0, 240, 255, 0.14);
+  --glass-radius: 14px;
 }
 
 /* ============ 全局基础样式 ============ */
@@ -142,6 +207,25 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* ============ 玻璃拟态工具类 ============ */
+/* 半透明 + 背景模糊 + 顶部高光内描边，透出底层壁纸/渐变 */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.1);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow), var(--glass-highlight);
+}
+/* 弹窗/顶栏等需要更高可读性的表面 */
+.glass--strong {
+  background: var(--glass-bg-strong);
+}
+/* 不支持 backdrop-filter 时回退到实心表面 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--bg-card); }
+  .glass--strong { background: var(--bg-toolbar); }
 }
 
 body {
@@ -330,8 +414,11 @@ button {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  background: var(--bg-toolbar);
-  border-top: 1px solid var(--border);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.1);
+  border-top: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight);
   color: var(--text-primary);
 }
 
