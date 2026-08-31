@@ -1,0 +1,37 @@
+# Auto-detect text files and normalize to LF
+* text=auto
+
+# Source code
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+
+# Scripts
+*.sh text eol=lf
+*.bash text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+
+# Config files
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mp4 binary
+*.webm binary
+*.db binary
+*.db-shm binary
+*.db-wal binary
+*.exe binary
+*.dll binary
+*.node binary
