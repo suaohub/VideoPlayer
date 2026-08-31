@@ -9,7 +9,7 @@ import {
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners, setThumbnailGenerationPaused } from './thumbnailQueue';
-import { getAllTags, getFolderTree, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, batchDeleteVideos, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, getOrganizeCandidatesInFolder, getOrCreateOrganizeFolder, updateVideoPath, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, batchDeleteVideos, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
@@ -484,17 +484,53 @@ ipcMain.handle('set-video-organize-category', async (event, videoId: number, cat
   }
 });
 
-ipcMain.handle('organize-folder', async (event, folderId: number, destinationRootPath?: string) => {
+ipcMain.handle('batch-set-video-organize-category', async (event, videoIds: number[], categoryId: number | null) => {
   try {
-    const sourceFolder = getDb()
-      .prepare('SELECT path FROM folders WHERE id = ?')
-      .get(folderId) as { path: string } | undefined;
-    if (!sourceFolder) {
+    const updatedCount = batchSetVideoOrganizeCategory(
+      Array.isArray(videoIds) ? videoIds : [],
+      categoryId,
+    );
+    return { success: true, categoryId, updatedCount };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+function isPathWithin(childPath: string, parentPath: string): boolean {
+  const relativePath = relative(resolve(parentPath), resolve(childPath));
+  return relativePath === ''
+    || (!isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`));
+}
+
+ipcMain.handle('organize-folders', async (event, folderIds: number[], destinationRootPath?: string) => {
+  try {
+    const requestedIds = Array.isArray(folderIds)
+      ? Array.from(new Set(folderIds.filter((id) => Number.isInteger(id))))
+      : [];
+    if (requestedIds.length === 0) {
+      return { success: false, error: '没有选择整理目录' };
+    }
+
+    const idPlaceholders = requestedIds.map(() => '?').join(',');
+    const selectedFolders = getDb().prepare(`
+      SELECT id, path
+      FROM folders
+      WHERE id IN (${idPlaceholders})
+    `).all(...requestedIds) as Array<{ id: number; path: string }>;
+    if (selectedFolders.length === 0) {
       return { success: false, error: '整理目录不存在' };
     }
 
-    const candidates = getOrganizeCandidatesInFolder(folderId);
-    const folderCache = new Map<number, { id: number; path: string }>();
+    // 父目录已选中时，子目录无需重复作为一个独立整理根。
+    const sourceFolders = selectedFolders
+      .map((folder) => ({ ...folder, path: resolve(folder.path) }))
+      .sort((a, b) => a.path.length - b.path.length)
+      .filter((folder, index, all) => (
+        !all.slice(0, index).some((parent) => isPathWithin(folder.path, parent.path))
+      ));
+    const sourceFolderIds = sourceFolders.map((folder) => folder.id);
+    const candidates = getOrganizeCandidatesInFolders(sourceFolderIds);
+    const folderCache = new Map<string, { id: number; path: string }>();
     const organizeFolderPaths = new Set<string>();
     const errors: string[] = [];
     let movedCount = 0;
@@ -505,16 +541,27 @@ ipcMain.handle('organize-folder', async (event, folderId: number, destinationRoo
         skippedCount++;
         continue;
       }
+      const sourceFolder = sourceFolders.find((folder) => isPathWithin(candidate.folder_path, folder.path));
+      if (!sourceFolder) {
+        skippedCount++;
+        errors.push(`${candidate.path}: 找不到所属整理目录`);
+        continue;
+      }
       if (!existsSync(candidate.path)) {
         skippedCount++;
         errors.push(`${candidate.path}: 文件不存在`);
         continue;
       }
       try {
-        let target = folderCache.get(candidate.category_id);
+        // 未设置集中位置时，每个选中的源目录各自建立分类文件夹；
+        // 设置集中位置后，同一分类统一进入集中目录下的一个文件夹。
+        const cacheKey = destinationRootPath?.trim()
+          ? String(candidate.category_id)
+          : `${sourceFolder.id}:${candidate.category_id}`;
+        let target = folderCache.get(cacheKey);
         if (!target) {
-          target = getOrCreateOrganizeFolder(folderId, candidate.category_id, destinationRootPath);
-          folderCache.set(candidate.category_id, target);
+          target = getOrCreateOrganizeFolder(sourceFolder.id, candidate.category_id, destinationRootPath);
+          folderCache.set(cacheKey, target);
           mkdirSync(target.path, { recursive: true });
         }
         organizeFolderPaths.add(target.path);
@@ -565,7 +612,7 @@ ipcMain.handle('organize-folder', async (event, folderId: number, destinationRoo
               folderPath: '',
             });
           },
-          [sourceFolder.path],
+          sourceFolders.map((folder) => folder.path),
         );
         importedFolders = refreshResult.refreshedFolders;
         importedFiles = refreshResult.newFiles;
@@ -585,7 +632,7 @@ ipcMain.handle('organize-folder', async (event, folderId: number, destinationRoo
       errors: errors.length ? errors : undefined,
     };
   } catch (error) {
-    console.error('[organize-folder] failed:', error);
+    console.error('[organize-folders] failed:', error);
     return { success: false, error: String(error) };
   }
 });
@@ -593,6 +640,22 @@ ipcMain.handle('organize-folder', async (event, folderId: number, destinationRoo
 // 获取目录树（可按媒体类型过滤）
 ipcMain.handle('get-folder-tree', async (event, mediaType?: MediaType) => {
   return getFolderTree(mediaType);
+});
+
+// 获取显式隐藏的目录，供设置页恢复显示。
+ipcMain.handle('get-hidden-folders', async () => {
+  return getHiddenFolders();
+});
+
+// 设置目录隐藏状态，不触碰磁盘文件、导入记录或缩略图。
+ipcMain.handle('set-folder-hidden', async (event, folderId: number, hidden: boolean) => {
+  try {
+    setFolderHidden(folderId, hidden);
+    return { success: true, hidden: Boolean(hidden) };
+  } catch (error) {
+    console.error('[set-folder-hidden] failed:', error);
+    return { success: false, error: String(error) };
+  }
 });
 
 // 查询视频列表
@@ -731,6 +794,7 @@ ipcMain.handle('clear-cache', async () => {
     db.prepare('DELETE FROM video_tags').run();
     db.prepare('DELETE FROM video_organize_categories').run();
     db.prepare('DELETE FROM videos').run();
+    db.prepare('DELETE FROM hidden_folder_paths').run();
     db.prepare('DELETE FROM folders').run();
     db.prepare('DELETE FROM tags').run();
 

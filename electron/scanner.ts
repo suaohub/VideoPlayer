@@ -126,7 +126,13 @@ function ensureFolder(
 ): number {
   const db = getDb();
   const existing = db.prepare('SELECT id FROM folders WHERE path = ?').get(folderPath) as { id: number } | undefined;
-  if (existing) return existing.id;
+  if (existing) {
+    const hidden = db.prepare('SELECT 1 FROM hidden_folder_paths WHERE path = ?').get(folderPath);
+    if (hidden) {
+      db.prepare('UPDATE folders SET hidden = 1 WHERE id = ?').run(existing.id);
+    }
+    return existing.id;
+  }
 
   // 计算父级
   const parentPath = path.dirname(folderPath);
@@ -137,9 +143,10 @@ function ensureFolder(
   }
 
   const name = path.basename(folderPath);
+  const hidden = db.prepare('SELECT 1 FROM hidden_folder_paths WHERE path = ?').get(folderPath) ? 1 : 0;
   const info = db.prepare(
-    'INSERT INTO folders (path, name, parent_id, import_root_id) VALUES (?, ?, ?, ?)'
-  ).run(folderPath, name, parentId, importRootId);
+    'INSERT INTO folders (path, name, parent_id, import_root_id, hidden) VALUES (?, ?, ?, ?, ?)'
+  ).run(folderPath, name, parentId, importRootId, hidden);
 
   return info.lastInsertRowid as number;
 }
@@ -419,6 +426,7 @@ function cleanupEmptyFolders(importRootPaths: Set<string>) {
       if (hasFiles) continue;
       const hasChildren = db.prepare('SELECT 1 FROM folders WHERE parent_id = ? LIMIT 1').get(folder.id);
       if (hasChildren) continue;
+      db.prepare('DELETE FROM hidden_folder_paths WHERE path = ?').run(folder.path);
       db.prepare('DELETE FROM folders WHERE id = ?').run(folder.id);
     }
   });

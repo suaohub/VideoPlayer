@@ -39,6 +39,7 @@ export interface Folder {
   name: string;
   parent_id: number | null;
   import_root_id: number | null;
+  hidden: number;
 }
 
 // 主题
@@ -126,6 +127,8 @@ export interface ElectronAPI {
   refreshImportedFolders: () => Promise<RefreshResult>;
   getTags: (mediaType?: MediaType) => Promise<Tag[]>;
   getFolderTree: (mediaType?: MediaType) => Promise<Folder[]>;
+  getHiddenFolders: () => Promise<Folder[]>;
+  setFolderHidden: (folderId: number, hidden: boolean) => Promise<{ success: boolean; hidden?: boolean; error?: string }>;
   getVideos: (filter: VideoFilter) => Promise<Video[]>;
   getVideoCount: (mediaType?: MediaType) => Promise<number>;
   generateThumbnails: () => Promise<{ success: boolean }>;
@@ -161,7 +164,8 @@ export interface ElectronAPI {
   renameOrganizeCategory: (categoryId: number, name: string) => Promise<{ success: boolean; error?: string }>;
   deleteOrganizeCategory: (categoryId: number) => Promise<{ success: boolean; error?: string }>;
   setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; error?: string }>;
-  organizeFolder: (folderId: number, destinationRootPath?: string) => Promise<{
+  batchSetVideoOrganizeCategory: (videoIds: number[], categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; updatedCount?: number; error?: string }>;
+  organizeFolders: (folderIds: number[], destinationRootPath?: string) => Promise<{
     success: boolean;
     movedCount?: number;
     skippedCount?: number;

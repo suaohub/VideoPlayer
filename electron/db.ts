@@ -28,6 +28,7 @@ export interface FolderRecord {
   name: string;
   parent_id: number | null;
   import_root_id: number | null;
+  hidden: number;
 }
 
 let db: Database.Database;
@@ -48,6 +49,7 @@ export function initDatabase() {
       name TEXT NOT NULL,
       parent_id INTEGER,
       import_root_id INTEGER,
+      hidden INTEGER DEFAULT 0,
       FOREIGN KEY (parent_id) REFERENCES folders(id)
     );
   `);
@@ -92,6 +94,14 @@ export function initDatabase() {
     );
   `);
 
+  // 独立保存隐藏目录路径，避免目录记录刷新或重建后丢失隐藏状态。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS hidden_folder_paths (
+      path TEXT PRIMARY KEY COLLATE NOCASE NOT NULL,
+      hidden_at INTEGER NOT NULL
+    );
+  `);
+
   // 整理分类：每个视频最多关联一个分类，和扫描得到的原始标签分开保存。
   db.exec(`
     CREATE TABLE IF NOT EXISTS organize_categories (
@@ -116,6 +126,19 @@ export function initDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+  `);
+
+  // 迁移：为旧数据库添加目录隐藏状态。
+  const folderColumns = db.pragma('table_info(folders)') as Array<{ name: string }>;
+  if (!folderColumns.some(c => c.name === 'hidden')) {
+    db.exec(`ALTER TABLE folders ADD COLUMN hidden INTEGER DEFAULT 0;`);
+    console.log('[db] Migration: added folder hidden column');
+  }
+  db.exec(`
+    INSERT OR IGNORE INTO hidden_folder_paths (path, hidden_at)
+    SELECT path, strftime('%s', 'now') * 1000
+    FROM folders
+    WHERE hidden = 1;
   `);
 
   // 索引：加速常用查询

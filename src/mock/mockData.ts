@@ -60,10 +60,10 @@ export function generateMockData(): MockDataset {
   const leafFolders: { id: number; tagIds: number[] }[] = [];
   for (const def of FOLDER_DEFS) {
     const rootId = folderId++;
-    folders.push({ id: rootId, path: `/Movies/${def.root}`, name: def.root, parent_id: null, import_root_id: rootId });
+    folders.push({ id: rootId, path: `/Movies/${def.root}`, name: def.root, parent_id: null, import_root_id: rootId, hidden: 0 });
     for (const sub of def.subs) {
       const subId = folderId++;
-      folders.push({ id: subId, path: `/Movies/${def.root}/${sub}`, name: sub, parent_id: rootId, import_root_id: rootId });
+      folders.push({ id: subId, path: `/Movies/${def.root}/${sub}`, name: sub, parent_id: rootId, import_root_id: rootId, hidden: 0 });
       // 标签：root 名 + sub 名
       if (!tagMap.has(def.root)) tagMap.set(def.root, tagId++);
       if (!tagMap.has(sub)) tagMap.set(sub, tagId++);
@@ -85,6 +85,7 @@ export function generateMockData(): MockDataset {
       width: rv.w, height: rv.h, aspect_ratio: rv.w / rv.h,
       thumbnail_path: rv.thumb, folder_id: leaf.id,
       added_at: Date.now() - id * 100000, mtime: Date.now(),
+      favorited: 0, marked_for_deletion: 0,
     });
     videoTags.set(id, leaf.tagIds);
   });
@@ -107,6 +108,7 @@ export function generateMockData(): MockDataset {
       thumbnail_path: `gradient:${grad[0]},${grad[1]}`,
       folder_id: leaf.id,
       added_at: Date.now() - id * 100000, mtime: Date.now(),
+      favorited: 0, marked_for_deletion: 0,
     });
     videoTags.set(id, leaf.tagIds);
   }

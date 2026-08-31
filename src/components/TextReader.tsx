@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { X, List, Minus, Plus, ChevronLeft, ChevronRight, Maximize, Minimize } from 'lucide-react';
 import { Video } from '../types';
 import { api } from '../api';
@@ -137,7 +137,7 @@ export function TextReader({ video, onClose }: TextReaderProps) {
   const chunkNodes = useMemo(() => {
     const c = chunks[safeChunk];
     if (!c) return null;
-    const out: JSX.Element[] = [];
+    const out: ReactElement[] = [];
     for (let i = c.start; i < c.end; i++) {
       const p = paras[i];
       out.push(

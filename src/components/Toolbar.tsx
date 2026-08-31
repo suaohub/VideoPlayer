@@ -200,7 +200,6 @@ export function Toolbar(props: ToolbarProps) {
       backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
       WebkitBackdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
       borderBottom: '1px solid var(--glass-border)',
-      boxShadow: 'var(--glass-highlight)',
       padding: '12px 16px',
       paddingTop: '52px', // 为 Windows 原生标题栏控件留出空间
       display: 'flex',

@@ -62,13 +62,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   refreshImportedFolders: () => ipcRenderer.invoke('refresh-imported-folders'),
   getTags: (mediaType?: string) => ipcRenderer.invoke('get-tags', mediaType),
   getOrganizeCategories: () => ipcRenderer.invoke('get-organize-categories'),
+  getHiddenFolders: () => ipcRenderer.invoke('get-hidden-folders'),
+  setFolderHidden: (folderId: number, hidden: boolean) => ipcRenderer.invoke('set-folder-hidden', folderId, hidden),
   createOrganizeCategory: (name: string) => ipcRenderer.invoke('create-organize-category', name),
   renameOrganizeCategory: (categoryId: number, name: string) => ipcRenderer.invoke('rename-organize-category', categoryId, name),
   deleteOrganizeCategory: (categoryId: number) => ipcRenderer.invoke('delete-organize-category', categoryId),
   setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => ipcRenderer.invoke('set-video-organize-category', videoId, categoryId),
-  organizeFolder: (folderId: number, destinationRootPath?: string) => ipcRenderer.invoke(
-    'organize-folder',
-    folderId,
+  batchSetVideoOrganizeCategory: (videoIds: number[], categoryId: number | null) => ipcRenderer.invoke(
+    'batch-set-video-organize-category',
+    videoIds,
+    categoryId,
+  ),
+  organizeFolders: (folderIds: number[], destinationRootPath?: string) => ipcRenderer.invoke(
+    'organize-folders',
+    folderIds,
     destinationRootPath,
   ),
   getFolderTree: (mediaType?: string) => ipcRenderer.invoke('get-folder-tree', mediaType),

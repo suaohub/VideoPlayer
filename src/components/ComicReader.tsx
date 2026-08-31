@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Maximize, Minimize, Loader2 } from 'lucide-react';
 import { Video } from '../types';
 import { api } from '../api';

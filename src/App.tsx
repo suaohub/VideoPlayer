@@ -22,6 +22,7 @@ function App() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [regeneratingThumbnailId, setRegeneratingThumbnailId] = useState<number | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [hiddenFolders, setHiddenFolders] = useState<Folder[]>([]);
   const [videoCount, setVideoCount] = useState(0);
 
   // 过滤状态
@@ -58,7 +59,6 @@ function App() {
 
   // 可移动磁盘检测
   const [unmountedDrives, setUnmountedDrives] = useState<string[]>([]);
-  const [mountedDrives, setMountedDrives] = useState<string[]>([]);
   // 正在播放的音频（非空时渲染音乐播放页）
   const [playingAudio, setPlayingAudio] = useState<Video | null>(null);
   // 正在阅读的小说（非空时渲染阅读器）
@@ -74,7 +74,6 @@ function App() {
   // 定期检测磁盘挂载状态（启动时 + 每30秒一次）
   const checkDrives = useCallback(async () => {
     const result = await api.checkRemovableDrives();
-    setMountedDrives(result.mounted);
     const unmounted = result.drives.filter(d => !result.mounted.includes(d));
     setUnmountedDrives(unmounted);
   }, []);
@@ -97,13 +96,15 @@ function App() {
 
   // 刷新标签、目录、视频总数（跟随当前媒体类型分类）
   const refreshAll = useCallback(async () => {
-    const [f, count, favCount, markedCount] = await Promise.all([
+    const [f, hidden, count, favCount, markedCount] = await Promise.all([
       api.getFolderTree(mediaType),
+      api.getHiddenFolders(),
       api.getVideoCount(mediaType),
       api.getFavoritedCount(),
       api.getMarkedForDeletionCount(),
     ]);
     setFolders(f);
+    setHiddenFolders(hidden);
     setVideoCount(count);
     setFavoritedCount(favCount);
     setMarkedForDeletionCount(markedCount);
@@ -490,6 +491,7 @@ function App() {
       // 清空界面状态
       setVideos([]);
       setFolders([]);
+      setHiddenFolders([]);
       setVideoCount(0);
       setSelectedFolderIds([]);
       setSearch('');
@@ -518,6 +520,42 @@ function App() {
     } else {
       alert(`删除失败：${result.error}`);
     }
+  };
+
+  // 隐藏目录及其子目录：只改变显示状态，不删除磁盘文件或库内记录。
+  const handleHideFolder = async (folder: Folder) => {
+    if (!confirm(
+      `隐藏目录「${folder.name}」？\n\n` +
+      `该目录及其所有子目录中的文件将不再出现在目录树、文件列表和统计中。\n` +
+      `硬盘文件、导入记录、收藏、分类和缩略图都会保留，可在设置中恢复显示。`
+    )) return;
+
+    const result = await api.setFolderHidden(folder.id, true);
+    if (!result.success) {
+      alert(`隐藏目录失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+
+    const hiddenPath = folder.path.replace(/[\\/]+$/, '').toLowerCase();
+    setSelectedFolderIds((prev) => prev.filter((id) => {
+      const selected = folders.find((item) => item.id === id);
+      if (!selected) return false;
+      const selectedPath = selected.path.replace(/[\\/]+$/, '').toLowerCase();
+      return selectedPath !== hiddenPath
+        && !selectedPath.startsWith(`${hiddenPath}\\`)
+        && !selectedPath.startsWith(`${hiddenPath}/`);
+    }));
+    await refreshVisibleData();
+  };
+
+  // 在设置中恢复一个显式隐藏目录。
+  const handleRestoreHiddenFolder = async (folder: Folder) => {
+    const result = await api.setFolderHidden(folder.id, false);
+    if (!result.success) {
+      alert(`恢复目录失败：${result.error ?? '未知错误'}`);
+      return;
+    }
+    await refreshVisibleData();
   };
 
   // 永久删除所选目录的磁盘内容，并在物理删除成功后清理导入记录。
@@ -580,6 +618,21 @@ function App() {
     }));
   };
 
+  const handleBatchSetOrganizeCategory = async (videoIds: number[], categoryId: number | null): Promise<boolean> => {
+    const ids = Array.from(new Set(videoIds.filter((id) => Number.isInteger(id))));
+    if (ids.length === 0) return false;
+    const result = await api.batchSetVideoOrganizeCategory(ids, categoryId);
+    if (!result.success) {
+      alert(`批量设置整理分类失败：${result.error ?? '未知错误'}`);
+      return false;
+    }
+    setVideos((prev) => prev.map((video) => (
+      ids.includes(video.id) ? { ...video, organize_category_id: categoryId } : video
+    )));
+    await refreshOrganizeCategories();
+    return true;
+  };
+
   const handleCreateOrganizeCategory = async (name: string) => {
     const result = await api.createOrganizeCategory(name);
     if (!result.success) {
@@ -613,21 +666,23 @@ function App() {
   };
 
   const handleOrganizeFolder = async () => {
-    if (selectedFolderIds.length !== 1) {
-      alert('请先在目录树中单选一个目录。');
+    if (selectedFolderIds.length === 0) {
+      alert('请先在目录树中选择一个或多个目录。');
       return;
     }
-    const folder = folders.find((item) => item.id === selectedFolderIds[0]);
-    if (!folder) return;
+    const selectedFolders = folders.filter((item) => selectedFolderIds.includes(item.id));
+    if (selectedFolders.length === 0) return;
+    const names = selectedFolders.map((folder) => `「${folder.name}」`).join('、');
     if (!confirm(
-      `确认整理目录「${folder.name}」及其子目录中的视频？\n\n` +
+      `确认整理所选 ${selectedFolders.length} 个目录及其子目录中的视频？\n\n` +
+      `${names}\n\n` +
       `程序会按视频卡片上选择的整理分类创建子文件夹并移动文件。\n` +
       `未分类视频不会移动，收藏和原始标签会保留。`
     )) return;
 
     setOrganizing(true);
     try {
-      const result = await api.organizeFolder(folder.id, organizeOutputPath ?? undefined);
+      const result = await api.organizeFolders(selectedFolderIds, organizeOutputPath ?? undefined);
       if (!result.success) {
         alert(`整理失败：${result.error ?? '未知错误'}`);
         return;
@@ -828,6 +883,7 @@ function App() {
               onDeleteFolder={handleDeleteFolder}
               onDeleteFoldersFromDisk={handleDeleteFoldersFromDisk}
               onDeleteUnfavoritedVideos={handleDeleteUnfavoritedVideos}
+              onHideFolder={handleHideFolder}
               favoritedCount={favoritedCount}
               markedForDeletionCount={markedForDeletionCount}
               onShowFavorited={() => {
@@ -853,8 +909,9 @@ function App() {
             onRegenerateThumbnail={handleRegenerateThumbnail}
             regeneratingThumbnailId={regeneratingThumbnailId}
             onMarkForDeletion={handleMarkForDeletion}
-            organizeCategories={organizeCategories}
-            onSetOrganizeCategory={handleSetOrganizeCategory}
+          organizeCategories={organizeCategories}
+          onSetOrganizeCategory={handleSetOrganizeCategory}
+          onBatchSetOrganizeCategory={handleBatchSetOrganizeCategory}
           />
         </main>
       </div>
@@ -903,6 +960,8 @@ function App() {
           importing={importing}
           importProgress={importProgress}
           onClearCache={handleClearCache}
+          hiddenFolders={hiddenFolders}
+          onRestoreHiddenFolder={handleRestoreHiddenFolder}
           backgroundImagePath={wallpaperPath}
           backgroundOpacity={wallpaperOpacity}
           onSelectBackground={handleSelectBackground}
@@ -913,8 +972,10 @@ function App() {
           toolbarBlur={toolbarBlur}
           onToolbarBlurChange={setToolbarBlur}
           organizeCategories={organizeCategories}
-          selectedFolderName={selectedFolderIds.length === 1
-            ? folders.find((folder) => folder.id === selectedFolderIds[0])?.name ?? null
+          selectedFolderName={selectedFolderIds.length > 0
+            ? selectedFolderIds.length === 1
+              ? folders.find((folder) => folder.id === selectedFolderIds[0])?.name ?? null
+              : `${selectedFolderIds.length} 个目录`
             : null}
           onCreateOrganizeCategory={handleCreateOrganizeCategory}
           onRenameOrganizeCategory={handleRenameOrganizeCategory}

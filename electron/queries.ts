@@ -3,6 +3,23 @@ import * as path from 'path';
 import { normalizeThumbnailUrl } from './thumbnail';
 import { extsForType, MediaType } from './media';
 
+// 所有被标记隐藏的目录，以及它们的后代目录。
+const HIDDEN_FOLDERS_CTE = `
+  WITH RECURSIVE hidden_folders(id) AS (
+    SELECT f.id
+    FROM folders f
+    LEFT JOIN hidden_folder_paths h ON h.path = f.path
+    WHERE f.hidden = 1 OR h.path IS NOT NULL
+    UNION ALL
+    SELECT child.id
+    FROM folders child
+    JOIN hidden_folders parent ON child.parent_id = parent.id
+  )
+`;
+
+// 直接导入的文件 folder_id 为空，也应继续显示。
+const VISIBLE_VIDEO_CONDITION = `(v.folder_id IS NULL OR v.folder_id NOT IN (SELECT id FROM hidden_folders))`;
+
 // 构造 ext 过滤子句（返回 { clause, params }，'all' 时 clause 为空串）
 function extClause(type: MediaType | undefined, col = 'v.ext'): { clause: string; params: string[] } {
   const exts = extsForType(type ?? 'all');
@@ -19,19 +36,22 @@ export function getAllTags(mediaType?: MediaType) {
   const { clause, params } = extClause(mediaType);
   if (!clause) {
     return db.prepare(`
-      SELECT t.id, t.name, COUNT(vt.video_id) as count
+      ${HIDDEN_FOLDERS_CTE}
+      SELECT t.id, t.name, COUNT(v.id) as count
       FROM tags t
       LEFT JOIN video_tags vt ON t.id = vt.tag_id
+      LEFT JOIN videos v ON v.id = vt.video_id AND ${VISIBLE_VIDEO_CONDITION}
       GROUP BY t.id
       ORDER BY count DESC, t.name ASC
     `).all();
   }
   // 按类型过滤：join videos 限定扩展名，只保留 count>0 的标签
   return db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
     SELECT t.id, t.name, COUNT(v.id) as count
     FROM tags t
     JOIN video_tags vt ON t.id = vt.tag_id
-    JOIN videos v ON v.id = vt.video_id AND ${clause}
+    JOIN videos v ON v.id = vt.video_id AND ${clause} AND ${VISIBLE_VIDEO_CONDITION}
     GROUP BY t.id
     HAVING count > 0
     ORDER BY count DESC, t.name ASC
@@ -43,18 +63,23 @@ export function getAllTags(mediaType?: MediaType) {
 export function getFolderTree(mediaType?: MediaType) {
   const db = getDb();
   const all = db.prepare(`
-    SELECT id, path, name, parent_id, import_root_id
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT id, path, name, parent_id, import_root_id, hidden
     FROM folders
+    WHERE id NOT IN (SELECT id FROM hidden_folders)
     ORDER BY path ASC
-  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null }>;
+  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null; hidden: number }>;
 
   const { clause, params } = extClause(mediaType);
   if (!clause) return all;
 
   // 找出直接含该类型文件的文件夹 id
   const withType = db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
     SELECT DISTINCT v.folder_id as id FROM videos v
-    WHERE v.folder_id IS NOT NULL AND ${clause}
+    WHERE v.folder_id IS NOT NULL
+      AND v.folder_id NOT IN (SELECT id FROM hidden_folders)
+      AND ${clause}
   `).all(...params) as Array<{ id: number }>;
 
   const keep = new Set<number>();
@@ -106,12 +131,16 @@ export function getVideos(filter: VideoFilter = {}) {
     : (folderId != null ? [folderId] : []);
 
   let sql = `
+    ${HIDDEN_FOLDERS_CTE}
     SELECT DISTINCT v.*, voc.category_id as organize_category_id
     FROM videos v
     LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
   `;
   const conditions: string[] = [];
   const params: any[] = [];
+
+  // 隐藏目录及其子目录中的文件不参与任何列表查询。
+  conditions.push(VISIBLE_VIDEO_CONDITION);
 
   // 媒体类型过滤（按扩展名）
   const ext = extClause(mediaType);
@@ -198,8 +227,46 @@ export function getVideos(filter: VideoFilter = {}) {
 export function getVideoCount(mediaType?: MediaType): number {
   const db = getDb();
   const { clause, params } = extClause(mediaType);
-  const sql = clause ? `SELECT COUNT(*) as c FROM videos v WHERE ${clause}` : 'SELECT COUNT(*) as c FROM videos';
+  const sql = `
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT COUNT(*) as c
+    FROM videos v
+    WHERE ${VISIBLE_VIDEO_CONDITION}${clause ? ` AND ${clause}` : ''}
+  `;
   return (db.prepare(sql).get(...params) as { c: number }).c;
+}
+
+// 获取用户主动隐藏的目录。这里只返回显式隐藏的目录，子目录由查询时递归隐藏。
+export function getHiddenFolders() {
+  const db = getDb();
+  return db.prepare(`
+    SELECT f.id, f.path, f.name, f.parent_id, f.import_root_id, 1 as hidden
+    FROM folders f
+    LEFT JOIN hidden_folder_paths h ON h.path = f.path
+    WHERE f.hidden = 1 OR h.path IS NOT NULL
+    ORDER BY f.path COLLATE NOCASE
+  `).all();
+}
+
+export function setFolderHidden(folderId: number, hidden: boolean) {
+  const db = getDb();
+  const folder = db.prepare('SELECT path FROM folders WHERE id = ?')
+    .get(folderId) as { path: string } | undefined;
+  if (!folder) throw new Error('目录不存在');
+
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE folders SET hidden = ? WHERE id = ?')
+      .run(hidden ? 1 : 0, folderId);
+    if (hidden) {
+      db.prepare(`
+        INSERT OR REPLACE INTO hidden_folder_paths (path, hidden_at)
+        VALUES (?, ?)
+      `).run(folder.path, Date.now());
+    } else {
+      db.prepare('DELETE FROM hidden_folder_paths WHERE path = ?').run(folder.path);
+    }
+  });
+  tx();
 }
 
 // 级联删除目录：删除该目录 + 所有子目录 + 其中的视频记录 + video_tags 关联，
@@ -225,6 +292,7 @@ export function deleteFolderCascade(folderId: number): { thumbnailUrls: string[]
     db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (SELECT id FROM videos WHERE ${subtreeFilter})`)
       .run(folder.path, like);
     db.prepare(`DELETE FROM videos WHERE ${subtreeFilter}`).run(folder.path, like);
+    db.prepare('DELETE FROM hidden_folder_paths WHERE path = ? OR path LIKE ?').run(folder.path, like);
     db.prepare(`DELETE FROM folders WHERE path = ? OR path LIKE ?`).run(folder.path, like);
     // 清理孤儿标签（不再被任何视频引用）
     db.prepare(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)`).run();
@@ -288,7 +356,12 @@ export function toggleFavorite(videoId: number): { favorited: boolean } {
 // 获取收藏视频总数
 export function getFavoritedCount(): number {
   const db = getDb();
-  return (db.prepare('SELECT COUNT(*) as c FROM videos WHERE favorited = 1').get() as { c: number }).c;
+  return (db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT COUNT(*) as c
+    FROM videos v
+    WHERE v.favorited = 1 AND ${VISIBLE_VIDEO_CONDITION}
+  `).get() as { c: number }).c;
 }
 
 // 批量取消收藏
@@ -312,7 +385,12 @@ export function toggleMarkedForDeletion(videoId: number): { marked: boolean } {
 // 获取标记删除视频总数
 export function getMarkedForDeletionCount(): number {
   const db = getDb();
-  return (db.prepare('SELECT COUNT(*) as c FROM videos WHERE marked_for_deletion = 1').get() as { c: number }).c;
+  return (db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT COUNT(*) as c
+    FROM videos v
+    WHERE v.marked_for_deletion = 1 AND ${VISIBLE_VIDEO_CONDITION}
+  `).get() as { c: number }).c;
 }
 
 // 批量恢复（取消删除标记）
@@ -352,9 +430,11 @@ export function batchDeleteVideos(videoIds: number[]): { thumbnailUrls: string[]
 export function getOrganizeCategories() {
   const db = getDb();
   return db.prepare(`
-    SELECT c.id, c.name, c.sort_order, COUNT(voc.video_id) as count
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT c.id, c.name, c.sort_order, COUNT(v.id) as count
     FROM organize_categories c
     LEFT JOIN video_organize_categories voc ON voc.category_id = c.id
+    LEFT JOIN videos v ON v.id = voc.video_id AND ${VISIBLE_VIDEO_CONDITION}
     GROUP BY c.id
     ORDER BY c.sort_order ASC, c.name COLLATE NOCASE ASC
   `).all();
@@ -405,33 +485,70 @@ export function setVideoOrganizeCategory(videoId: number, categoryId: number | n
   }
 }
 
+export function batchSetVideoOrganizeCategory(videoIds: number[], categoryId: number | null) {
+  const ids = Array.from(new Set(videoIds.filter((id) => Number.isInteger(id))));
+  if (ids.length === 0) return 0;
+  const db = getDb();
+  const tx = db.transaction(() => {
+    if (categoryId == null) {
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const batch = ids.slice(offset, offset + 500);
+        const placeholders = batch.map(() => '?').join(',');
+        db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      }
+      return;
+    }
+    const statement = db.prepare(`
+      INSERT INTO video_organize_categories (video_id, category_id)
+      VALUES (?, ?)
+      ON CONFLICT(video_id) DO UPDATE SET category_id = excluded.category_id
+    `);
+    for (const videoId of ids) statement.run(videoId, categoryId);
+  });
+  tx();
+  return ids.length;
+}
+
 export interface OrganizeCandidate {
   id: number;
   path: string;
   name: string;
+  folder_id: number;
+  folder_path: string;
   category_id: number | null;
   category_name: string | null;
 }
 
 export function getOrganizeCandidatesInFolder(folderId: number): OrganizeCandidate[] {
+  return getOrganizeCandidatesInFolders([folderId]);
+}
+
+export function getOrganizeCandidatesInFolders(folderIds: number[]): OrganizeCandidate[] {
   const db = getDb();
-  const folder = db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
-  if (!folder) return [];
+  const ids = Array.from(new Set(folderIds.filter((id) => Number.isInteger(id))));
+  if (ids.length === 0) return [];
+  const idPlaceholders = ids.map(() => '?').join(',');
+  const folders = db.prepare(
+    `SELECT id, path FROM folders WHERE id IN (${idPlaceholders})`
+  ).all(...ids) as Array<{ id: number; path: string }>;
+  if (folders.length === 0) return [];
   const videoExt = extClause('video', 'v.ext');
-  const like = folder.path + path.sep + '%';
+  const scope = folders.map(() => `(f.path = ? OR f.path LIKE ?)`).join(' OR ');
+  const scopeParams = folders.flatMap((folder) => [folder.path, folder.path + path.sep + '%']);
   return db.prepare(`
-    SELECT v.id, v.path, v.name,
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT v.id, v.path, v.name, v.folder_id, f.path as folder_path,
            voc.category_id,
            c.name as category_name
     FROM videos v
+    JOIN folders f ON f.id = v.folder_id
     LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
     LEFT JOIN organize_categories c ON c.id = voc.category_id
     WHERE ${videoExt.clause}
-      AND v.folder_id IN (
-        SELECT id FROM folders WHERE path = ? OR path LIKE ?
-      )
+      AND ${VISIBLE_VIDEO_CONDITION}
+      AND (${scope})
     ORDER BY v.path COLLATE NOCASE
-  `).all(...videoExt.params, folder.path, like) as OrganizeCandidate[];
+  `).all(...videoExt.params, ...scopeParams) as OrganizeCandidate[];
 }
 
 export function getOrCreateOrganizeFolder(
@@ -520,9 +637,11 @@ export function getUnfavoritedFileCandidatesInFolder(folderId: number): Unfavori
 
   const like = folder.path + path.sep + '%';
   return db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
     SELECT v.id, v.path, v.thumbnail_path
     FROM videos v
     WHERE v.favorited = 0
+      AND ${VISIBLE_VIDEO_CONDITION}
       AND v.folder_id IN (
         SELECT id FROM folders WHERE path = ? OR path LIKE ?
       )
@@ -562,7 +681,14 @@ export function deleteVideoRecords(videoIds: number[]): { thumbnailUrls: string[
 export function exportMarkedForDeletionList(): string[] {
   const db = getDb();
   const rows = db.prepare(
-    'SELECT name FROM videos WHERE marked_for_deletion = 1 ORDER BY name'
+    `
+      ${HIDDEN_FOLDERS_CTE}
+      SELECT v.name
+      FROM videos v
+      WHERE v.marked_for_deletion = 1
+        AND ${VISIBLE_VIDEO_CONDITION}
+      ORDER BY v.name
+    `
   ).all() as { name: string }[];
   return rows.map((r) => r.name);
 }

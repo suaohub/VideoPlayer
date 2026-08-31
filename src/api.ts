@@ -106,13 +106,25 @@ export const api = {
     if (USE_MOCK) return { success: true, categoryId };
     return window.electronAPI.setVideoOrganizeCategory(videoId, categoryId);
   },
-  async organizeFolder(folderId: number, destinationRootPath?: string) {
+  async batchSetVideoOrganizeCategory(videoIds: number[], categoryId: number | null) {
+    if (USE_MOCK) return { success: true, categoryId, updatedCount: videoIds.length };
+    return window.electronAPI.batchSetVideoOrganizeCategory(videoIds, categoryId);
+  },
+  async organizeFolders(folderIds: number[], destinationRootPath?: string) {
     if (USE_MOCK) return { success: true, movedCount: 0, skippedCount: 0 };
-    return window.electronAPI.organizeFolder(folderId, destinationRootPath);
+    return window.electronAPI.organizeFolders(folderIds, destinationRootPath);
   },
   async getFolderTree(mediaType?: import('./types').MediaType): Promise<Folder[]> {
     if (USE_MOCK) return dataset.folders;
     return window.electronAPI.getFolderTree(mediaType);
+  },
+  async getHiddenFolders(): Promise<Folder[]> {
+    if (USE_MOCK) return [];
+    return window.electronAPI.getHiddenFolders();
+  },
+  async setFolderHidden(folderId: number, hidden: boolean) {
+    if (USE_MOCK) return { success: true, hidden };
+    return window.electronAPI.setFolderHidden(folderId, hidden);
   },
   async getVideoCount(mediaType?: import('./types').MediaType): Promise<number> {
     if (USE_MOCK) return dataset.videos.length;
@@ -206,7 +218,7 @@ export const api = {
   // 监听 mpv 截帧设为背景事件（全局快捷键 B 触发）
   onWallpaperCaptured(callback: (payload: { path: string; dataUrl: string }) => void): (() => void) | undefined {
     if (USE_MOCK) return undefined;
-    return window.electronAPI.onWallpaperCaptured?.(callback);
+    return window.electronAPI.onWallpaperCaptured?.(callback) ?? undefined;
   },
   async readTextFile(path: string): Promise<{ success: boolean; content?: string; encoding?: string; error?: string }> {
     if (window.electronAPI?.readTextFile) return window.electronAPI.readTextFile(path);

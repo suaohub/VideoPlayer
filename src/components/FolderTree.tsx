@@ -9,6 +9,7 @@ interface FolderTreeProps {
   onDeleteFolder: (folder: Folder) => void;
   onDeleteFoldersFromDisk: (folderIds: number[]) => void;
   onDeleteUnfavoritedVideos: (folder: Folder) => void;
+  onHideFolder: (folder: Folder) => void;
   favoritedCount?: number;
   markedForDeletionCount?: number;
   onShowFavorited?: () => void;
@@ -103,7 +104,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   );
 }
 
-export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion }: FolderTreeProps) {
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion }: FolderTreeProps) {
   const tree = useMemo(() => buildTree(folders), [folders]);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
@@ -170,7 +171,7 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
     };
   }, [menu]);
 
-  const MENU_W = 250, MENU_H = 178;
+  const MENU_W = 250, MENU_H = 222;
   const mx = menu ? Math.min(menu.x, window.innerWidth - MENU_W - 8) : 0;
   const my = menu ? Math.min(menu.y, window.innerHeight - MENU_H - 8) : 0;
 
@@ -355,6 +356,15 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
             onClick={() => { onDeleteUnfavoritedVideos(menu.node); setMenu(null); }}
           >
             删除未收藏文件（含子目录）
+          </button>
+          <div style={{ height: 1, background: 'var(--border)', margin: '2px 4px' }} />
+          <button
+            style={{ ...itemStyle, color: 'var(--text-primary)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => { onHideFolder(menu.node); setMenu(null); }}
+          >
+            隐藏目录及子目录
           </button>
         </div>
       )}

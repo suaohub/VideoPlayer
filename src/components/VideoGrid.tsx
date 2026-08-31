@@ -22,6 +22,7 @@ interface VideoGridProps {
   onMarkForDeletion?: (videoId: number) => void;
   organizeCategories?: OrganizeCategory[];
   onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void;
+  onBatchSetOrganizeCategory?: (videoIds: number[], categoryId: number | null) => boolean | Promise<boolean>;
 }
 
 const GAP = 12;
@@ -384,12 +385,12 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onMarkForDeletion, organizeCategories = [], onSetOrganizeCategory = () => {} }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onMarkForDeletion, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
-  // 多选模式状态（仅在收藏夹视图激活）
+  // 多选模式状态：收藏管理和批量整理共用同一套选择逻辑。
   const [internalSelectionMode, setInternalSelectionMode] = useState(false);
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<number>>(new Set());
 
@@ -421,13 +422,16 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const scrollAnimation = useRef<number | null>(null);
   selectionModeRef.current = selectionMode;
 
-  // 退出收藏夹视图时自动退出选择模式
+  // 文件离开当前筛选结果后，清掉残留选择，避免对不可见文件执行批量操作。
   useEffect(() => {
-    if (!showFavorited) {
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-    }
-  }, [showFavorited]);
+    if (externalSelectedIds) return;
+    const visibleIds = new Set(videos.map((video) => video.id));
+    setSelectedIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => visibleIds.has(id)));
+      if (next.size === prev.size && Array.from(next).every((id) => prev.has(id))) return prev;
+      return next;
+    });
+  }, [videos, externalSelectedIds]);
 
   // 测量容器宽度和高度
   useLayoutEffect(() => {
@@ -731,10 +735,18 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     setSelectionMode(false);
   };
 
+  const handleBatchCategory = async (categoryId: number | null) => {
+    if (!onBatchSetOrganizeCategory || selectedIds.size === 0) return;
+    const success = await onBatchSetOrganizeCategory(Array.from(selectedIds), categoryId);
+    if (!success) return;
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  };
+
   return (
     <div ref={containerRef} style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
-      {/* 批量操作工具栏（收藏夹视图） */}
-      {showFavorited && videos.length > 0 && (
+      {/* 批量操作工具栏 */}
+      {videos.length > 0 && (showFavorited || onBatchSetOrganizeCategory) && (
         <div style={{
           position: 'sticky',
           top: 0,
@@ -750,7 +762,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           gap: 12,
           boxShadow: 'var(--shadow), var(--glass-highlight)',
           border: '1px solid var(--glass-border)',
-        }}>
+          }}>
           {!selectionMode ? (
             <button
               onClick={() => setSelectionMode(true)}
@@ -765,7 +777,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 fontWeight: 500,
               }}
             >
-              批量管理
+              {showFavorited ? '批量管理' : '批量整理'}
             </button>
           ) : (
             <>
@@ -786,23 +798,55 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
               >
                 全选
               </button>
-              <button
-                onClick={handleBatchDelete}
-                disabled={selectedIds.size === 0}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  background: selectedIds.size > 0 ? '#ef4444' : 'var(--bg-card)',
-                  color: selectedIds.size > 0 ? '#fff' : 'var(--text-secondary)',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                  fontWeight: 500,
-                  opacity: selectedIds.size > 0 ? 1 : 0.5,
-                }}
-              >
-                移出收藏
-              </button>
+              {onBatchSetOrganizeCategory && (
+                <>
+                  <select
+                    defaultValue=""
+                    disabled={selectedIds.size === 0}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value !== '') void handleBatchCategory(value === 'none' ? null : Number(value));
+                      event.target.value = '';
+                    }}
+                    title="给选中的文件设置同一个整理分类"
+                    style={{
+                      minWidth: 138,
+                      padding: '6px 9px',
+                      fontSize: 13,
+                      background: 'var(--bg-card)',
+                      color: selectedIds.size > 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 6,
+                      cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    <option value="">批量设置分类</option>
+                    <option value="none">未分类</option>
+                    {organizeCategories.map((category) => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {showFavorited && (
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={selectedIds.size === 0}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 13,
+                    background: selectedIds.size > 0 ? '#ef4444' : 'var(--bg-card)',
+                    color: selectedIds.size > 0 ? '#fff' : 'var(--text-secondary)',
+                    border: 'none',
+                    borderRadius: 6,
+                    cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                    fontWeight: 500,
+                    opacity: selectedIds.size > 0 ? 1 : 0.5,
+                  }}
+                >
+                  移出收藏
+                </button>
+              )}
               <button
                 onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
                 style={{

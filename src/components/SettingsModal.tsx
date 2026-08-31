@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Pencil, Plus, FolderOpen,
+  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Pencil, Plus, FolderOpen, EyeOff, Eye,
 } from 'lucide-react';
-import { ImportProgress, OrganizeCategory } from '../types';
+import { Folder, ImportProgress, OrganizeCategory } from '../types';
 import './SettingsModal.css';
 
 interface SettingsModalProps {
@@ -12,6 +12,8 @@ interface SettingsModalProps {
   importing: boolean;
   importProgress: ImportProgress | null;
   onClearCache: () => void;
+  hiddenFolders: Folder[];
+  onRestoreHiddenFolder: (folder: Folder) => void;
   // 外观
   backgroundImagePath: string | null;
   backgroundOpacity: number;
@@ -39,6 +41,7 @@ const ICON = { size: 16, strokeWidth: 1.75 } as const;
 export function SettingsModal(props: SettingsModalProps) {
   const {
     onClose, onImport, importing, importProgress, onClearCache,
+    hiddenFolders, onRestoreHiddenFolder,
     backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
     onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
     toolbarBlur, onToolbarBlurChange, organizeCategories, selectedFolderName,
@@ -67,6 +70,38 @@ export function SettingsModal(props: SettingsModalProps) {
           <button className="settings-close" onClick={onClose} title="关闭 (Esc)">
             <X size={16} strokeWidth={1.8} />
           </button>
+        </div>
+
+        {/* 隐藏目录 */}
+        <div className="settings-section">
+          <div className="settings-section-title">隐藏目录</div>
+          <div className="settings-row">
+            <span className="settings-hint">
+              隐藏目录不会出现在目录树、文件列表和统计中，但导入记录、收藏、分类及缩略图都会保留。
+            </span>
+          </div>
+          {hiddenFolders.length === 0 ? (
+            <div className="settings-hint">暂无隐藏目录。可在左侧目录上右键，选择“隐藏目录及子目录”。</div>
+          ) : (
+            <div className="settings-hidden-folder-list">
+              {hiddenFolders.map((folder) => (
+                <div className="settings-hidden-folder-item" key={folder.id}>
+                  <EyeOff {...ICON} />
+                  <div className="settings-hidden-folder-info">
+                    <span className="settings-hidden-folder-name">{folder.name}</span>
+                    <span className="settings-hidden-folder-path" title={folder.path}>{folder.path}</span>
+                  </div>
+                  <button
+                    className="settings-mini-btn"
+                    onClick={() => onRestoreHiddenFolder(folder)}
+                    title="恢复显示目录"
+                  >
+                    <Eye size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 媒体库 */}
@@ -110,7 +145,7 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="settings-section-title">视频整理</div>
           <div className="settings-row">
             <span className="settings-hint">
-              右键文件卡片选择一个分类，整理时会按分类移动文件。
+              右键单个文件，或使用列表顶部的批量选择，为文件设置一个整理分类。
             </span>
           </div>
           <div className="settings-row settings-organize-output">
@@ -195,10 +230,10 @@ export function SettingsModal(props: SettingsModalProps) {
               disabled={!selectedFolderName || organizing || organizeCategories.length === 0}
               onClick={onOrganizeFolder}
             >
-              {organizing ? <><Loader2 {...ICON} className="spin" /> 整理中...</> : <><FolderKanban {...ICON} /> 开始整理目录</>}
+              {organizing ? <><Loader2 {...ICON} className="spin" /> 整理中...</> : <><FolderKanban {...ICON} /> 开始整理所选目录</>}
             </button>
             <span className="settings-hint">
-              {selectedFolderName ? `当前目录：${selectedFolderName}` : '请先在目录树中单选一个目录'}
+              {selectedFolderName ? `已选目录：${selectedFolderName}` : '请先在目录树中选择一个或多个目录'}
             </span>
           </div>
         </div>
