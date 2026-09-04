@@ -61,13 +61,26 @@ export function SettingsModal(props: SettingsModalProps) {
   }, [onClose]);
 
   return (
-    <div className="settings-overlay" onMouseDown={onClose}>
-      <div className="settings-card" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className="settings-overlay"
+      onMouseDown={(e) => {
+        // Only clicks on the scrim itself close the drawer; controls inside remain interactive.
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
+      <aside
+        className="settings-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="settings-head">
-          <span className="settings-title">
+          <h2 className="settings-title" id="settings-title">
             <Settings {...ICON} size={18} /> 设置
-          </span>
-          <button className="settings-close" onClick={onClose} title="关闭 (Esc)">
+          </h2>
+          <button type="button" className="settings-close" onClick={onClose} title="关闭 (Esc)" aria-label="关闭设置">
             <X size={16} strokeWidth={1.8} />
           </button>
         </div>
@@ -293,7 +306,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <span className="settings-slider-val">{toolbarBlur}px</span>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }

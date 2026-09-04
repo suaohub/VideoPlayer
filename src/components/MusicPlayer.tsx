@@ -44,6 +44,11 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
   const [speed, setSpeed] = useState(1);
   const seekingRef = useRef(false);
   const initializingRef = useRef(true);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   const { title, artist } = parseTitle(video.name);
 
@@ -85,7 +90,7 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
       api.onPaused((p) => setPaused(!!p)),
       api.onVolume((v) => { if (!initializingRef.current) setVolume(Math.round(v)); }),
       api.onSpeed((s) => { if (!initializingRef.current) setSpeed(s); }),
-      api.onStopped(() => { if (active) onClose(); }),
+      api.onStopped(() => { if (active) onCloseRef.current(); }),
     ];
 
     return () => {
@@ -93,7 +98,7 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
       offs.forEach((off) => off?.());
       api.stopVideo();
     };
-  }, [video.path, onClose]);
+  }, [video.path]);
 
   const closePlayer = useCallback(async () => {
     await api.stopVideo();

@@ -25,6 +25,11 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
   const [duration, setDuration] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPlaybackPersistAt = useRef<Map<number, number>>(new Map());
+  const restoringPlayback = useRef(false);
+  const restoreCancelled = useRef(false);
+  const activePlaybackId = useRef<number | null>(null);
+  const restoreGeneration = useRef(0);
 
   const count = videos.length;
   const current = videos[index];
@@ -38,28 +43,56 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
   const dragStart = useRef<number | null>(null);
   const [dragOffset, setDragOffset] = useState(0);
 
+  const persistPlayback = useCallback(async (item: Video | undefined, el: HTMLVideoElement | null, force = false) => {
+    if (!el || !item || !Number.isFinite(el.currentTime) || el.currentTime < 0) return;
+    if (restoringPlayback.current || activePlaybackId.current !== item.id) return;
+    const now = Date.now();
+    const last = lastPlaybackPersistAt.current.get(item.id) ?? 0;
+    if (!force && now - last < 2000) return;
+    lastPlaybackPersistAt.current.set(item.id, now);
+    try {
+      await api.savePlaybackProgress(
+        item.id,
+        el.currentTime,
+        Number.isFinite(el.duration) && el.duration > 0 ? el.duration : item.duration,
+        false,
+      );
+    } catch (error) {
+      // 播放中的断点写入失败不应打断切换或播放；后续 timeupdate 会重试。
+      console.warn('[shorts] failed to persist playback progress:', error);
+    }
+  }, []);
+
   const go = useCallback((next: number) => {
     if (next < 0 || next >= count) return;
     if (switchingRef.current) return;
     switchingRef.current = true;
+    void persistPlayback(current, videoRef.current, true);
     setIndex(next);
     setProgress(0);
     setDuration(0);
     setPaused(false);
     setTimeout(() => { switchingRef.current = false; }, 320);
-  }, [count]);
+  }, [count, current, persistPlayback]);
 
   const goNext = useCallback(() => go(index + 1), [go, index]);
   const goPrev = useCallback(() => go(index - 1), [go, index]);
 
+  const cancelRestore = useCallback(() => {
+    if (activePlaybackId.current == null || !restoringPlayback.current) return;
+    restoreCancelled.current = true;
+    restoringPlayback.current = false;
+  }, []);
+
   const seekBy = useCallback((delta: number) => {
     const el = videoRef.current;
     if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    cancelRestore();
     const nextTime = Math.max(0, Math.min(el.duration, el.currentTime + delta));
     el.currentTime = nextTime;
     setProgress(nextTime / el.duration);
     setDuration(el.duration);
-  }, []);
+  }, [cancelRestore]);
 
   // 键盘
   useEffect(() => {
@@ -73,7 +106,7 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
       else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); captureWallpaper(); }
       else if (e.key === 'Delete') {
         e.preventDefault();
-        await api.toggleMarkedForDeletion(current.id);
+        if (current) await api.toggleMarkedForDeletion(current.id);
         showToast('已标记删除');
       }
     };
@@ -82,25 +115,93 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goNext, goPrev, onClose, current, seekBy]);
 
-  // 切换到当前项后：从头播放，尝试带声，失败则静音重试
+  // 切换到当前项后：恢复上次断点，尝试带声，失败则静音重试。
   useEffect(() => {
+    const item = current;
     const el = videoRef.current;
-    if (!el) return;
-    el.currentTime = 0;
+    if (!el || !item) return;
     el.muted = muted;
+    let active = true;
+    const restoreToken = ++restoreGeneration.current;
+    activePlaybackId.current = item.id;
+    restoringPlayback.current = true;
+    restoreCancelled.current = false;
+    const waitForMetadata = () => {
+      if (el.readyState >= 1 && Number.isFinite(el.duration) && el.duration > 0) {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          el.removeEventListener('loadedmetadata', finish);
+          resolve();
+        };
+        const timeout = setTimeout(finish, 3000);
+        el.addEventListener('loadedmetadata', finish, { once: true });
+      });
+    };
+    const isCurrentRestore = () => active
+      && restoreGeneration.current === restoreToken
+      && activePlaybackId.current === item.id
+      && !restoreCancelled.current;
     const tryPlay = async () => {
+      try {
+        let saved = null;
+        try {
+          saved = await api.getPlaybackProgress(item.id);
+        } catch {
+          // 断点读取失败时从头播放，不能让恢复闸门永久阻塞后续进度保存。
+          saved = null;
+        }
+        if (!isCurrentRestore()) return;
+        const savedPosition = saved?.position ?? 0;
+        const savedDuration = saved?.duration ?? item.duration ?? null;
+        const canResume = saved && saved.completed !== 1 && savedPosition > 5
+          && (!savedDuration || savedPosition < savedDuration - 3);
+        await waitForMetadata();
+        if (!isCurrentRestore()) return;
+        const actualDuration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : savedDuration;
+        const targetPosition = canResume
+          ? Math.max(0, Math.min(savedPosition, actualDuration && actualDuration > 1 ? actualDuration - 0.5 : savedPosition))
+          : 0;
+        el.currentTime = targetPosition;
+        if (targetPosition > 0 && actualDuration) {
+          setDuration(actualDuration);
+          setProgress(Math.min(1, targetPosition / actualDuration));
+        }
+      } catch {
+        // metadata 读取失败时仍尝试从头播放，让浏览器给出正常的媒体错误状态。
+        if (isCurrentRestore()) {
+          try { el.currentTime = 0; } catch { /* ignore */ }
+        }
+      } finally {
+        if (isCurrentRestore()) restoringPlayback.current = false;
+      }
+      if (!isCurrentRestore()) return;
       try {
         await el.play();
       } catch {
         // 自动播放被拦截 → 静音重试
+        if (!isCurrentRestore()) return;
         el.muted = true;
         setMuted(true);
         try { await el.play(); } catch { /* ignore */ }
       }
     };
     tryPlay();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index]);
+    return () => {
+      active = false;
+      if (restoreGeneration.current === restoreToken && activePlaybackId.current === item.id) {
+        if (!restoringPlayback.current) void persistPlayback(item, el, true);
+        activePlaybackId.current = null;
+        restoringPlayback.current = false;
+        restoreCancelled.current = true;
+      }
+    };
+  }, [index, current?.id, persistPlayback]);
 
   const togglePlay = useCallback(() => {
     const el = videoRef.current;
@@ -159,20 +260,30 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
     else if (d >= DRAG_THRESHOLD) goPrev();
   }, [dragOffset, goNext, goPrev]);
 
-  const onTimeUpdate = useCallback(() => {
-    const el = videoRef.current;
-    if (!el || !el.duration) return;
+  const onTimeUpdate = useCallback((event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const el = event.currentTarget;
+    if (!current || el !== videoRef.current || !el.duration) return;
     setProgress(el.currentTime / el.duration);
     setDuration(el.duration);
-  }, []);
+    void persistPlayback(current, el);
+  }, [current, persistPlayback]);
+
+  const onDurationChange = useCallback((event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const el = event.currentTarget;
+    if (!current || el !== videoRef.current || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    setDuration(el.duration);
+    if (el.currentTime > 0) setProgress(Math.min(1, el.currentTime / el.duration));
+  }, [current]);
 
   const onSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const el = videoRef.current;
     if (!el || !el.duration) return;
+    // 用户主动拖动时取消尚未完成的异步断点恢复，避免恢复结果覆盖 seek。
+    cancelRestore();
     const pct = Math.max(0, Math.min(1, Number(e.currentTarget.value)));
     el.currentTime = pct * el.duration;
     setProgress(pct);
-  }, []);
+  }, [cancelRestore]);
 
   const formatTime = useCallback((seconds: number) => {
     if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -237,7 +348,7 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
                   muted={muted}
                   onClick={togglePlay}
                   onTimeUpdate={onTimeUpdate}
-                  onDurationChange={onTimeUpdate}
+                  onDurationChange={onDurationChange}
                 />
               ) : (
                 v.thumbnail_path ? (

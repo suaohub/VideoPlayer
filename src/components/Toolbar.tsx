@@ -1,11 +1,37 @@
 import {
-  Shuffle, FilterX, Search, Sun, Moon, Heart, Grid3x3, Square,
-  Loader2, RefreshCw, TriangleAlert, Waves, Trees, Sunset, Circle, Zap, ChevronDown,
-  X, Minus, Maximize2, Minimize2, Settings, FolderTree as FolderTreeIcon,
-  LayoutGrid, Film, Music2, BookOpen, Images, Clapperboard,
-  ArrowDownUp, ArrowUp, ArrowDown, Clock, CaseSensitive, HardDrive, Timer, CalendarClock, Dices,
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
+  BookOpen,
+  ChevronDown,
+  Clapperboard,
+  Dices,
+  Film,
+  FilterX,
+  FolderPlus,
+  Grid2x2,
+  Heart,
+  Images,
+  LayoutGrid,
+  Loader2,
+  Maximize2,
+  Menu,
+  Minus,
+  MonitorPlay,
+  Moon,
+  Music2,
+  PanelLeft,
+  RefreshCw,
+  Search,
+  Settings,
+  Sparkles,
+  Square,
+  Sun,
+  TriangleAlert,
+  X,
+  Zap,
 } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Theme, ImportProgress, ThumbnailProgress, MediaType, SortBy, SortDir } from '../types';
 
 interface ToolbarProps {
@@ -15,9 +41,13 @@ interface ToolbarProps {
   onClearFilter: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  onImport: () => void;
   refreshing: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
+  pageLabel?: string;
+  pageCurrent?: string;
+  isOverview?: boolean;
   mediaType: MediaType;
   onMediaTypeChange: (t: MediaType) => void;
   sortBy: SortBy;
@@ -48,23 +78,18 @@ interface ToolbarProps {
   onClose: () => void;
 }
 
-// 卡片大小滑块范围（列宽 px）
-const CARD_MIN = 120;
-const CARD_MAX = 420;
-
 const THEMES: { value: Theme; label: string; Icon: typeof Sun }[] = [
-  { value: 'day', label: '白天', Icon: Sun },
-  { value: 'night', label: '夜间', Icon: Moon },
+  { value: 'day', label: '浅色', Icon: Sun },
+  { value: 'night', label: '深色', Icon: Moon },
+  { value: 'slate', label: '石板灰', Icon: Square },
+  { value: 'ocean', label: '海洋', Icon: MonitorPlay },
+  { value: 'forest', label: '森林', Icon: Sparkles },
+  { value: 'sunset', label: '日落', Icon: Sun },
   { value: 'romantic', label: '浪漫', Icon: Heart },
-  { value: 'ocean', label: '海洋', Icon: Waves },
-  { value: 'forest', label: '森林', Icon: Trees },
-  { value: 'sunset', label: '日落', Icon: Sunset },
-  { value: 'slate', label: '极简灰', Icon: Circle },
-  { value: 'cyberpunk', label: '赛博霓虹', Icon: Zap },
+  { value: 'cyberpunk', label: '赛博', Icon: Zap },
 ];
 
-// 媒体分类（下拉菜单，默认全部）
-const MEDIA_TABS: { value: MediaType; label: string; Icon: typeof Sun }[] = [
+const MEDIA_TABS: { value: MediaType; label: string; Icon: typeof LayoutGrid }[] = [
   { value: 'all', label: '全部', Icon: LayoutGrid },
   { value: 'video', label: '视频', Icon: Film },
   { value: 'audio', label: '音频', Icon: Music2 },
@@ -72,500 +97,249 @@ const MEDIA_TABS: { value: MediaType; label: string; Icon: typeof Sun }[] = [
   { value: 'comic', label: '漫画', Icon: Images },
 ];
 
-// 排序字段（下拉菜单，默认最新导入）
-const SORT_OPTIONS: { value: SortBy; label: string; Icon: typeof Sun }[] = [
-  { value: 'added', label: '最新导入', Icon: Clock },
-  { value: 'name', label: '名称', Icon: CaseSensitive },
-  { value: 'size', label: '大小', Icon: HardDrive },
-  { value: 'duration', label: '时长', Icon: Timer },
-  { value: 'mtime', label: '修改时间', Icon: CalendarClock },
+const SORT_OPTIONS: { value: SortBy; label: string; Icon: typeof LayoutGrid }[] = [
+  { value: 'added', label: '最近添加', Icon: Sparkles },
+  { value: 'name', label: '名称', Icon: Search },
+  { value: 'size', label: '文件大小', Icon: Square },
+  { value: 'duration', label: '时长', Icon: MonitorPlay },
+  { value: 'mtime', label: '修改时间', Icon: RefreshCw },
   { value: 'random', label: '随机', Icon: Dices },
 ];
 
-// 图标统一参数：细描边线性风格
-const ICON = { size: 16, strokeWidth: 1.75 } as const;
+const ICON = { size: 16, strokeWidth: 1.8 } as const;
 
-export function Toolbar(props: ToolbarProps) {
-  const {
-    theme, onThemeChange, onShuffle, onClearFilter, onOpenSettings, onRefresh, refreshing,
-    sidebarOpen, onSidebarOpenChange, mediaType, onMediaTypeChange,
-    sortBy, onSortByChange, sortDir, onSortDirChange, onOpenFeed,
-    search, onSearchChange, videoCount, filteredCount,
-    importing, importProgress, thumbProgress,
-    cardSize, onCardSizeChange, unmountedDrives,
-    showFavorited, onShowFavoritedChange, showFavoritedInList, onShowFavoritedInListChange, favoritedCount,
-    toolbarOpacity, toolbarBlur,
-    isMaximized, onMinimize, onToggleMaximize, onClose,
-  } = props;
-
-  // 主题下拉菜单开关
-  const [themeOpen, setThemeOpen] = useState(false);
-  const themeRef = useRef<HTMLDivElement>(null);
-  // 媒体分类下拉开关
-  const [mediaOpen, setMediaOpen] = useState(false);
-  const mediaRef = useRef<HTMLDivElement>(null);
-  // 排序下拉开关
+function Toolbar({
+  theme,
+  onThemeChange,
+  onShuffle,
+  onClearFilter,
+  onOpenSettings,
+  onRefresh,
+  onImport,
+  refreshing,
+  sidebarOpen,
+  onSidebarOpenChange,
+  pageLabel = '媒体库',
+  pageCurrent,
+  isOverview = false,
+  mediaType,
+  onMediaTypeChange,
+  sortBy,
+  onSortByChange,
+  sortDir,
+  onSortDirChange,
+  onOpenFeed,
+  search,
+  onSearchChange,
+  videoCount,
+  filteredCount,
+  importing,
+  importProgress,
+  thumbProgress,
+  cardSize,
+  onCardSizeChange,
+  unmountedDrives,
+  showFavorited,
+  onShowFavoritedChange,
+  showFavoritedInList,
+  onShowFavoritedInListChange,
+  favoritedCount,
+  toolbarOpacity,
+  toolbarBlur,
+  isMaximized,
+  onMinimize,
+  onToggleMaximize,
+  onClose,
+}: ToolbarProps) {
   const [sortOpen, setSortOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
+  const themeRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 点击菜单外部时收起
   useEffect(() => {
-    if (!themeOpen && !mediaOpen && !sortOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
-        setThemeOpen(false);
+    if (!sortOpen && !themeOpen && !moreOpen) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (sortRef.current && !sortRef.current.contains(target)) setSortOpen(false);
+      if (themeRef.current && !themeRef.current.contains(target)) setThemeOpen(false);
+      if (moreRef.current && !moreRef.current.contains(target)) setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [sortOpen, themeOpen, moreOpen]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
       }
-      if (mediaRef.current && !mediaRef.current.contains(e.target as Node)) {
-        setMediaOpen(false);
-      }
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
-        setSortOpen(false);
+      if (event.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        searchInputRef.current?.blur();
       }
     };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, [themeOpen, mediaOpen, sortOpen]);
+    document.addEventListener('keydown', focusSearch);
+    return () => document.removeEventListener('keydown', focusSearch);
+  }, []);
 
-  const currentTheme = THEMES.find((t) => t.value === theme) ?? THEMES[0];
-  const currentMedia = MEDIA_TABS.find((m) => m.value === mediaType) ?? MEDIA_TABS[0];
-  const currentSort = SORT_OPTIONS.find((s) => s.value === sortBy) ?? SORT_OPTIONS[0];
-
-  const btnStyle: React.CSSProperties = {
-    padding: '8px 14px',
-    fontSize: 14,
-    background: 'var(--bg-card)',
-    color: 'var(--text-primary)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    transition: 'all 0.15s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-  };
-
-  // 仅图标的方形按钮
-  const iconBtnStyle: React.CSSProperties = {
-    ...btnStyle,
-    padding: 8,
-    justifyContent: 'center',
-  };
-
-  const activeBtnStyle: React.CSSProperties = {
-    ...btnStyle,
-    background: 'var(--accent)',
-    color: '#fff',
-    border: '1px solid var(--accent)',
-  };
-
-  // 下拉菜单项样式
-  const menuItemStyle = (active: boolean): React.CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '8px 10px',
-    fontSize: 14,
-    textAlign: 'left',
-    border: 'none',
-    borderRadius: 6,
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? '#fff' : 'var(--text-primary)',
-    transition: 'background 0.12s',
-    cursor: 'pointer',
-    width: '100%',
-  });
-
-  // 下拉浮层：玻璃拟态，三个下拉共用
-  const menuFloaterStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: 'calc(100% + 6px)',
-    background: 'var(--glass-bg-strong)',
-    backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-    WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-    border: '1px solid var(--glass-border)',
-    borderRadius: 10,
-    boxShadow: 'var(--shadow), var(--glass-highlight)',
-    padding: 6,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 2,
-    zIndex: 50,
-  };
+  const currentTheme = THEMES.find((item) => item.value === theme) ?? THEMES[1];
+  const currentSort = SORT_OPTIONS.find((item) => item.value === sortBy) ?? SORT_OPTIONS[0];
+  const mediaLabel = pageCurrent ?? MEDIA_TABS.find((item) => item.value === mediaType)?.label ?? '媒体库';
 
   return (
-    <header style={{
-      position: 'relative',
-      zIndex: 20,
-      overflow: 'visible',
-      background: `color-mix(in srgb, var(--glass-bg-medium) ${toolbarOpacity}%, transparent)`,
-      backdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
-      WebkitBackdropFilter: toolbarBlur > 0 ? `blur(${toolbarBlur}px) saturate(1.1)` : 'none',
-      borderBottom: '1px solid var(--glass-border)',
-      padding: '12px 16px',
-      paddingTop: '52px', // 为 Windows 原生标题栏控件留出空间
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      flexWrap: 'wrap',
-      boxShadow: 'var(--shadow), var(--glass-highlight)',
-      flexShrink: 0,
-      WebkitAppRegion: 'drag', // 顶部可拖拽移动窗口
-    }}>
-      <div className="window-controls" style={{ WebkitAppRegion: 'no-drag' }}>
-        <button className="window-control" onClick={onMinimize} title="最小化">
-          <Minus size={16} strokeWidth={1.8} />
-        </button>
-        <button className="window-control" onClick={onToggleMaximize} title={isMaximized ? '还原' : '最大化'}>
-          {isMaximized
-            ? <Minimize2 size={15} strokeWidth={1.8} />
-            : <Maximize2 size={15} strokeWidth={1.8} />}
-        </button>
-        <button className="window-control window-control-close" onClick={onClose} title="关闭">
-          <X size={16} strokeWidth={1.8} />
-        </button>
-      </div>
-
-      {/* 媒体分类下拉（默认全部） */}
-      <div ref={mediaRef} style={{ position: 'relative', WebkitAppRegion: 'no-drag' }}>
-        <button
-          onClick={() => setMediaOpen((o) => !o)}
-          style={{ ...btnStyle, fontWeight: 600 }}
-          title="选择媒体分类"
-        >
-          <currentMedia.Icon {...ICON} />
-          <span>{currentMedia.label}</span>
-          <ChevronDown size={14} strokeWidth={1.75} style={{
-            opacity: 0.6,
-            transition: 'transform 0.15s',
-            transform: mediaOpen ? 'rotate(180deg)' : 'none',
-          }} />
-        </button>
-        {mediaOpen && (
-          <div style={{ ...menuFloaterStyle, left: 0, minWidth: 150 }}>
-            {MEDIA_TABS.map((m) => {
-              const active = mediaType === m.value;
-              return (
-                <button
-                  key={m.value}
-                  onClick={() => { onMediaTypeChange(m.value); setMediaOpen(false); }}
-                  style={menuItemStyle(active)}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <m.Icon {...ICON} />
-                  <span>{m.label}</span>
-                </button>
-              );
-            })}
+    <header
+      className="app-topbar"
+      style={{
+        '--topbar-opacity': `${toolbarOpacity}%`,
+        '--topbar-blur': `${toolbarBlur}px`,
+      } as React.CSSProperties}
+    >
+      <div className="titlebar-row">
+        <div className="brand-lockup" aria-label="VideoPlayer">
+          <div className="brand-mark"><PlayGlyph /></div>
+          <div className="brand-copy">
+            <span className="brand-name">VideoPlayer</span>
+            <span className="brand-subtitle">Local media library</span>
           </div>
-        )}
+        </div>
+        <div className="titlebar-spacer" />
+        <div className="window-controls" style={{ WebkitAppRegion: 'no-drag' }}>
+          <button className="window-control" onClick={onMinimize} title="最小化"><Minus size={16} /></button>
+          <button className="window-control" onClick={onToggleMaximize} title={isMaximized ? '还原' : '最大化'}>
+            {isMaximized ? <Square size={14} /> : <Maximize2 size={15} />}
+          </button>
+          <button className="window-control window-control-close" onClick={onClose} title="关闭"><X size={16} /></button>
+        </div>
       </div>
 
-      {/* 排序下拉 + 升降序切换 */}
-      <div ref={sortRef} style={{ position: 'relative', WebkitAppRegion: 'no-drag', display: 'flex', gap: 4 }}>
+      <div className="primary-toolbar-row">
         <button
-          onClick={() => setSortOpen((o) => !o)}
-          style={btnStyle}
-          title="排序方式"
+          className={`sidebar-trigger${sidebarOpen ? ' is-active' : ''}`}
+          onClick={() => onSidebarOpenChange(!sidebarOpen)}
+          title={sidebarOpen ? '收起侧栏' : '展开侧栏'}
+          aria-label={sidebarOpen ? '收起侧栏' : '展开侧栏'}
         >
-          <ArrowDownUp {...ICON} />
-          <span>{currentSort.label}</span>
-          <ChevronDown size={14} strokeWidth={1.75} style={{
-            opacity: 0.6,
-            transition: 'transform 0.15s',
-            transform: sortOpen ? 'rotate(180deg)' : 'none',
-          }} />
+          {sidebarOpen ? <PanelLeft {...ICON} /> : <Menu {...ICON} />}
         </button>
-        {/* 升/降序切换（随机排序时无意义，隐藏） */}
+        <div className="page-context">
+          <span className="page-context-label">{pageLabel}</span>
+          <span className="page-context-divider">/</span>
+          <span className="page-context-current">{mediaLabel}</span>
+        </div>
+        <label className="search-field">
+          <Search {...ICON} />
+          <input
+            ref={searchInputRef}
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="搜索媒体名称或路径"
+            aria-label="搜索媒体名称或路径"
+          />
+          {search && <button type="button" className="search-clear" onClick={() => onSearchChange('')} aria-label="清除搜索"><X size={14} /></button>}
+          {!search && <kbd>Ctrl K</kbd>}
+        </label>
+        <div className="primary-toolbar-actions">
+          <button className="toolbar-icon-button" onClick={onRefresh} disabled={refreshing || importing} title="刷新媒体库">
+            <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} />
+          </button>
+          <button className="import-button" onClick={onImport} disabled={importing}>
+            {importing ? <Loader2 {...ICON} className="spin" /> : <FolderPlus {...ICON} />}
+            <span>{importing ? '导入中' : '导入媒体'}</span>
+          </button>
+          <button className="toolbar-icon-button" onClick={onOpenSettings} title="设置">
+            <Settings {...ICON} />
+          </button>
+        </div>
+      </div>
+
+      {!isOverview && <div className="secondary-toolbar-row">
+        <nav className="media-tabs" aria-label="媒体类型">
+          {MEDIA_TABS.map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              className={`media-tab${mediaType === value ? ' is-active' : ''}`}
+              onClick={() => onMediaTypeChange(value)}
+            >
+              <Icon size={15} strokeWidth={1.85} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="secondary-toolbar-spacer" />
+        <span className="toolbar-count"><strong>{filteredCount.toLocaleString()}</strong><span> / {videoCount.toLocaleString()} 项</span></span>
+        <div className="toolbar-divider" />
+        <div className="sort-control" ref={sortRef}>
+          <button className={`toolbar-quiet-button${sortOpen ? ' is-open' : ''}`} onClick={() => setSortOpen((open) => !open)}>
+            <ArrowDownUp {...ICON} />
+            <span>{currentSort.label}</span>
+            <ChevronDown size={14} className={sortOpen ? 'rotate-180' : undefined} />
+          </button>
+          {sortOpen && (
+            <div className="toolbar-menu" role="menu">
+              {SORT_OPTIONS.map(({ value, label, Icon }) => (
+                <button key={value} className={`toolbar-menu-item${sortBy === value ? ' is-active' : ''}`} onClick={() => { onSortByChange(value); setSortOpen(false); }}>
+                  <Icon {...ICON} /><span>{label}</span>{sortBy === value && <span className="menu-check">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {sortBy !== 'random' && (
-          <button
-            onClick={() => onSortDirChange(sortDir === 'asc' ? 'desc' : 'asc')}
-            style={iconBtnStyle}
-            title={sortDir === 'asc' ? '升序（点击切换为降序）' : '降序（点击切换为升序）'}
-          >
+          <button className="toolbar-icon-button quiet" onClick={() => onSortDirChange(sortDir === 'asc' ? 'desc' : 'asc')} title={sortDir === 'asc' ? '升序' : '降序'}>
             {sortDir === 'asc' ? <ArrowUp {...ICON} /> : <ArrowDown {...ICON} />}
           </button>
         )}
-        {sortOpen && (
-          <div style={{ ...menuFloaterStyle, left: 0, minWidth: 150 }}>
-            {SORT_OPTIONS.map((s) => {
-              const active = sortBy === s.value;
-              return (
-                <button
-                  key={s.value}
-                  onClick={() => { onSortByChange(s.value); setSortOpen(false); }}
-                  style={menuItemStyle(active)}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <s.Icon {...ICON} />
-                  <span>{s.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 刷视频（抖音式单列 feed） */}
-      <button
-        onClick={onOpenFeed}
-        style={{ ...btnStyle, WebkitAppRegion: 'no-drag' }}
-        title="刷视频：单列上下滑动/方向键切换（沿用当前筛选）"
-      >
-        <Clapperboard {...ICON} /> 刷视频
-      </button>
-
-      {/* 目录树显隐 */}
-      <button
-        onClick={() => onSidebarOpenChange(!sidebarOpen)}
-        style={{ ...(sidebarOpen ? activeBtnStyle : btnStyle), WebkitAppRegion: 'no-drag' }}
-        title="目录"
-      >
-        <FolderTreeIcon {...ICON} /> 目录
-      </button>
-
-      {/* 收藏（纯图标） */}
-      <button
-        onClick={() => onShowFavoritedChange(!showFavorited)}
-        style={{ ...(showFavorited ? activeBtnStyle : iconBtnStyle), WebkitAppRegion: 'no-drag' }}
-        title={`收藏夹${favoritedCount > 0 ? ` (${favoritedCount})` : ''}`}
-      >
-        <Heart {...ICON} fill={showFavorited ? 'currentColor' : 'none'} />
-      </button>
-
-      {/* 根据已经导入的目录重新扫描 */}
-      <button
-        onClick={onRefresh}
-        disabled={refreshing || importing}
-        style={{
-          ...(refreshing ? activeBtnStyle : btnStyle),
-          WebkitAppRegion: 'no-drag',
-          opacity: refreshing || importing ? 0.7 : 1,
-          cursor: refreshing || importing ? 'wait' : 'pointer',
-        }}
-        title={refreshing ? '正在刷新已导入目录' : '刷新已导入目录'}
-      >
-        <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} />
-        <span>刷新</span>
-      </button>
-
-      {/* 显示收藏开关：只影响普通卡片列表，不改变收藏状态 */}
-      <label
-        style={{
-          ...btnStyle,
-          gap: 8,
-          cursor: 'pointer',
-          userSelect: 'none',
-          WebkitAppRegion: 'no-drag',
-        }}
-        title={showFavoritedInList ? '关闭后隐藏收藏文件' : '开启后显示收藏文件'}
-      >
-        <span>显示收藏</span>
-        <span style={{
-          position: 'relative',
-          display: 'inline-flex',
-          width: 34,
-          height: 20,
-          flexShrink: 0,
-        }}>
-          <input
-            type="checkbox"
-            checked={showFavoritedInList}
-            onChange={(e) => onShowFavoritedInListChange(e.target.checked)}
-            aria-label="显示收藏"
-            style={{
-              position: 'absolute',
-              opacity: 0,
-              width: '100%',
-              height: '100%',
-              margin: 0,
-              cursor: 'pointer',
-              zIndex: 1,
-            }}
-          />
-          <span style={{
-            width: '100%',
-            height: '100%',
-            borderRadius: 999,
-            background: showFavoritedInList ? 'var(--accent)' : 'var(--bg-primary)',
-            border: `1px solid ${showFavoritedInList ? 'var(--accent)' : 'var(--border)'}`,
-            transition: 'all 0.15s',
-            boxSizing: 'border-box',
-          }}>
-            <span style={{
-              display: 'block',
-              width: 14,
-              height: 14,
-              margin: 2,
-              borderRadius: '50%',
-              background: '#fff',
-              transform: showFavoritedInList ? 'translateX(14px)' : 'translateX(0)',
-              transition: 'transform 0.15s',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-            }} />
-          </span>
-        </span>
-      </label>
-
-      {/* 随机打乱（纯图标） */}
-      <button
-        onClick={onShuffle}
-        style={{ ...iconBtnStyle, WebkitAppRegion: 'no-drag' }}
-        title="随机打乱"
-      >
-        <Shuffle {...ICON} />
-      </button>
-
-      {/* 清空过滤（纯图标） */}
-      <button
-        onClick={onClearFilter}
-        style={{ ...iconBtnStyle, WebkitAppRegion: 'no-drag' }}
-        title="清空过滤"
-      >
-        <FilterX {...ICON} />
-      </button>
-
-      {/* 搜索框 */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 12px',
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        WebkitAppRegion: 'no-drag',
-      }}>
-        <Search {...ICON} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="搜索文件名..."
-          style={{
-            fontSize: 14,
-            background: 'transparent',
-            color: 'var(--text-primary)',
-            border: 'none',
-            outline: 'none',
-            width: 160,
-          }}
-        />
-      </div>
-
-      {/* 未挂载磁盘提示 */}
-      {unmountedDrives.length > 0 && (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          fontSize: 12, color: '#f59e0b',
-          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
-          borderRadius: 6, padding: '4px 10px',
-        }}>
-          <TriangleAlert size={14} strokeWidth={2} />
-          未连接：{unmountedDrives.join('、')} 的文件已隐藏
-        </span>
-      )}
-
-      {/* 媒体计数 */}
-      <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-        {filteredCount} / {videoCount} 个媒体
-      </span>
-
-      {/* 卡片大小滑块（靠右） */}
-      <div style={{
-        marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8,
-        background: 'var(--bg-primary)', padding: '4px 12px', borderRadius: 8,
-        WebkitAppRegion: 'no-drag',
-      }}>
-        <Grid3x3 size={15} strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} aria-label="缩小（每行更多）" />
-        <input
-          type="range"
-          min={CARD_MIN}
-          max={CARD_MAX}
-          value={cardSize}
-          onChange={(e) => onCardSizeChange(Number(e.target.value))}
-          style={{ width: 120, cursor: 'pointer' }}
-          title="拖动调整卡片大小"
-        />
-        <Square size={18} strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} aria-label="放大（每行更少）" />
-      </div>
-
-      {/* 主题切换：单按钮 + 下拉菜单 */}
-      <div ref={themeRef} style={{ position: 'relative', WebkitAppRegion: 'no-drag' }}>
-        <button
-          onClick={() => setThemeOpen((o) => !o)}
-          style={{ ...btnStyle }}
-          title="切换主题"
-        >
-          <currentTheme.Icon {...ICON} />
-          <span>{currentTheme.label}</span>
-          <ChevronDown size={14} strokeWidth={1.75} style={{
-            opacity: 0.6,
-            transition: 'transform 0.15s',
-            transform: themeOpen ? 'rotate(180deg)' : 'none',
-          }} />
+        <button className={`toolbar-icon-button quiet${showFavorited ? ' is-active' : ''}`} onClick={() => onShowFavoritedChange(!showFavorited)} title={showFavorited ? '显示全部媒体' : `只看收藏${favoritedCount ? `（${favoritedCount}）` : ''}`}>
+          <Heart {...ICON} fill={showFavorited ? 'currentColor' : 'none'} />
         </button>
-        {themeOpen && (
-          <div style={{ ...menuFloaterStyle, right: 0, minWidth: 160 }}>
-            {THEMES.map((t) => {
-              const active = theme === t.value;
-              return (
-                <button
-                  key={t.value}
-                  onClick={() => { onThemeChange(t.value); setThemeOpen(false); }}
-                  style={menuItemStyle(active)}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <t.Icon {...ICON} />
-                  <span>{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 设置按钮（纯图标） */}
-      <button
-        onClick={onOpenSettings}
-        style={{ ...iconBtnStyle, WebkitAppRegion: 'no-drag' }}
-        title="设置"
-      >
-        {importing ? <Loader2 {...ICON} className="spin" /> : <Settings {...ICON} />}
-      </button>
-
-      {/* 导入进度条 */}
-      {importing && importProgress && (
-        <div style={{ width: '100%', marginTop: 4 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
-            扫描中: {importProgress.current} / {importProgress.total} — {importProgress.file}
-          </div>
-          <div style={{ height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%',
-              width: `${(importProgress.current / importProgress.total) * 100}%`,
-              background: 'var(--accent)',
-              transition: 'width 0.2s',
-            }} />
-          </div>
+        <div className="more-control" ref={moreRef}>
+          <button className={`toolbar-quiet-button${moreOpen ? ' is-open' : ''}`} onClick={() => setMoreOpen((open) => !open)}>
+            <span>更多</span><ChevronDown size={14} className={moreOpen ? 'rotate-180' : undefined} />
+          </button>
+          {moreOpen && (
+            <div className="toolbar-menu toolbar-menu-right" role="menu">
+              <button className="toolbar-menu-item" onClick={() => { onOpenFeed(); setMoreOpen(false); }}><Clapperboard {...ICON} /><span>沉浸式刷视频</span></button>
+              <button className="toolbar-menu-item" onClick={() => { onShuffle(); setMoreOpen(false); }}><Dices {...ICON} /><span>随机排列</span></button>
+              <button className="toolbar-menu-item" onClick={() => { onClearFilter(); setMoreOpen(false); }}><FilterX {...ICON} /><span>清除筛选</span></button>
+              <div className="toolbar-menu-separator" />
+              <label className="toolbar-menu-toggle">
+                <span>在列表中显示收藏</span>
+                <input type="checkbox" checked={showFavoritedInList} onChange={(event) => onShowFavoritedInListChange(event.target.checked)} />
+              </label>
+              <div className="toolbar-menu-separator" />
+              <div className="toolbar-menu-label"><Grid2x2 {...ICON} /><span>卡片大小</span><span className="toolbar-menu-value">{cardSize}px</span></div>
+              <input className="card-size-range" type="range" min={120} max={420} value={cardSize} onChange={(event) => onCardSizeChange(Number(event.target.value))} />
+              <div className="toolbar-menu-separator" />
+              <div className="theme-picker" ref={themeRef}>
+                <button className="toolbar-menu-item" onClick={() => setThemeOpen((open) => !open)}><currentTheme.Icon {...ICON} /><span>界面主题：{currentTheme.label}</span><ChevronDown size={14} /></button>
+                {themeOpen && <div className="theme-menu">{THEMES.map(({ value, label, Icon }) => <button key={value} className={`toolbar-menu-item${theme === value ? ' is-active' : ''}`} onClick={() => { onThemeChange(value); setThemeOpen(false); setMoreOpen(false); }}><Icon {...ICON} /><span>{label}</span></button>)}</div>}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>}
 
-      {/* 缩略图后台生成进度 */}
-      {!importing && thumbProgress && thumbProgress.total > 0 && (
-        <div style={{ width: '100%', marginTop: 4 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
-            生成缩略图: {thumbProgress.done} / {thumbProgress.total}
-          </div>
-          <div style={{ height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%',
-              width: `${(thumbProgress.done / thumbProgress.total) * 100}%`,
-              background: 'var(--accent)',
-              transition: 'width 0.2s',
-            }} />
-          </div>
+      {(unmountedDrives.length > 0 || (importing && importProgress) || (!importing && thumbProgress)) && (
+        <div className="status-strip">
+          {unmountedDrives.length > 0 && <div className="status-message warning"><TriangleAlert size={14} /><span>未连接的磁盘已隐藏：{unmountedDrives.join('、')}</span></div>}
+          {importing && importProgress && <ProgressStatus label="正在扫描媒体" current={importProgress.current} total={importProgress.total} detail={importProgress.file} />}
+          {!importing && thumbProgress && thumbProgress.total > 0 && <ProgressStatus label="正在生成预览" current={thumbProgress.done} total={thumbProgress.total} />}
         </div>
       )}
     </header>
   );
 }
+
+function ProgressStatus({ label, current, total, detail }: { label: string; current: number; total: number; detail?: string }) {
+  const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  return <div className="status-progress"><div className="status-progress-copy"><span>{label}</span><span>{current} / {total}{detail ? ` · ${detail}` : ''}</span></div><div className="status-progress-track"><div style={{ width: `${percent}%` }} /></div></div>;
+}
+
+function PlayGlyph() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.8v12.4a1.2 1.2 0 0 0 1.84 1.02l9.1-6.2a1.24 1.24 0 0 0 0-2.04l-9.1-6.2A1.2 1.2 0 0 0 8 5.8Z" fill="currentColor" /></svg>;
+}
+
+export { Toolbar };

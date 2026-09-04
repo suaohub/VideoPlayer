@@ -1,5 +1,6 @@
-import { Video, Tag, Folder, VideoFilter, ImportSourceSelection, RefreshResult } from './types';
+import { Video, Tag, Folder, VideoFilter, ImportSourceSelection, RefreshResult, PlaybackProgress, RecentPlayback } from './types';
 import { generateMockData } from './mock/mockData';
+import { isAudioFile, isTextFile, isComicExt } from './media';
 
 // ⚠️ 开发开关：需要纯 UI 预览时可临时改为 true；正式运行走真实 IPC。
 const USE_MOCK = false;
@@ -10,6 +11,18 @@ const dataset = generateMockData();
 function mockGetVideos(filter: VideoFilter): Video[] {
   const videoTags: Map<number, number[]> = (globalThis as any).__mockVideoTags;
   let list = [...dataset.videos];
+
+  // 与真实查询保持一致：默认隐藏已标记删除的记录，按媒体类型筛选。
+  if (filter.markedForDeletion === true) list = list.filter((v) => v.marked_for_deletion === 1);
+  else if (filter.markedForDeletion === false || filter.markedForDeletion == null) list = list.filter((v) => v.marked_for_deletion !== 1);
+  if (filter.mediaType && filter.mediaType !== 'all') {
+    list = list.filter((v) => {
+      if (filter.mediaType === 'audio') return isAudioFile(v.path);
+      if (filter.mediaType === 'text') return isTextFile(v.path);
+      if (filter.mediaType === 'comic') return isComicExt(v.ext);
+      return !isAudioFile(v.path) && !isTextFile(v.path) && !isComicExt(v.ext);
+    });
+  }
 
   // 标签过滤
   if (filter.tagIds && filter.tagIds.length > 0) {
@@ -71,6 +84,9 @@ function mockGetVideos(filter: VideoFilter): Video[] {
     list.sort((a, b) => (sortDir === 'asc' ? cmp(a, b) : -cmp(a, b)));
   }
 
+  if (filter.limit != null && Number.isFinite(filter.limit)) {
+    return list.slice(0, Math.max(1, Math.min(100000, Math.floor(filter.limit))));
+  }
   return list;
 }
 
@@ -127,7 +143,7 @@ export const api = {
     return window.electronAPI.setFolderHidden(folderId, hidden);
   },
   async getVideoCount(mediaType?: import('./types').MediaType): Promise<number> {
-    if (USE_MOCK) return dataset.videos.length;
+    if (USE_MOCK) return mockGetVideos({ mediaType, markedForDeletion: false }).length;
     return window.electronAPI.getVideoCount(mediaType);
   },
   async generateThumbnails(): Promise<{ success: boolean }> {
@@ -279,6 +295,92 @@ export const api = {
     return { success: true };
   },
 
+  // 最近播放与断点（真实模式落 SQLite；mock 模式使用 localStorage 便于 UI 预览）
+  async getPlaybackProgress(videoIdOrPath: number | string): Promise<PlaybackProgress | null> {
+    if (USE_MOCK) {
+      const key = `playback:${String(videoIdOrPath)}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      try { return JSON.parse(raw) as PlaybackProgress; } catch { return null; }
+    }
+    return window.electronAPI?.getPlaybackProgress?.(videoIdOrPath) ?? null;
+  },
+  async savePlaybackProgress(
+    videoIdOrPath: number | string,
+    position: number,
+    duration?: number | null,
+    completed?: boolean,
+  ): Promise<{ success: boolean; path?: string; position?: number; duration?: number | null; last_played_at?: number; completed?: number; error?: string }> {
+    if (USE_MOCK) {
+      const path = String(videoIdOrPath);
+      const safePosition = Number.isFinite(position) && position >= 0 ? position : 0;
+      const safeDuration = duration != null && Number.isFinite(duration) && duration > 0 ? duration : null;
+      const item: PlaybackProgress = {
+        path,
+        position: safePosition,
+        duration: safeDuration,
+        last_played_at: Date.now(),
+        completed: completed ? 1 : 0,
+      };
+      localStorage.setItem(`playback:${path}`, JSON.stringify(item));
+      return { success: true, ...item };
+    }
+    return window.electronAPI?.savePlaybackProgress?.(videoIdOrPath, position, duration, completed)
+      ?? { success: false, error: 'no electronAPI' };
+  },
+  async clearPlaybackProgress(videoIdOrPath: number | string): Promise<{ success: boolean; error?: string }> {
+    if (USE_MOCK) {
+      localStorage.removeItem(`playback:${String(videoIdOrPath)}`);
+      return { success: true };
+    }
+    return window.electronAPI?.clearPlaybackProgress?.(videoIdOrPath) ?? { success: false, error: 'no electronAPI' };
+  },
+  async getRecentPlayback(limit?: number): Promise<RecentPlayback[]> {
+    if (USE_MOCK) {
+      const rows: RecentPlayback[] = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith('playback:')) continue;
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        try {
+          const progress = JSON.parse(raw) as PlaybackProgress;
+          const identifier = progress.path;
+          const numericId = Number(identifier);
+          const video = Number.isInteger(numericId)
+            ? dataset.videos.find((item) => item.id === numericId)
+            : dataset.videos.find((item) => item.path === identifier);
+          if (!video) continue;
+          if (progress.completed === 1 || progress.position <= 5 || video.marked_for_deletion === 1) continue;
+          if (isAudioFile(video.path) || isTextFile(video.path) || isComicExt(video.ext)) continue;
+          rows.push({
+            ...progress,
+            duration: progress.duration ?? video.duration,
+            id: video.id,
+            video_id: video.id,
+            name: video.name,
+            ext: video.ext,
+            size: video.size,
+            width: video.width,
+            height: video.height,
+            aspect_ratio: video.aspect_ratio,
+            thumbnail_path: video.thumbnail_path,
+            folder_id: video.folder_id,
+            added_at: video.added_at,
+            mtime: video.mtime,
+            favorited: video.favorited,
+            marked_for_deletion: video.marked_for_deletion,
+            organize_category_id: video.organize_category_id ?? null,
+          });
+        } catch {
+          // 忽略损坏的本地预览记录。
+        }
+      }
+      return rows.sort((a, b) => b.last_played_at - a.last_played_at).slice(0, Math.max(1, limit ?? 20));
+    }
+    return window.electronAPI?.getRecentPlayback?.(limit) ?? [];
+  },
+
   // 播放状态订阅（返回取消函数，供组件卸载时清理）
   onTimePosition(cb: (position: number) => void) {
     return window.electronAPI?.onTimePosition?.(cb);
@@ -345,9 +447,9 @@ export const api = {
     if (USE_MOCK) return { success: true, favorited: true };
     return window.electronAPI.toggleFavorite(videoId);
   },
-  async getFavoritedCount(): Promise<number> {
-    if (USE_MOCK) return 0;
-    return window.electronAPI.getFavoritedCount();
+  async getFavoritedCount(mediaType?: import('./types').MediaType): Promise<number> {
+    if (USE_MOCK) return mockGetVideos({ mediaType, markedForDeletion: false }).filter((v) => v.favorited === 1).length;
+    return window.electronAPI.getFavoritedCount(mediaType);
   },
   async batchUnfavorite(videoIds: number[]): Promise<{ success: boolean; error?: string }> {
     if (USE_MOCK) return { success: true };

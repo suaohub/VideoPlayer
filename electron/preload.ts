@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { VideoFilter } from '../src/types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ---------- 播放控制 ----------
@@ -9,6 +10,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   seekRelative: (seconds: number) => ipcRenderer.invoke('seek-relative', seconds),
   setVolume: (volume: number) => ipcRenderer.invoke('set-volume', volume),
   setSpeed: (speed: number) => ipcRenderer.invoke('set-speed', speed),
+  getPlaybackProgress: (videoIdOrPath: number | string) => ipcRenderer.invoke('get-playback-progress', videoIdOrPath),
+  savePlaybackProgress: (
+    videoIdOrPath: number | string,
+    position: number,
+    duration?: number | null,
+    completed?: boolean,
+  ) => ipcRenderer.invoke('save-playback-progress', videoIdOrPath, position, duration, completed),
+  clearPlaybackProgress: (videoIdOrPath: number | string) => ipcRenderer.invoke('clear-playback-progress', videoIdOrPath),
+  getRecentPlayback: (limit?: number) => ipcRenderer.invoke('get-recent-playback', limit),
   getMediaUrl: (videoPath: string) => ipcRenderer.invoke('get-media-url', videoPath),
   saveWallpaperFrame: (dataUrl: string) => ipcRenderer.invoke('save-wallpaper-frame', dataUrl),
   onWallpaperCaptured: (callback: (payload: { path: string; dataUrl: string }) => void) => {
@@ -79,7 +89,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     destinationRootPath,
   ),
   getFolderTree: (mediaType?: string) => ipcRenderer.invoke('get-folder-tree', mediaType),
-  getVideos: (filter: any) => ipcRenderer.invoke('get-videos', filter),
+  getVideos: (filter: VideoFilter) => ipcRenderer.invoke('get-videos', filter),
   getVideoCount: (mediaType?: string) => ipcRenderer.invoke('get-video-count', mediaType),
   generateThumbnails: () => ipcRenderer.invoke('generate-thumbnails'),
   regenerateThumbnail: (videoId: number) => ipcRenderer.invoke('regenerate-thumbnail', videoId),
@@ -90,7 +100,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFoldersFromDisk: (folderIds: number[]) => ipcRenderer.invoke('delete-folders-from-disk', folderIds),
   deleteTag: (tagId: number) => ipcRenderer.invoke('delete-tag', tagId),
   toggleFavorite: (videoId: number) => ipcRenderer.invoke('toggle-favorite', videoId),
-  getFavoritedCount: () => ipcRenderer.invoke('get-favorited-count'),
+  getFavoritedCount: (mediaType?: string) => ipcRenderer.invoke('get-favorited-count', mediaType),
   batchUnfavorite: (videoIds: number[]) => ipcRenderer.invoke('batch-unfavorite', videoIds),
   toggleMarkedForDeletion: (videoId: number) => ipcRenderer.invoke('toggle-marked-for-deletion', videoId),
   getMarkedForDeletionCount: () => ipcRenderer.invoke('get-marked-for-deletion-count'),

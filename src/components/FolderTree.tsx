@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Heart, Trash2 } from 'lucide-react';
+import { Folder as FolderIcon, Heart, Trash2 } from 'lucide-react';
 import { Folder } from '../types';
 
 interface FolderTreeProps {
@@ -14,6 +14,8 @@ interface FolderTreeProps {
   markedForDeletionCount?: number;
   onShowFavorited?: () => void;
   onShowMarkedForDeletion?: () => void;
+  /** 在新版应用壳层中隐藏旧版快捷卡片和破坏性操作按钮。 */
+  minimal?: boolean;
 }
 
 interface TreeNode extends Folder { children: TreeNode[]; }
@@ -83,7 +85,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
         ) : (
           <span style={{ width: 14, display: 'inline-block' }} />
         )}
-        <span style={{ opacity: 0.8 }}>📁</span>
+        <FolderIcon size={15} strokeWidth={1.7} style={{ opacity: 0.72, flexShrink: 0 }} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </span>
@@ -104,7 +106,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   );
 }
 
-export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion }: FolderTreeProps) {
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion, minimal = false }: FolderTreeProps) {
   const tree = useMemo(() => buildTree(folders), [folders]);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
@@ -182,9 +184,9 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
   };
 
   return (
-    <div style={{ padding: 12 }}>
+    <div className="folder-tree" style={{ padding: 12 }}>
       {/* 快捷入口：收藏和删除标记 */}
-      {(onShowFavorited || onShowMarkedForDeletion) && (
+      {!minimal && (onShowFavorited || onShowMarkedForDeletion) && (
         <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {onShowFavorited && (
             <button
@@ -255,12 +257,12 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>目录结构</span>
+      <div className={minimal ? 'folder-tree-heading folder-tree-heading-minimal' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        {!minimal && <span style={{ fontWeight: 600, fontSize: 14 }}>目录结构</span>}
         {selectedFolderIds.length > 1 && (
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>已选 {selectedFolderIds.length} 项</span>
         )}
-        <button
+        {!minimal && <button
           type="button"
           disabled={selectedFolderIds.length === 0}
           onClick={() => onDeleteFoldersFromDisk(selectedFolderIds)}
@@ -282,7 +284,7 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
         >
           <Trash2 size={14} />
           <span>删除磁盘内容</span>
-        </button>
+        </button>}
       </div>
       {tree.length === 0 && (
         <div style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', marginTop: 20 }}>

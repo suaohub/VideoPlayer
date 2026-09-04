@@ -9,7 +9,7 @@ import {
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners, setThumbnailGenerationPaused } from './thumbnailQueue';
-import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, batchDeleteVideos, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
@@ -34,6 +34,8 @@ declare const __dirname: string;
 
 let mainWindow: BrowserWindow | null = null;
 let refreshingImportedFolders = false;
+let quittingAfterMpvStop = false;
+let stopBeforeQuitStarted = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -57,7 +59,6 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    stopMpv();
   });
   mainWindow.on('move', syncMpvWindowBounds);
   mainWindow.on('resize', syncMpvWindowBounds);
@@ -163,8 +164,18 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  stopMpv();
   app.quit();
+});
+
+app.on('before-quit', (event) => {
+  if (quittingAfterMpvStop) return;
+  event.preventDefault();
+  if (stopBeforeQuitStarted) return;
+  stopBeforeQuitStarted = true;
+  void stopMpv().finally(() => {
+    quittingAfterMpvStop = true;
+    app.quit();
+  });
 });
 
 // ---------- mpv IPC handlers（薄转发，实现见 ./mpv.ts） ----------
@@ -203,6 +214,62 @@ ipcMain.handle('set-volume', async (event, volume: number) => {
 ipcMain.handle('set-speed', async (event, speed: number) => {
   setSpeed(speed);
   return { success: true };
+});
+
+// ---------- 播放历史与断点 ----------
+// 渲染进程通常传 videoId；mpv 内部则按文件路径写入，因此这里同时兼容两种标识。
+ipcMain.handle('get-playback-progress', async (event, videoIdOrPath: number | string) => {
+  try {
+    if (typeof videoIdOrPath === 'number') {
+      return getPlaybackProgressForVideo(videoIdOrPath);
+    }
+    return getPlaybackProgress(videoIdOrPath);
+  } catch (error) {
+    console.error('[get-playback-progress] failed:', error);
+    return null;
+  }
+});
+
+ipcMain.handle(
+  'save-playback-progress',
+  async (
+    event,
+    videoIdOrPath: number | string,
+    position: number,
+    duration?: number | null,
+    completed?: boolean,
+  ) => {
+    try {
+      const result = typeof videoIdOrPath === 'number'
+        ? savePlaybackProgressForVideo(videoIdOrPath, position, duration, completed)
+        : savePlaybackProgress(videoIdOrPath, position, duration, completed);
+      if (!result) return { success: false, error: '视频记录不存在' };
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[save-playback-progress] failed:', error);
+      return { success: false, error: String(error) };
+    }
+  },
+);
+
+ipcMain.handle('clear-playback-progress', async (event, videoIdOrPath: number | string) => {
+  try {
+    if (typeof videoIdOrPath === 'number') clearPlaybackProgressForVideo(videoIdOrPath);
+    else clearPlaybackProgress(videoIdOrPath);
+    return { success: true };
+  } catch (error) {
+    console.error('[clear-playback-progress] failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('get-recent-playback', async (event, limit?: number) => {
+  try {
+    return getRecentPlayback(limit);
+  } catch (error) {
+    console.error('[get-recent-playback] failed:', error);
+    return [];
+  }
 });
 
 // ---------- 导入与查询 IPC ----------
@@ -659,7 +726,7 @@ ipcMain.handle('set-folder-hidden', async (event, folderId: number, hidden: bool
 });
 
 // 查询视频列表
-ipcMain.handle('get-videos', async (event, filter: VideoFilter) => {
+ipcMain.handle('get-videos', async (event, filter: VideoFilter = {}) => {
   return getVideos(filter);
 });
 
@@ -793,6 +860,7 @@ ipcMain.handle('clear-cache', async () => {
     // 清空数据库：视频、文件夹、标签（保留 settings 主题/卡片大小等偏好）
     db.prepare('DELETE FROM video_tags').run();
     db.prepare('DELETE FROM video_organize_categories').run();
+    db.prepare('DELETE FROM playback_history').run();
     db.prepare('DELETE FROM videos').run();
     db.prepare('DELETE FROM hidden_folder_paths').run();
     db.prepare('DELETE FROM folders').run();
@@ -879,7 +947,7 @@ ipcMain.handle('delete-folders-from-disk', async (event, folderIds: number[]) =>
           }
         }
 
-        const result = deleteFolderCascade(target.id);
+        const result = deleteFolderCascade(target.id, true);
         for (const url of result.thumbnailUrls) {
           const file = thumbnailFilePathFromUrl(url);
           if (file && existsSync(file)) {
@@ -930,9 +998,9 @@ ipcMain.handle('toggle-favorite', async (event, videoId: number) => {
   }
 });
 
-ipcMain.handle('get-favorited-count', async () => {
+ipcMain.handle('get-favorited-count', async (event, mediaType?: MediaType) => {
   try {
-    return getFavoritedCount();
+    return getFavoritedCount(mediaType);
   } catch (error) {
     console.error('[get-favorited-count] failed:', error);
     return 0;
@@ -994,43 +1062,46 @@ ipcMain.handle('batch-unmark-for-deletion', async (event, videoIds: number[]) =>
   }
 });
 
-// 批量彻底删除视频（从数据库和磁盘删除）
+// 批量彻底删除视频：先完成物理删除，再清理数据库记录。
 ipcMain.handle('batch-delete-videos', async (event, videoIds: number[]) => {
   try {
-    const { thumbnailUrls, deletedPaths } = batchDeleteVideos(videoIds);
-
-    // 删除缩略图文件
-    for (const url of thumbnailUrls) {
-      const file = thumbnailFilePathFromUrl(url);
-      if (file && existsSync(file)) {
-        try { unlinkSync(file); } catch { /* 忽略单个文件删除失败 */ }
+    const targets = getVideoDeleteTargets(videoIds);
+    let deletedCount = 0;
+    const errors: string[] = [];
+    const deletedIds: number[] = [];
+    const deletedThumbnailUrls: string[] = [];
+    const targetsToDelete = [...targets].sort((a, b) => b.path.length - a.path.length);
+    for (const target of targetsToDelete) {
+      try {
+        if (existsSync(target.path)) {
+          const info = statSync(target.path);
+          if (info.isDirectory()) {
+            rmSync(target.path, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
+          } else {
+            unlinkSync(target.path);
+          }
+        }
+        if (existsSync(target.path)) throw new Error('删除后文件仍然存在，可能被其他程序占用');
+        deletedCount++;
+        deletedIds.push(target.id);
+        if (target.thumbnail_path) deletedThumbnailUrls.push(target.thumbnail_path);
+      } catch (error) {
+        errors.push(`${target.path}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    // 删除文件本身；漫画记录的 path 指向目录，需要递归删除。
-    let deletedCount = 0;
-    const errors: string[] = [];
-    const pathsToDelete = [...deletedPaths].sort((a, b) => b.length - a.length);
-    for (const path of pathsToDelete) {
-      try {
-        if (existsSync(path)) {
-          const info = statSync(path);
-          if (info.isDirectory()) {
-            rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
-          } else {
-            unlinkSync(path);
-          }
-          deletedCount++;
-        }
-      } catch (error) {
-        errors.push(`${path}: ${error}`);
+    const { thumbnailUrls } = deleteVideoRecords(deletedIds);
+    for (const url of new Set([...deletedThumbnailUrls, ...thumbnailUrls])) {
+      const file = thumbnailFilePathFromUrl(url);
+      if (file && existsSync(file)) {
+        try { unlinkSync(file); } catch { /* 缩略图删除失败不阻断记录清理 */ }
       }
     }
 
     return {
       success: true,
       deletedCount,
-      totalCount: deletedPaths.length,
+      totalCount: targets.length,
       errors: errors.length > 0 ? errors : undefined
     };
   } catch (error) {

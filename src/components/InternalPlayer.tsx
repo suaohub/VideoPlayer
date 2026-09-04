@@ -31,6 +31,11 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
   const seekingRef = useRef(false);
   // 初始化阶段标记：阻止 mpv 初始回推覆盖用户保存的设置
   const initializingRef = useRef(true);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // 启动 mpv 播放 + 订阅状态 + 恢复用户设置
   useEffect(() => {
@@ -82,7 +87,7 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
         if (initializingRef.current) return;
         setSpeed(s);
       }),
-      api.onStopped(() => { if (active) onClose(); }),
+      api.onStopped(() => { if (active) onCloseRef.current(); }),
     ];
 
     return () => {
@@ -90,7 +95,7 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
       offs.forEach((off) => off?.());
       api.stopVideo();
     };
-  }, [video.path, onClose]);
+  }, [video.path]);
 
   const closePlayer = useCallback(async () => {
     await api.stopVideo();

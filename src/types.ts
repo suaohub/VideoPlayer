@@ -18,6 +18,34 @@ export interface Video {
   organize_category_id?: number | null;
 }
 
+// 播放断点（按文件路径持久化，视频记录被重新扫描后仍可恢复）
+export interface PlaybackProgress {
+  path: string;
+  position: number;
+  duration: number | null;
+  last_played_at: number;
+  completed: number;
+}
+
+// 概览页使用的最近播放条目；文件暂时不在库中时，视频字段可能为空。
+export interface RecentPlayback extends PlaybackProgress {
+  id: number | null;
+  video_id: number | null;
+  name: string | null;
+  ext: string | null;
+  size: number | null;
+  width: number | null;
+  height: number | null;
+  aspect_ratio: number | null;
+  thumbnail_path: string | null;
+  folder_id: number | null;
+  added_at: number | null;
+  mtime: number | null;
+  favorited: number | null;
+  marked_for_deletion: number | null;
+  organize_category_id: number | null;
+}
+
 // 标签
 export interface Tag {
   id: number;
@@ -93,6 +121,8 @@ export interface VideoFilter {
   mediaType?: MediaType;
   sortBy?: SortBy;
   sortDir?: SortDir;
+  /** 最多返回的记录数；未设置时返回全部匹配项。 */
+  limit?: number;
 }
 
 // Electron API 类型
@@ -104,6 +134,15 @@ export interface ElectronAPI {
   seekRelative: (seconds: number) => Promise<{ success: boolean }>;
   setVolume: (volume: number) => Promise<{ success: boolean }>;
   setSpeed: (speed: number) => Promise<{ success: boolean }>;
+  getPlaybackProgress: (videoIdOrPath: number | string) => Promise<PlaybackProgress | null>;
+  savePlaybackProgress: (
+    videoIdOrPath: number | string,
+    position: number,
+    duration?: number | null,
+    completed?: boolean,
+  ) => Promise<({ success: true } & PlaybackProgress) | { success: false; error?: string }>;
+  clearPlaybackProgress: (videoIdOrPath: number | string) => Promise<{ success: boolean; error?: string }>;
+  getRecentPlayback: (limit?: number) => Promise<RecentPlayback[]>;
   getMediaUrl: (videoPath: string) => Promise<string>;
   saveWallpaperFrame: (dataUrl: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   onWallpaperCaptured: (cb: (payload: { path: string; dataUrl: string }) => void) => (() => void) | void;
@@ -152,7 +191,7 @@ export interface ElectronAPI {
   }>;
   deleteTag: (tagId: number) => Promise<{ success: boolean; error?: string }>;
   toggleFavorite: (videoId: number) => Promise<{ success: boolean; favorited?: boolean; error?: string }>;
-  getFavoritedCount: () => Promise<number>;
+  getFavoritedCount: (mediaType?: MediaType) => Promise<number>;
   batchUnfavorite: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
   toggleMarkedForDeletion: (videoId: number) => Promise<{ success: boolean; marked?: boolean; error?: string }>;
   getMarkedForDeletionCount: () => Promise<number>;

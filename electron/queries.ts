@@ -79,6 +79,7 @@ export function getFolderTree(mediaType?: MediaType) {
     SELECT DISTINCT v.folder_id as id FROM videos v
     WHERE v.folder_id IS NOT NULL
       AND v.folder_id NOT IN (SELECT id FROM hidden_folders)
+      AND v.marked_for_deletion = 0
       AND ${clause}
   `).all(...params) as Array<{ id: number }>;
 
@@ -110,6 +111,7 @@ export interface VideoFilter {
   mediaType?: MediaType;    // 媒体类型分类（all/video/audio/text）
   sortBy?: SortBy;          // 排序字段
   sortDir?: SortDir;        // 排序方向
+  limit?: number;           // 最多返回的记录数
 }
 
 // 排序字段 -> SQL 列（白名单，避免注入）
@@ -124,7 +126,7 @@ const SORT_COLUMNS: Record<Exclude<SortBy, 'random'>, string> = {
 // 根据过滤条件查询视频列表
 export function getVideos(filter: VideoFilter = {}) {
   const db = getDb();
-  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, hideFavorited, markedForDeletion, mediaType, sortBy = 'added', sortDir = 'desc' } = filter;
+  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, hideFavorited, markedForDeletion, mediaType, sortBy = 'added', sortDir = 'desc', limit } = filter;
   // 合并单选/多选目录
   const folderIdList = folderIds && folderIds.length > 0
     ? folderIds
@@ -216,6 +218,12 @@ export function getVideos(filter: VideoFilter = {}) {
     sql += ` ORDER BY ${col} ${dir}`;
   }
 
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100000, Math.floor(limit as number))) : null;
+  if (safeLimit != null) {
+    sql += ` LIMIT ?`;
+    params.push(safeLimit);
+  }
+
   const rows = db.prepare(sql).all(...params) as any[];
   return rows.map((row) => ({
     ...row,
@@ -231,7 +239,8 @@ export function getVideoCount(mediaType?: MediaType): number {
     ${HIDDEN_FOLDERS_CTE}
     SELECT COUNT(*) as c
     FROM videos v
-    WHERE ${VISIBLE_VIDEO_CONDITION}${clause ? ` AND ${clause}` : ''}
+    WHERE ${VISIBLE_VIDEO_CONDITION}
+      AND v.marked_for_deletion = 0${clause ? ` AND ${clause}` : ''}
   `;
   return (db.prepare(sql).get(...params) as { c: number }).c;
 }
@@ -272,7 +281,7 @@ export function setFolderHidden(folderId: number, hidden: boolean) {
 // 级联删除目录：删除该目录 + 所有子目录 + 其中的视频记录 + video_tags 关联，
 // 并清理因此变空的标签。返回被删视频的缩略图 URL（供调用方删除文件）。
 // 用子查询而非 IN (id列表)，避免视频过多时超过 SQLite 变量上限（999）。
-export function deleteFolderCascade(folderId: number): { thumbnailUrls: string[]; videoCount: number } {
+export function deleteFolderCascade(folderId: number, clearPlaybackHistory = false): { thumbnailUrls: string[]; videoCount: number } {
   const db = getDb();
   const folder = db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
   if (!folder) return { thumbnailUrls: [], videoCount: 0 };
@@ -291,6 +300,10 @@ export function deleteFolderCascade(folderId: number): { thumbnailUrls: string[]
       .run(folder.path, like);
     db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (SELECT id FROM videos WHERE ${subtreeFilter})`)
       .run(folder.path, like);
+    if (clearPlaybackHistory) {
+      db.prepare(`DELETE FROM playback_history WHERE path IN (SELECT path FROM videos WHERE ${subtreeFilter})`)
+        .run(folder.path, like);
+    }
     db.prepare(`DELETE FROM videos WHERE ${subtreeFilter}`).run(folder.path, like);
     db.prepare('DELETE FROM hidden_folder_paths WHERE path = ? OR path LIKE ?').run(folder.path, like);
     db.prepare(`DELETE FROM folders WHERE path = ? OR path LIKE ?`).run(folder.path, like);
@@ -343,6 +356,184 @@ export function setSetting(key: string, value: string) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
 }
 
+// ---------- 播放历史与断点 ----------
+
+export interface PlaybackProgress {
+  path: string;
+  position: number;
+  duration: number | null;
+  last_played_at: number;
+  completed: number;
+}
+
+export interface RecentPlayback extends PlaybackProgress {
+  // 视频记录可能在移动磁盘未挂载/重新扫描期间暂时不存在，因此这些字段允许为空。
+  id: number | null;
+  video_id: number | null;
+  name: string | null;
+  ext: string | null;
+  size: number | null;
+  width: number | null;
+  height: number | null;
+  aspect_ratio: number | null;
+  thumbnail_path: string | null;
+  folder_id: number | null;
+  added_at: number | null;
+  mtime: number | null;
+  favorited: number | null;
+  marked_for_deletion: number | null;
+  organize_category_id: number | null;
+}
+
+function normalizePlaybackPosition(position: number): number {
+  if (!Number.isFinite(position) || position < 0) return 0;
+  return position;
+}
+
+function normalizePlaybackDuration(duration: number | null | undefined): number | null {
+  if (duration == null || !Number.isFinite(duration) || duration <= 0) return null;
+  return duration;
+}
+
+/**
+ * 保存一条按文件路径索引的播放断点。该函数供 mpv 播放器和应用内 video 播放器共用。
+ * 位置/时长会被限制为有限的非负数，避免异常 IPC 数据污染数据库。
+ */
+export function savePlaybackProgress(
+  filePath: string,
+  position: number,
+  duration?: number | null,
+  completed?: boolean,
+  playedAt = Date.now(),
+): PlaybackProgress {
+  const pathValue = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!pathValue) throw new Error('播放路径不能为空');
+
+  const safePosition = normalizePlaybackPosition(position);
+  const safeDuration = normalizePlaybackDuration(duration);
+  const db = getDb();
+  const existing = db.prepare('SELECT duration, completed FROM playback_history WHERE path = ? COLLATE NOCASE')
+    .get(pathValue) as { duration: number | null; completed: number } | undefined;
+  const effectiveDuration = safeDuration ?? normalizePlaybackDuration(existing?.duration);
+  const safePlayedAt = Number.isFinite(playedAt) && playedAt > 0 ? Math.floor(playedAt) : Date.now();
+  const isCompleted = completed === true
+    || (completed !== false && existing?.completed === 1 && safePosition <= 1)
+    || (completed !== false && effectiveDuration != null && effectiveDuration > 0 && safePosition >= Math.max(0, effectiveDuration - 1));
+  db.prepare(`
+    INSERT INTO playback_history (path, position, duration, last_played_at, completed)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(path) DO UPDATE SET
+      position = excluded.position,
+      duration = COALESCE(excluded.duration, playback_history.duration),
+      last_played_at = excluded.last_played_at,
+      completed = excluded.completed
+  `).run(pathValue, safePosition, safeDuration, safePlayedAt, isCompleted ? 1 : 0);
+
+  return {
+    path: pathValue,
+    position: safePosition,
+    duration: effectiveDuration,
+    last_played_at: safePlayedAt,
+    completed: isCompleted ? 1 : 0,
+  };
+}
+
+/** 根据视频 id 保存断点，供渲染进程调用。 */
+export function savePlaybackProgressForVideo(
+  videoId: number,
+  position: number,
+  duration?: number | null,
+  completed?: boolean,
+): PlaybackProgress | null {
+  if (!Number.isInteger(videoId) || videoId <= 0) return null;
+  const row = getDb().prepare('SELECT path FROM videos WHERE id = ?').get(videoId) as { path: string } | undefined;
+  if (!row?.path) return null;
+  return savePlaybackProgress(row.path, position, duration, completed);
+}
+
+/** 根据路径读取断点；路径不存在时返回 null。 */
+export function getPlaybackProgress(filePath: string): PlaybackProgress | null {
+  const pathValue = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!pathValue) return null;
+  const row = getDb().prepare(`
+    SELECT path, position, duration, last_played_at, completed
+    FROM playback_history
+    WHERE path = ? COLLATE NOCASE
+  `).get(pathValue) as PlaybackProgress | undefined;
+  return row ?? null;
+}
+
+/** 根据视频 id 读取断点，方便概览/卡片直接使用。 */
+export function getPlaybackProgressForVideo(videoId: number): PlaybackProgress | null {
+  if (!Number.isInteger(videoId) || videoId <= 0) return null;
+  const row = getDb().prepare(`
+    SELECT p.path, p.position, p.duration, p.last_played_at, p.completed
+    FROM playback_history p
+    JOIN videos v ON v.path = p.path COLLATE NOCASE
+    WHERE v.id = ?
+  `).get(videoId) as PlaybackProgress | undefined;
+  return row ?? null;
+}
+
+/** 获取最近播放记录，按最近更新时间倒序。 */
+export function getRecentPlayback(limit = 20): RecentPlayback[] {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 20;
+  const videoExts = extsForType('video');
+  const rows = getDb().prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT
+      p.path,
+      p.position,
+      COALESCE(p.duration, v.duration) AS duration,
+      p.last_played_at,
+      p.completed,
+      v.id AS id,
+      v.id AS video_id,
+      v.name,
+      v.ext,
+      v.size,
+      v.width,
+      v.height,
+      v.aspect_ratio,
+      v.thumbnail_path,
+      v.folder_id,
+      v.added_at,
+      v.mtime,
+      v.favorited,
+      v.marked_for_deletion,
+      voc.category_id AS organize_category_id
+    FROM playback_history p
+    JOIN videos v ON v.path = p.path COLLATE NOCASE
+    LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
+    WHERE p.completed = 0
+      AND p.position > 5
+      AND ${VISIBLE_VIDEO_CONDITION}
+      AND v.marked_for_deletion = 0
+      AND LOWER(v.ext) IN (${videoExts.map(() => '?').join(',')})
+    ORDER BY p.last_played_at DESC
+    LIMIT ?
+  `).all(...videoExts, safeLimit) as RecentPlayback[];
+  return rows.map((row) => ({
+    ...row,
+    thumbnail_path: row.thumbnail_path ? normalizeThumbnailUrl(row.thumbnail_path) : null,
+  }));
+}
+
+/** 清除某个视频的断点。 */
+export function clearPlaybackProgress(filePath: string): void {
+  const pathValue = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!pathValue) return;
+  getDb().prepare('DELETE FROM playback_history WHERE path = ? COLLATE NOCASE').run(pathValue);
+}
+
+export function clearPlaybackProgressForVideo(videoId: number): void {
+  if (!Number.isInteger(videoId) || videoId <= 0) return;
+  getDb().prepare(`
+    DELETE FROM playback_history
+    WHERE path IN (SELECT path FROM videos WHERE id = ?)
+  `).run(videoId);
+}
+
 // 切换视频收藏状态
 export function toggleFavorite(videoId: number): { favorited: boolean } {
   const db = getDb();
@@ -354,14 +545,18 @@ export function toggleFavorite(videoId: number): { favorited: boolean } {
 }
 
 // 获取收藏视频总数
-export function getFavoritedCount(): number {
+export function getFavoritedCount(mediaType?: MediaType): number {
   const db = getDb();
+  const { clause, params } = extClause(mediaType);
   return (db.prepare(`
     ${HIDDEN_FOLDERS_CTE}
     SELECT COUNT(*) as c
     FROM videos v
-    WHERE v.favorited = 1 AND ${VISIBLE_VIDEO_CONDITION}
-  `).get() as { c: number }).c;
+    WHERE v.favorited = 1
+      AND v.marked_for_deletion = 0
+      AND ${VISIBLE_VIDEO_CONDITION}
+      ${clause ? ` AND ${clause}` : ''}
+  `).get(...params) as { c: number }).c;
 }
 
 // 批量取消收藏
@@ -401,30 +596,21 @@ export function batchUnmarkForDeletion(videoIds: number[]): void {
   db.prepare(`UPDATE videos SET marked_for_deletion = 0 WHERE id IN (${placeholders})`).run(...videoIds);
 }
 
-// 批量彻底删除视频（从数据库和磁盘删除）
-export function batchDeleteVideos(videoIds: number[]): { thumbnailUrls: string[]; deletedPaths: string[] } {
-  if (videoIds.length === 0) return { thumbnailUrls: [], deletedPaths: [] };
+// 获取批量永久删除所需的文件目标。实际文件删除由主进程完成，
+// 只有物理删除成功后才应调用 deleteVideoRecords 清理库内记录。
+export interface VideoDeleteTarget {
+  id: number;
+  path: string;
+  thumbnail_path: string | null;
+}
+
+export function getVideoDeleteTargets(videoIds: number[]): VideoDeleteTarget[] {
+  if (videoIds.length === 0) return [];
   const db = getDb();
   const placeholders = videoIds.map(() => '?').join(',');
-
-  // 收集缩略图和文件路径
-  const rows = db.prepare(
-    `SELECT path, thumbnail_path FROM videos WHERE id IN (${placeholders})`
-  ).all(...videoIds) as { path: string; thumbnail_path: string | null }[];
-
-  const thumbnailUrls = rows.map((r) => r.thumbnail_path).filter(Boolean) as string[];
-  const deletedPaths = rows.map((r) => r.path);
-
-  const tx = db.transaction(() => {
-    db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...videoIds);
-    db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...videoIds);
-    db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...videoIds);
-    // 清理孤儿标签
-    db.prepare(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)`).run();
-  });
-  tx();
-
-  return { thumbnailUrls, deletedPaths };
+  return db.prepare(
+    `SELECT id, path, thumbnail_path FROM videos WHERE id IN (${placeholders})`
+  ).all(...videoIds) as VideoDeleteTarget[];
 }
 
 export function getOrganizeCategories() {
@@ -618,9 +804,39 @@ export function getOrCreateOrganizeFolder(
 }
 
 export function updateVideoPath(videoId: number, newPath: string, folderId: number): void {
-  getDb().prepare(
-    'UPDATE videos SET path = ?, name = ?, folder_id = ? WHERE id = ?'
-  ).run(newPath, path.basename(newPath), folderId, videoId);
+  const db = getDb();
+  const old = db.prepare('SELECT path FROM videos WHERE id = ?').get(videoId) as { path: string } | undefined;
+  const tx = db.transaction(() => {
+    if (old?.path && old.path.toLowerCase() !== newPath.toLowerCase()) {
+      const oldPlayback = db.prepare(`
+        SELECT path, position, duration, last_played_at, completed
+        FROM playback_history WHERE path = ? COLLATE NOCASE
+      `).get(old.path) as PlaybackProgress | undefined;
+      const newPlayback = db.prepare(`
+        SELECT path, position, duration, last_played_at, completed
+        FROM playback_history WHERE path = ? COLLATE NOCASE
+      `).get(newPath) as PlaybackProgress | undefined;
+      if (oldPlayback) {
+        // 目标路径可能残留旧记录，保留更新较近的一条，避免违反 path 主键唯一约束。
+        if (!newPlayback || oldPlayback.last_played_at >= newPlayback.last_played_at) {
+          db.prepare(`
+            INSERT INTO playback_history (path, position, duration, last_played_at, completed)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET
+              position = excluded.position,
+              duration = COALESCE(excluded.duration, playback_history.duration),
+              last_played_at = excluded.last_played_at,
+              completed = excluded.completed
+          `).run(newPath, oldPlayback.position, oldPlayback.duration, oldPlayback.last_played_at, oldPlayback.completed);
+        }
+        db.prepare('DELETE FROM playback_history WHERE path = ? COLLATE NOCASE').run(old.path);
+      }
+    }
+    db.prepare(
+      'UPDATE videos SET path = ?, name = ?, folder_id = ? WHERE id = ?'
+    ).run(newPath, path.basename(newPath), folderId, videoId);
+  });
+  tx();
 }
 
 export interface UnfavoritedFileCandidate {
@@ -667,6 +883,7 @@ export function deleteVideoRecords(videoIds: number[]): { thumbnailUrls: string[
 
       db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...batch);
       db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM playback_history WHERE path IN (SELECT path FROM videos WHERE id IN (${placeholders}))`).run(...batch);
       const result = db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...batch);
       deletedCount += result.changes;
     }

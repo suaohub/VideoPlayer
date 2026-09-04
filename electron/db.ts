@@ -128,6 +128,19 @@ export function initDatabase() {
     );
   `);
 
+  // 播放历史与断点：路径作为键，避免视频记录重建后丢失播放位置。
+  // 该表故意不直接依赖 videos 外键：移动磁盘/重新扫描期间仍可保留最近播放路径，
+  // 重新导入同一路径后即可继续使用断点。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS playback_history (
+      path TEXT PRIMARY KEY COLLATE NOCASE,
+      position REAL NOT NULL DEFAULT 0,
+      duration REAL,
+      last_played_at INTEGER NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
   // 迁移：为旧数据库添加目录隐藏状态。
   const folderColumns = db.pragma('table_info(folders)') as Array<{ name: string }>;
   if (!folderColumns.some(c => c.name === 'hidden')) {
@@ -146,6 +159,7 @@ export function initDatabase() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_video_tags_tag ON video_tags(tag_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_video_organize_category ON video_organize_categories(category_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_playback_history_last_played ON playback_history(last_played_at DESC);`);
 
   // 迁移：为旧数据库添加 favorited 字段
   const columns = db.pragma('table_info(videos)') as Array<{ name: string }>;

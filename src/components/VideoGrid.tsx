@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { Music2, BookOpen, RefreshCw, FolderKanban, X } from 'lucide-react';
+import { Film, Music2, BookOpen, RefreshCw, FolderKanban, X } from 'lucide-react';
 import { OrganizeCategory, Video } from '../types';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
@@ -19,6 +19,8 @@ interface VideoGridProps {
   selectionMode?: boolean;
   selectedIds?: Set<number>;
   onToggleSelect?: (videoId: number) => void;
+  onSelectionModeChange?: (active: boolean) => void;
+  onSelectedIdsChange?: (selectedIds: Set<number>) => void;
   onMarkForDeletion?: (videoId: number) => void;
   organizeCategories?: OrganizeCategory[];
   onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void;
@@ -385,7 +387,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onMarkForDeletion, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -397,8 +399,21 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   // 使用外部传入的选择状态（如果有），否则使用内部状态
   const selectionMode = externalSelectionMode ?? internalSelectionMode;
   const selectedIds = externalSelectedIds ?? internalSelectedIds;
-  const setSelectionMode = setInternalSelectionMode;
-  const setSelectedIds = setInternalSelectedIds;
+  const updateSelectionMode = useCallback((next: boolean) => {
+    if (onSelectionModeChange) {
+      onSelectionModeChange(next);
+    } else {
+      setInternalSelectionMode(next);
+    }
+  }, [onSelectionModeChange]);
+  const updateSelectedIds = useCallback((nextOrUpdater: Set<number> | ((previous: Set<number>) => Set<number>)) => {
+    const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(selectedIds) : nextOrUpdater;
+    if (externalSelectedIds && onSelectedIdsChange) {
+      onSelectedIdsChange(next);
+    } else if (!externalSelectedIds) {
+      setInternalSelectedIds(next);
+    }
+  }, [externalSelectedIds, onSelectedIdsChange, selectedIds]);
 
   const focusedIndexRef = useRef(focusedIndex);
   focusedIndexRef.current = focusedIndex;
@@ -424,14 +439,20 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
 
   // 文件离开当前筛选结果后，清掉残留选择，避免对不可见文件执行批量操作。
   useEffect(() => {
-    if (externalSelectedIds) return;
+    if (externalSelectedIds && !onSelectedIdsChange) return;
     const visibleIds = new Set(videos.map((video) => video.id));
-    setSelectedIds((prev) => {
+    updateSelectedIds((prev) => {
       const next = new Set(Array.from(prev).filter((id) => visibleIds.has(id)));
       if (next.size === prev.size && Array.from(next).every((id) => prev.has(id))) return prev;
       return next;
     });
-  }, [videos, externalSelectedIds]);
+  }, [videos, externalSelectedIds, onSelectedIdsChange, updateSelectedIds]);
+
+  useEffect(() => {
+    if (externalSelectionMode === false && !externalSelectedIds && internalSelectedIds.size > 0) {
+      setInternalSelectedIds(new Set());
+    }
+  }, [externalSelectionMode, externalSelectedIds, internalSelectedIds.size]);
 
   // 测量容器宽度和高度
   useLayoutEffect(() => {
@@ -675,7 +696,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
         if (current >= 0 && currentVideos[current]) {
           if (selectionModeRef.current) {
             const videoId = currentVideos[current].id;
-            setSelectedIds((prev) => {
+            updateSelectedIds((prev) => {
               const next = new Set(prev);
               if (next.has(videoId)) next.delete(videoId);
               else next.add(videoId);
@@ -686,8 +707,8 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           }
         }
       } else if (e.key === 'Escape' && selectionModeRef.current) {
-        setSelectionMode(false);
-        setSelectedIds(new Set());
+        updateSelectionMode(false);
+        updateSelectedIds(new Set());
       } else if (e.key === 'Delete' && onMarkForDeletion) {
         const current = focusedIndexRef.current;
         const currentVideos = videosRef.current;
@@ -713,13 +734,13 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       }
       if (comboTimer.current != null) { clearTimeout(comboTimer.current); comboTimer.current = null; }
     };
-  }, [move, startVerticalRepeat, stopVerticalRepeat]);
+  }, [move, startVerticalRepeat, stopVerticalRepeat, updateSelectionMode, updateSelectedIds]);
 
   const handleToggleSelect = (videoId: number) => {
     if (externalOnToggleSelect) {
       externalOnToggleSelect(videoId);
     } else {
-      setSelectedIds((prev) => {
+      updateSelectedIds((prev) => {
         const next = new Set(prev);
         if (next.has(videoId)) next.delete(videoId);
         else next.add(videoId);
@@ -731,22 +752,22 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
     onBatchUnfavorite(Array.from(selectedIds));
-    setSelectedIds(new Set());
-    setSelectionMode(false);
+    updateSelectedIds(new Set());
+    updateSelectionMode(false);
   };
 
   const handleBatchCategory = async (categoryId: number | null) => {
     if (!onBatchSetOrganizeCategory || selectedIds.size === 0) return;
     const success = await onBatchSetOrganizeCategory(Array.from(selectedIds), categoryId);
     if (!success) return;
-    setSelectedIds(new Set());
-    setSelectionMode(false);
+    updateSelectedIds(new Set());
+    updateSelectionMode(false);
   };
 
   return (
     <div ref={containerRef} style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
       {/* 批量操作工具栏 */}
-      {videos.length > 0 && (showFavorited || onBatchSetOrganizeCategory) && (
+      {videos.length > 0 && (showFavorited || (onBatchSetOrganizeCategory && !onSelectionModeChange)) && (
         <div style={{
           position: 'sticky',
           top: 0,
@@ -765,7 +786,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           }}>
           {!selectionMode ? (
             <button
-              onClick={() => setSelectionMode(true)}
+              onClick={() => updateSelectionMode(true)}
               style={{
                 padding: '6px 12px',
                 fontSize: 13,
@@ -785,7 +806,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 已选择 {selectedIds.size} 项
               </span>
               <button
-                onClick={() => setSelectedIds(new Set(videos.map(v => v.id)))}
+                onClick={() => updateSelectedIds(new Set(videos.map(v => v.id)))}
                 style={{
                   padding: '6px 12px',
                   fontSize: 13,
@@ -848,7 +869,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 </button>
               )}
               <button
-                onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                onClick={() => { updateSelectionMode(false); updateSelectedIds(new Set()); }}
                 style={{
                   padding: '6px 12px',
                   fontSize: 13,
@@ -868,13 +889,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       )}
 
       {videos.length === 0 ? (
-        <div style={{
-          height: '100%', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          color: 'var(--text-secondary)', gap: 12,
-        }}>
-          <div style={{ fontSize: 48 }}>🎬</div>
-          <div>没有符合条件的文件</div>
+        <div className="video-grid-empty">
+          <div className="empty-state-icon"><Film size={25} strokeWidth={1.7} /></div>
+          <div className="empty-state-title">这里还没有媒体</div>
+          <div className="empty-state-hint">从顶部导入文件夹或媒体文件，建立你的本地收藏。</div>
         </div>
       ) : (
         <div style={{ position: 'relative', height: totalHeight }}>
