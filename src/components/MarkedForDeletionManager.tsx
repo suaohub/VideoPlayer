@@ -122,6 +122,9 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
           <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
             共 {videos.length} 个
           </span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', opacity: 0.78 }}>
+            最近标记在前
+          </span>
         </div>
 
         <button

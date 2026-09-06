@@ -64,6 +64,7 @@ function toVideo(item: RecentPlayback): Video | null {
     mtime: item.mtime ?? item.last_played_at,
     favorited: item.favorited ?? 0,
     marked_for_deletion: item.marked_for_deletion ?? 0,
+    marked_for_deletion_at: item.marked_for_deletion_at ?? null,
     organize_category_id: item.organize_category_id ?? null,
   };
 }

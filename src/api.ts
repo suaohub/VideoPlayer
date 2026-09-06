@@ -81,7 +81,15 @@ function mockGetVideos(filter: VideoFilter): Video[] {
         default: return a.added_at - b.added_at;
       }
     };
-    list.sort((a, b) => (sortDir === 'asc' ? cmp(a, b) : -cmp(a, b)));
+    if (filter.markedForDeletion === true && filter.sortBy == null) {
+      list.sort((a, b) => {
+        const aTime = a.marked_for_deletion_at ?? a.added_at ?? 0;
+        const bTime = b.marked_for_deletion_at ?? b.added_at ?? 0;
+        return bTime - aTime || b.id - a.id;
+      });
+    } else {
+      list.sort((a, b) => (sortDir === 'asc' ? cmp(a, b) : -cmp(a, b)));
+    }
   }
 
   if (filter.limit != null && Number.isFinite(filter.limit)) {
@@ -370,6 +378,7 @@ export const api = {
             mtime: video.mtime,
             favorited: video.favorited,
             marked_for_deletion: video.marked_for_deletion,
+            marked_for_deletion_at: video.marked_for_deletion_at ?? null,
             organize_category_id: video.organize_category_id ?? null,
           });
         } catch {

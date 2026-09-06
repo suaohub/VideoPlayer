@@ -20,6 +20,7 @@ export interface VideoRecord {
   mtime: number;
   favorited: number;
   marked_for_deletion: number;
+  marked_for_deletion_at: number | null;
 }
 
 // 文件夹记录类型（原始目录树）
@@ -73,6 +74,8 @@ export function initDatabase() {
       added_at INTEGER,
       mtime INTEGER,
       favorited INTEGER DEFAULT 0,
+      marked_for_deletion INTEGER DEFAULT 0,
+      marked_for_deletion_at INTEGER,
       FOREIGN KEY (folder_id) REFERENCES folders(id)
     );
   `);
@@ -180,6 +183,19 @@ export function initDatabase() {
     db.exec(`ALTER TABLE videos ADD COLUMN marked_for_deletion INTEGER DEFAULT 0;`);
     console.log('[db] Migration: added marked_for_deletion column');
   }
+  if (!columns.some(c => c.name === 'marked_for_deletion_at')) {
+    db.exec(`ALTER TABLE videos ADD COLUMN marked_for_deletion_at INTEGER;`);
+    console.log('[db] Migration: added marked_for_deletion_at column');
+  }
+  // 旧版本只保存了删除标记，没有标记时间；用导入时间作为兼容排序依据，
+  // 新的标记会在 toggleMarkedForDeletion 中写入精确时间戳。
+  db.exec(`
+    UPDATE videos
+    SET marked_for_deletion_at = added_at
+    WHERE marked_for_deletion = 1 AND marked_for_deletion_at IS NULL;
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_videos_marked_for_deletion_at
+    ON videos(marked_for_deletion, marked_for_deletion_at DESC);`);
 
   console.log('[db] Initialized');
   return db;

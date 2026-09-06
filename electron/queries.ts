@@ -126,7 +126,10 @@ const SORT_COLUMNS: Record<Exclude<SortBy, 'random'>, string> = {
 // 根据过滤条件查询视频列表
 export function getVideos(filter: VideoFilter = {}) {
   const db = getDb();
-  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, hideFavorited, markedForDeletion, mediaType, sortBy = 'added', sortDir = 'desc', limit } = filter;
+  const { tagIds, tagMode = 'or', folderId, folderIds, search, favorited, hideFavorited, markedForDeletion, mediaType, sortBy: requestedSortBy, sortDir = 'desc', limit } = filter;
+  const sortBy = requestedSortBy ?? 'added';
+  // 待处理列表未指定排序时，按最近一次标记删除的时间倒序；旧记录没有时间戳时回退到 added_at。
+  const sortMarkedForDeletionByMarkedAt = markedForDeletion === true && requestedSortBy == null;
   // 合并单选/多选目录
   const folderIdList = folderIds && folderIds.length > 0
     ? folderIds
@@ -210,7 +213,9 @@ export function getVideos(filter: VideoFilter = {}) {
   }
 
   // 排序
-  if (sortBy === 'random') {
+  if (sortMarkedForDeletionByMarkedAt) {
+    sql += ` ORDER BY COALESCE(v.marked_for_deletion_at, v.added_at) DESC, v.id DESC`;
+  } else if (sortBy === 'random') {
     sql += ` ORDER BY RANDOM()`;
   } else {
     const col = SORT_COLUMNS[sortBy];
@@ -382,6 +387,7 @@ export interface RecentPlayback extends PlaybackProgress {
   mtime: number | null;
   favorited: number | null;
   marked_for_deletion: number | null;
+  marked_for_deletion_at: number | null;
   organize_category_id: number | null;
 }
 
@@ -501,6 +507,7 @@ export function getRecentPlayback(limit = 20): RecentPlayback[] {
       v.mtime,
       v.favorited,
       v.marked_for_deletion,
+      v.marked_for_deletion_at,
       voc.category_id AS organize_category_id
     FROM playback_history p
     JOIN videos v ON v.path = p.path COLLATE NOCASE
@@ -573,7 +580,8 @@ export function toggleMarkedForDeletion(videoId: number): { marked: boolean } {
   const row = db.prepare('SELECT marked_for_deletion FROM videos WHERE id = ?').get(videoId) as { marked_for_deletion: number } | undefined;
   if (!row) throw new Error('Video not found');
   const newState = row.marked_for_deletion === 1 ? 0 : 1;
-  db.prepare('UPDATE videos SET marked_for_deletion = ? WHERE id = ?').run(newState, videoId);
+  db.prepare('UPDATE videos SET marked_for_deletion = ?, marked_for_deletion_at = ? WHERE id = ?')
+    .run(newState, newState === 1 ? Date.now() : null, videoId);
   return { marked: newState === 1 };
 }
 
@@ -593,7 +601,7 @@ export function batchUnmarkForDeletion(videoIds: number[]): void {
   if (videoIds.length === 0) return;
   const db = getDb();
   const placeholders = videoIds.map(() => '?').join(',');
-  db.prepare(`UPDATE videos SET marked_for_deletion = 0 WHERE id IN (${placeholders})`).run(...videoIds);
+  db.prepare(`UPDATE videos SET marked_for_deletion = 0, marked_for_deletion_at = NULL WHERE id IN (${placeholders})`).run(...videoIds);
 }
 
 // 获取批量永久删除所需的文件目标。实际文件删除由主进程完成，
@@ -928,7 +936,7 @@ export function exportMarkedForDeletionList(): string[] {
       FROM videos v
       WHERE v.marked_for_deletion = 1
         AND ${VISIBLE_VIDEO_CONDITION}
-      ORDER BY v.name
+      ORDER BY COALESCE(v.marked_for_deletion_at, v.added_at) DESC, v.id DESC
     `
   ).all() as { name: string }[];
   return rows.map((r) => r.name);

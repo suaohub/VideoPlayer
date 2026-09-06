@@ -17,6 +17,8 @@ export interface Video {
   mtime: number;
   favorited: number;
   marked_for_deletion: number;
+  /** 最近一次标记删除的时间；旧数据可能为空。 */
+  marked_for_deletion_at?: number | null;
   organize_category_id?: number | null;
 }
 
@@ -45,6 +47,7 @@ export interface RecentPlayback extends PlaybackProgress {
   mtime: number | null;
   favorited: number | null;
   marked_for_deletion: number | null;
+  marked_for_deletion_at: number | null;
   organize_category_id: number | null;
 }
 
