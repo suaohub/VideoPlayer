@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import './themes.css';
-import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory, RecentPlayback } from './types';
+import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { FolderTree } from './components/FolderTree';
@@ -12,9 +12,10 @@ import { TextReader } from './components/TextReader';
 import { ComicReader } from './components/ComicReader';
 import { ShortsFeed } from './components/ShortsFeed';
 import { MarkedForDeletionManager } from './components/MarkedForDeletionManager';
+import { LibraryHealth } from './components/LibraryHealth';
 import { Overview } from './components/Overview';
 import { isAudioFile, isTextFile, isComicExt, isPlayableInBrowser } from './media';
-import { Eye, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Trash2 } from 'lucide-react';
+import { Activity, Eye, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Trash2 } from 'lucide-react';
 
 // 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
 export const CARD_MIN = 120;
@@ -163,7 +164,7 @@ function App() {
   const [organizing, setOrganizing] = useState(false);
   const [batchSelectionMode, setBatchSelectionMode] = useState(false);
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
-  const [activePage, setActivePage] = useState<'overview' | 'library'>('overview');
+  const [activePage, setActivePage] = useState<'overview' | 'library' | 'health'>('overview');
   const [overviewRecentPlayback, setOverviewRecentPlayback] = useState<RecentPlayback[]>([]);
   const [overviewRecentAdded, setOverviewRecentAdded] = useState<Video[]>([]);
   const [overviewFavorites, setOverviewFavorites] = useState<Video[]>([]);
@@ -173,6 +174,10 @@ function App() {
   const [overviewFolders, setOverviewFolders] = useState<Folder[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [sidebarFolderTab, setSidebarFolderTab] = useState<'source' | 'preview'>('source');
+  const [libraryHealth, setLibraryHealth] = useState<MediaLibraryHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [generatingHealthThumbnails, setGeneratingHealthThumbnails] = useState(false);
   const overviewRequestId = useRef(0);
   const initializationStarted = useRef(false);
 
@@ -257,6 +262,20 @@ function App() {
       setOrganizePreviewLoading(false);
     }
   }, [organizeCategories, organizeOutputPath]);
+
+  const loadLibraryHealth = useCallback(async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    try {
+      setLibraryHealth(await api.getLibraryHealth());
+    } catch (error) {
+      console.error('[health] failed to load:', error);
+      setLibraryHealth(null);
+      setHealthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
 
   const refreshVisibleData = useCallback(async () => {
     await refreshAll();
@@ -444,6 +463,12 @@ function App() {
       void loadOverview();
     }
   }, [activePage, loadOverview, preferencesLoaded, unmountedDrives]);
+
+  useEffect(() => {
+    if (preferencesLoaded && activePage === 'health') {
+      void loadLibraryHealth();
+    }
+  }, [activePage, loadLibraryHealth, preferencesLoaded]);
 
   const mediaTypeRef = useRef<MediaType>(mediaType);
   useEffect(() => {
@@ -718,10 +743,29 @@ function App() {
       setOverviewFolderCount(0);
       setOverviewFavoriteCount(0);
       setOverviewFolders([]);
+      setLibraryHealth(null);
+      setHealthError(null);
       setSettingsOpen(false);
       alert('已清除所有数据，重新导入视频即可恢复。');
     } else {
       alert(`清除失败：${result.error}`);
+    }
+  };
+
+  const handleGenerateHealthThumbnails = async () => {
+    if (generatingHealthThumbnails) return;
+    setGeneratingHealthThumbnails(true);
+    try {
+      const result = await api.generateThumbnails();
+      if (!result.success) {
+        alert('缩略图生成任务启动失败。');
+      }
+    } catch (error) {
+      alert(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // 生成队列在主进程后台运行；健康中心会在下一次检查时显示最新结果。
+      setGeneratingHealthThumbnails(false);
+      await loadLibraryHealth();
     }
   };
 
@@ -1155,6 +1199,15 @@ function App() {
     setSelectedFolderIds([]);
     setSearch('');
   };
+  const openHealth = () => {
+    setActivePage('health');
+    setMediaType('all');
+    setShowMarkedForDeletion(false);
+    setShowFavorited(false);
+    setSelectedFolderIds([]);
+    setSearch('');
+    setSidebarFolderTab('source');
+  };
   const openLibrary = () => {
     setActivePage('library');
     setMediaType('video');
@@ -1177,6 +1230,24 @@ function App() {
     setShowFavorited(false);
     setShowFavoritedInList(true);
     setShowMarkedForDeletion(true);
+  };
+
+  const openHealthMarkedForDeletion = () => {
+    openMarkedForDeletion();
+    setSidebarFolderTab('source');
+  };
+
+  const openHealthOrganizePreview = () => {
+    setActivePage('library');
+    setMediaType('video');
+    setShowMarkedForDeletion(false);
+    setShowFavorited(false);
+    setShowFavoritedInList(true);
+    setSelectedFolderIds([]);
+    setSearch('');
+    setSidebarFolderTab('preview');
+    setOrganizePreviewCategoryId(null);
+    void loadOrganizePreview();
   };
 
   const handleFixedLayoutModeChange = useCallback(async (next: boolean) => {
@@ -1255,9 +1326,9 @@ function App() {
           refreshing={refreshing}
           sidebarOpen={sidebarOpen}
           onSidebarOpenChange={setSidebarOpen}
-          pageLabel={activePage === 'overview' ? '工作台' : '媒体库'}
-          pageCurrent={activePage === 'overview' ? '概览' : undefined}
-          isOverview={activePage === 'overview'}
+          pageLabel={activePage === 'overview' ? '工作台' : activePage === 'health' ? '健康中心' : '媒体库'}
+          pageCurrent={activePage === 'overview' ? '概览' : activePage === 'health' ? '诊断' : undefined}
+          isOverview={activePage !== 'library'}
           mediaType={mediaType}
           onMediaTypeChange={changeMediaType}
           sortBy={sortBy}
@@ -1313,6 +1384,9 @@ function App() {
                 </div>
                 <button className={`sidebar-nav-item${activePage === 'overview' ? ' is-active' : ''}`} onClick={openOverview}>
                   <Home size={17} /><span>概览</span>
+                </button>
+                <button className={`sidebar-nav-item${activePage === 'health' ? ' is-active' : ''}`} onClick={openHealth}>
+                  <Activity size={17} /><span>健康中心</span>
                 </button>
                 <button className={`sidebar-nav-item${activePage === 'library' && !showFavorited && !showMarkedForDeletion ? ' is-active' : ''}`} onClick={openLibrary}>
                   <LayoutGrid size={17} /><span>媒体库</span><span className="sidebar-nav-count">{(activePage === 'overview' ? overviewVideoCount : videoCount).toLocaleString()}</span>
@@ -1408,6 +1482,17 @@ function App() {
                 onOpenLibrary={openLibrary}
                 onOpenFavorites={openFavorites}
                 onImport={handleImport}
+              />
+            ) : activePage === 'health' ? (
+              <LibraryHealth
+                health={libraryHealth}
+                error={healthError}
+                loading={healthLoading}
+                generatingThumbnails={generatingHealthThumbnails}
+                onRefresh={loadLibraryHealth}
+                onGenerateThumbnails={handleGenerateHealthThumbnails}
+                onOpenMarkedForDeletion={openHealthMarkedForDeletion}
+                onOpenOrganizePreview={openHealthOrganizePreview}
               />
             ) : (
               <>

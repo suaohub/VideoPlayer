@@ -1,4 +1,4 @@
-import { Video, Tag, Folder, VideoFilter, ImportSourceSelection, RefreshResult, PlaybackProgress, RecentPlayback } from './types';
+import { Video, Tag, Folder, VideoFilter, ImportSourceSelection, RefreshResult, PlaybackProgress, RecentPlayback, MediaLibraryHealth } from './types';
 import { generateMockData } from './mock/mockData';
 import { isAudioFile, isTextFile, isComicExt } from './media';
 
@@ -153,6 +153,29 @@ export const api = {
   async getVideoCount(mediaType?: import('./types').MediaType): Promise<number> {
     if (USE_MOCK) return mockGetVideos({ mediaType, markedForDeletion: false }).length;
     return window.electronAPI.getVideoCount(mediaType);
+  },
+  async getLibraryHealth(): Promise<MediaLibraryHealth> {
+    if (USE_MOCK) {
+      const totalFiles = dataset.videos.length;
+      const totalBytes = dataset.videos.reduce((sum, video) => sum + Math.max(0, video.size || 0), 0);
+      const marked = dataset.videos.filter((video) => video.marked_for_deletion === 1);
+      const pending = dataset.videos.filter((video) => video.organize_category_id != null);
+      return {
+        checkedAt: Date.now(),
+        totalFiles,
+        totalBytes,
+        missingFiles: 0,
+        missingBytes: 0,
+        missingThumbnails: dataset.videos.filter((video) => !video.thumbnail_path).length,
+        markedForDeletion: marked.length,
+        markedForDeletionBytes: marked.reduce((sum, video) => sum + Math.max(0, video.size || 0), 0),
+        organizePending: pending.length,
+        orphanVideoRecords: 0,
+        emptyFolders: 0,
+        unmountedDrives: [],
+      };
+    }
+    return window.electronAPI.getLibraryHealth();
   },
   async generateThumbnails(): Promise<{ success: boolean }> {
     if (USE_MOCK) return { success: true };

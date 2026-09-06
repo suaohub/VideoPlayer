@@ -148,11 +148,12 @@ async function processOne(id: number) {
 // 只看 thumbnail_path IS NULL：已生成过缩略图的视频不会被重新处理，
 // 即使它的 width/height/duration 因为当初 ffprobe 失败而为空——避免每次
 // 启动都对同一批视频重跑一遍 ffprobe/ffmpeg（用户明确要求：已生成的重开时不重生成）。
-export function enqueueMissingThumbnails(priorityIds: number[] = []) {
+export function enqueueMissingThumbnails(priorityIds: number[] = [], includeBroken = false) {
   const db = getDb();
   const rows = db.prepare(`
     SELECT id, path, ext FROM videos
     WHERE thumbnail_path IS NULL
+      OR ${includeBroken ? "(thumbnail_path LIKE 'thumb://%' OR thumbnail_path LIKE 'file:///%')" : '0'}
   `).all() as { id: number; path: string; ext: string | null }[];
   enqueueThumbnails(
     rows.filter((row) => !isAudioFile(row.path) && !isTextFile(row.path) && !isComicExt(row.ext)).map((r) => r.id),

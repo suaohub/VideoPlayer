@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFolderTree: (mediaType?: string) => ipcRenderer.invoke('get-folder-tree', mediaType),
   getVideos: (filter: VideoFilter) => ipcRenderer.invoke('get-videos', filter),
   getVideoCount: (mediaType?: string) => ipcRenderer.invoke('get-video-count', mediaType),
+  getLibraryHealth: () => ipcRenderer.invoke('get-library-health'),
   generateThumbnails: () => ipcRenderer.invoke('generate-thumbnails'),
   regenerateThumbnail: (videoId: number) => ipcRenderer.invoke('regenerate-thumbnail', videoId),
   getSetting: (key: string) => ipcRenderer.invoke('get-setting', key),

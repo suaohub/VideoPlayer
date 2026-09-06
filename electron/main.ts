@@ -10,6 +10,7 @@ import {
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners, setThumbnailGenerationPaused } from './thumbnailQueue';
+import { getMediaLibraryHealth } from './health';
 import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream } from 'fs';
@@ -694,6 +695,8 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         organizeFolderPaths.add(target.path);
         const destinationPath = join(target.path, candidate.name);
         if (isSamePath(destinationPath, candidate.path)) {
+          // 已经位于目标分类目录时，视为整理完成，清掉待整理标记。
+          setVideoOrganizeCategory(candidate.id, null);
           skippedCount++;
           continue;
         }
@@ -731,6 +734,8 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         }
         try {
           updateVideoPath(candidate.id, destinationPath, target.id);
+          // 分类标记代表“待整理”而不是历史标签；移动成功后不应继续出现在健康中心/整理预览。
+          setVideoOrganizeCategory(candidate.id, null);
         } catch (error) {
           try {
             if (existsSync(destinationPath)) renameSync(destinationPath, candidate.path);
@@ -826,8 +831,19 @@ ipcMain.handle('get-video-count', async (event, mediaType?: MediaType) => {
   return getVideoCount(mediaType);
 });
 
+// 媒体库健康中心：只读检查数据库记录与本地文件状态，不会自动清理任何内容。
+ipcMain.handle('get-library-health', async () => {
+  try {
+    return getMediaLibraryHealth();
+  } catch (error) {
+    console.error('[get-library-health] failed:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('generate-thumbnails', async () => {
-  backfillMissingThumbnails();
+  // 健康中心的“生成预览”同时修复已存在但文件已丢失的 thumb:// 记录。
+  backfillMissingThumbnails(true);
   return { success: true };
 });
 

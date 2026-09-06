@@ -596,6 +596,96 @@ export function getMarkedForDeletionCount(): number {
   `).get() as { c: number }).c;
 }
 
+// 健康中心所需的轻量数据库快照。路径和缩略图实际是否可用由主进程检查，
+// 这样查询层不直接触碰文件系统，也不会在健康检查时修改任何记录。
+export interface LibraryHealthVideoRecord {
+  path: string;
+  size: number | null;
+  ext: string | null;
+  thumbnail_path: string | null;
+}
+
+export interface LibraryHealthDatabaseSnapshot {
+  totalFiles: number;
+  totalBytes: number;
+  missingThumbnails: number;
+  markedForDeletion: number;
+  markedForDeletionBytes: number;
+  organizePending: number;
+  orphanVideoRecords: number;
+  emptyFolders: number;
+  videos: LibraryHealthVideoRecord[];
+}
+
+/**
+ * 返回媒体库健康检查的数据库侧统计。该函数是只读的；主进程会在此基础上
+ * 逐条检查路径存在性，并区分未挂载盘和单个文件丢失。
+ */
+export function getLibraryHealthDatabaseSnapshot(): LibraryHealthDatabaseSnapshot {
+  const db = getDb();
+  const videoExt = extClause('video', 'v.ext');
+  const summary = db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT
+      COUNT(v.id) AS totalFiles,
+      COALESCE(SUM(CASE WHEN v.size > 0 AND LOWER(COALESCE(v.ext, '')) <> '.comic' THEN v.size ELSE 0 END), 0) AS totalBytes,
+      COALESCE(SUM(CASE WHEN v.marked_for_deletion = 1 THEN 1 ELSE 0 END), 0) AS markedForDeletion,
+      COALESCE(SUM(CASE WHEN v.marked_for_deletion = 1 AND v.size > 0 AND LOWER(COALESCE(v.ext, '')) <> '.comic' THEN v.size ELSE 0 END), 0) AS markedForDeletionBytes,
+      COALESCE(SUM(CASE WHEN voc.category_id IS NOT NULL AND v.marked_for_deletion = 0 AND v.folder_id IS NOT NULL AND ${videoExt.clause} THEN 1 ELSE 0 END), 0) AS organizePending,
+      COALESCE(SUM(CASE WHEN v.folder_id IS NOT NULL AND f.id IS NULL THEN 1 ELSE 0 END), 0) AS orphanVideoRecords
+    FROM videos v
+    LEFT JOIN folders f ON f.id = v.folder_id
+    LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
+    WHERE ${VISIBLE_VIDEO_CONDITION}
+  `).get(...videoExt.params) as {
+    totalFiles: number;
+    totalBytes: number;
+    markedForDeletion: number;
+    markedForDeletionBytes: number;
+    organizePending: number;
+    orphanVideoRecords: number;
+  };
+
+  // 仅统计叶子目录中的空目录，避免把正常的目录树父节点误报为问题。
+  const emptyFolders = (db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT COUNT(*) AS c
+    FROM folders f
+    WHERE f.id NOT IN (SELECT id FROM hidden_folders)
+      AND NOT EXISTS (SELECT 1 FROM folders child WHERE child.parent_id = f.id)
+      AND NOT EXISTS (SELECT 1 FROM videos v WHERE v.folder_id = f.id)
+  `).get() as { c: number }).c;
+
+  const missingThumbnails = (db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT COUNT(*) AS c
+    FROM videos v
+    WHERE ${VISIBLE_VIDEO_CONDITION}
+      AND ${videoExt.clause}
+      AND (v.thumbnail_path IS NULL OR v.thumbnail_path = '')
+  `).get(...videoExt.params) as { c: number }).c;
+
+  const videos = db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT v.path, v.size, v.ext, v.thumbnail_path
+    FROM videos v
+    WHERE ${VISIBLE_VIDEO_CONDITION}
+    ORDER BY v.id ASC
+  `).all() as LibraryHealthVideoRecord[];
+
+  return {
+    totalFiles: Number(summary.totalFiles) || 0,
+    totalBytes: Number(summary.totalBytes) || 0,
+    missingThumbnails: Number(missingThumbnails) || 0,
+    markedForDeletion: Number(summary.markedForDeletion) || 0,
+    markedForDeletionBytes: Number(summary.markedForDeletionBytes) || 0,
+    organizePending: Number(summary.organizePending) || 0,
+    orphanVideoRecords: Number(summary.orphanVideoRecords) || 0,
+    emptyFolders: Number(emptyFolders) || 0,
+    videos,
+  };
+}
+
 // 批量恢复（取消删除标记）
 export function batchUnmarkForDeletion(videoIds: number[]): void {
   if (videoIds.length === 0) return;

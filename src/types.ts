@@ -136,6 +136,26 @@ export interface VideoFilter {
   limit?: number;
 }
 
+// 媒体库健康扫描结果（只读诊断，不会自动修改文件或数据库）
+export interface MediaLibraryHealth {
+  checkedAt: number;
+  totalFiles: number;
+  totalBytes: number;
+  missingFiles: number;
+  missingBytes: number;
+  missingThumbnails: number;
+  markedForDeletion: number;
+  markedForDeletionBytes: number;
+  organizePending: number;
+  orphanVideoRecords: number;
+  emptyFolders: number;
+  unmountedDrives: Array<{
+    drive: string;
+    files: number;
+    bytes: number;
+  }>;
+}
+
 // Electron API 类型
 export interface ElectronAPI {
   playVideo: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
@@ -181,6 +201,7 @@ export interface ElectronAPI {
   setFolderHidden: (folderId: number, hidden: boolean) => Promise<{ success: boolean; hidden?: boolean; error?: string }>;
   getVideos: (filter: VideoFilter) => Promise<Video[]>;
   getVideoCount: (mediaType?: MediaType) => Promise<number>;
+  getLibraryHealth: () => Promise<MediaLibraryHealth>;
   generateThumbnails: () => Promise<{ success: boolean }>;
   regenerateThumbnail: (videoId: number) => Promise<{ success: boolean; error?: string; timestamp?: number; thumbnail_path?: string }>;
   getSetting: (key: string) => Promise<string | null>;

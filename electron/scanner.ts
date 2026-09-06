@@ -244,7 +244,7 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
 
 // 后台异步补齐所有缺缩略图/元数据的视频（非阻塞）。
 // 先把历史遗留的 file:/// 缩略图路径迁移为 thumb:// 协议，再把缺图的入队。
-export function backfillMissingThumbnails() {
+export function backfillMissingThumbnails(includeBroken = false) {
   const db = getDb();
   const existing = db.prepare(`
     SELECT id, thumbnail_path FROM videos
@@ -254,7 +254,7 @@ export function backfillMissingThumbnails() {
   for (const row of existing) {
     update.run(normalizeThumbnailUrl(row.thumbnail_path), row.id);
   }
-  enqueueMissingThumbnails();
+  enqueueMissingThumbnails([], includeBroken);
 }
 
 // 导入漫画文件夹：每个含图片的文件夹作为一条 .comic 记录，缩略图直接指向首图（不走 ffmpeg 队列）
