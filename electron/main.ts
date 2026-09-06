@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, statSync } from 'fs';
-import { isAbsolute, join, relative, resolve, sep } from 'path';
+import { rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
+import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { initDatabase, getDb } from './db';
 import {
   initMpv, playVideo, stopMpv, togglePause, seek, seekRelative, setVolume, setSpeed,
@@ -9,7 +10,7 @@ import {
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners, setThumbnailGenerationPaused } from './thumbnailQueue';
-import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
@@ -569,23 +570,59 @@ function isPathWithin(childPath: string, parentPath: string): boolean {
     || (!isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`));
 }
 
+function pathVolumeKey(filePath: string): string {
+  return parse(resolve(filePath)).root.toLowerCase();
+}
+
+function pathVolumeRoot(filePath: string): string {
+  return parse(resolve(filePath)).root;
+}
+
+const DRIVE_ORGANIZE_FOLDER_NAME = 'VideoPlayer整理';
+
+function isSamePath(firstPath: string, secondPath: string): boolean {
+  const first = resolve(firstPath);
+  const second = resolve(secondPath);
+  return process.platform === 'win32'
+    ? first.toLowerCase() === second.toLowerCase()
+    : first === second;
+}
+
+/**
+ * 跨盘时沿用用户配置的整理目录名，例如 D:\\整理 对应 F:\\整理。
+ * 这样每个盘符中的整理入口名称一致，也避免用户还要记住一个额外的目录名。
+ */
+function getDriveOrganizeRoot(sourcePath: string, configuredDestinationRoot?: string): string {
+  const configuredBaseName = configuredDestinationRoot
+    ? parse(configuredDestinationRoot).base.trim()
+    : '';
+  const fallbackName = configuredBaseName || DRIVE_ORGANIZE_FOLDER_NAME;
+  return join(pathVolumeRoot(sourcePath), fallbackName);
+}
+
 ipcMain.handle('organize-folders', async (event, folderIds: number[], destinationRootPath?: string) => {
   try {
     const requestedIds = Array.isArray(folderIds)
       ? Array.from(new Set(folderIds.filter((id) => Number.isInteger(id))))
       : [];
-    if (requestedIds.length === 0) {
-      return { success: false, error: '没有选择整理目录' };
-    }
-
-    const idPlaceholders = requestedIds.map(() => '?').join(',');
-    const selectedFolders = getDb().prepare(`
-      SELECT id, path
-      FROM folders
-      WHERE id IN (${idPlaceholders})
-    `).all(...requestedIds) as Array<{ id: number; path: string }>;
+    // 空数组表示整理全部已分类视频；非空数组继续兼容按目录范围整理。
+    const selectedFolders = requestedIds.length > 0
+      ? (() => {
+        const idPlaceholders = requestedIds.map(() => '?').join(',');
+        return getDb().prepare(`
+          SELECT id, path
+          FROM folders
+          WHERE id IN (${idPlaceholders})
+        `).all(...requestedIds) as Array<{ id: number; path: string }>;
+      })()
+      : getDb().prepare(`
+        SELECT id, path
+        FROM folders
+        WHERE parent_id IS NULL
+        ORDER BY path COLLATE NOCASE
+      `).all() as Array<{ id: number; path: string }>;
     if (selectedFolders.length === 0) {
-      return { success: false, error: '整理目录不存在' };
+      return { success: false, error: requestedIds.length > 0 ? '整理目录不存在' : '没有可整理的媒体目录' };
     }
 
     // 父目录已选中时，子目录无需重复作为一个独立整理根。
@@ -596,11 +633,23 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         !all.slice(0, index).some((parent) => isPathWithin(folder.path, parent.path))
       ));
     const sourceFolderIds = sourceFolders.map((folder) => folder.id);
-    const candidates = getOrganizeCandidatesInFolders(sourceFolderIds);
+    // 空数组表示全库整理，直接按所有分类记录读取，避免受当前目录或外接盘刷新状态影响。
+    const candidates = requestedIds.length === 0
+      ? getAllOrganizeCandidates()
+      : getOrganizeCandidatesInFolders(sourceFolderIds);
     const folderCache = new Map<string, { id: number; path: string }>();
     const organizeFolderPaths = new Set<string>();
     const errors: string[] = [];
+    const configuredDestinationRoot = destinationRootPath?.trim()
+      ? resolve(destinationRootPath)
+      : undefined;
+    const configuredDestinationVolume = configuredDestinationRoot
+      ? pathVolumeKey(configuredDestinationRoot)
+      : undefined;
+    const destinationMoves = new Map<string, { path: string; movedCount: number; crossDriveFallback: boolean }>();
+    let crossDriveFallbackCount = 0;
     let movedCount = 0;
+    let overwrittenCount = 0;
     let skippedCount = 0;
 
     for (const candidate of candidates) {
@@ -608,7 +657,9 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         skippedCount++;
         continue;
       }
-      const sourceFolder = sourceFolders.find((folder) => isPathWithin(candidate.folder_path, folder.path));
+      const sourceFolder = requestedIds.length === 0
+        ? { id: candidate.folder_id, path: candidate.folder_path }
+        : sourceFolders.find((folder) => isPathWithin(candidate.folder_path, folder.path));
       if (!sourceFolder) {
         skippedCount++;
         errors.push(`${candidate.path}: 找不到所属整理目录`);
@@ -620,27 +671,56 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         continue;
       }
       try {
-        // 未设置集中位置时，每个选中的源目录各自建立分类文件夹；
-        // 设置集中位置后，同一分类统一进入集中目录下的一个文件夹。
-        const cacheKey = destinationRootPath?.trim()
-          ? String(candidate.category_id)
-          : `${sourceFolder.id}:${candidate.category_id}`;
+        // 集中位置只接收同盘文件；跨盘文件自动在源盘根目录下创建
+        // 与集中目录同名的整理目录，避免跨盘复制 + 删除，长时间占用外接硬盘。
+        const sameVolumeAsDestination = Boolean(
+          configuredDestinationRoot
+          && configuredDestinationVolume === pathVolumeKey(candidate.path),
+        );
+        const effectiveDestinationRoot = sameVolumeAsDestination
+          ? configuredDestinationRoot
+          : getDriveOrganizeRoot(candidate.path, configuredDestinationRoot);
+        if (configuredDestinationRoot && !sameVolumeAsDestination) {
+          crossDriveFallbackCount++;
+        }
+        const cacheKey = `${effectiveDestinationRoot.toLowerCase()}:${candidate.category_id}`;
         let target = folderCache.get(cacheKey);
         if (!target) {
-          target = getOrCreateOrganizeFolder(sourceFolder.id, candidate.category_id, destinationRootPath);
+          if (sourceFolder.id == null) throw new Error('找不到视频所属目录记录');
+          target = getOrCreateOrganizeFolder(sourceFolder.id, candidate.category_id, effectiveDestinationRoot);
           folderCache.set(cacheKey, target);
           mkdirSync(target.path, { recursive: true });
         }
         organizeFolderPaths.add(target.path);
         const destinationPath = join(target.path, candidate.name);
-        if (destinationPath === candidate.path) {
+        if (isSamePath(destinationPath, candidate.path)) {
           skippedCount++;
           continue;
         }
         if (existsSync(destinationPath)) {
-          skippedCount++;
-          errors.push(`${candidate.path}: 目标文件已存在`);
-          continue;
+          const destinationInfo = statSync(destinationPath);
+          if (destinationInfo.isDirectory()) {
+            throw new Error('目标路径是文件夹，无法覆盖');
+          }
+          // Windows 下 renameSync 不会稳定覆盖已有文件，先显式删除目标文件。
+          unlinkSync(destinationPath);
+          overwrittenCount++;
+        }
+        // 目标文件可能仍有旧媒体记录；先清掉旧记录，避免更新新文件路径时触发 UNIQUE 冲突。
+        const existingDestination = getDb().prepare(`
+          SELECT id
+          FROM videos
+          WHERE path = ? COLLATE NOCASE AND id <> ?
+          LIMIT 1
+        `).get(destinationPath, candidate.id) as { id: number } | undefined;
+        if (existingDestination) {
+          const removed = deleteVideoRecords([existingDestination.id]);
+          for (const url of removed.thumbnailUrls) {
+            const file = thumbnailFilePathFromUrl(url);
+            if (file && existsSync(file)) {
+              try { unlinkSync(file); } catch { /* 旧缩略图清理失败不阻断整理 */ }
+            }
+          }
         }
         try {
           renameSync(candidate.path, destinationPath);
@@ -658,6 +738,14 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
           throw error;
         }
         movedCount++;
+        const destinationKey = effectiveDestinationRoot.toLowerCase();
+        const destination = destinationMoves.get(destinationKey) ?? {
+          path: effectiveDestinationRoot,
+          movedCount: 0,
+          crossDriveFallback: Boolean(configuredDestinationRoot && !sameVolumeAsDestination),
+        };
+        destination.movedCount++;
+        destinationMoves.set(destinationKey, destination);
       } catch (error) {
         errors.push(`${candidate.path}: ${error}`);
       }
@@ -693,9 +781,12 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
       success: true,
       movedCount,
       skippedCount,
+      overwrittenCount,
+      crossDriveFallbackCount,
       importedFolders,
       importedFiles,
       missingFolders: missingFolders.length > 0 ? missingFolders : undefined,
+      destinations: Array.from(destinationMoves.values()),
       errors: errors.length ? errors : undefined,
     };
   } catch (error) {
@@ -919,7 +1010,6 @@ ipcMain.handle('delete-folders-from-disk', async (event, folderIds: number[]) =>
         return childPath === '' || (!isAbsolute(childPath) && childPath !== '..' && !childPath.startsWith(`..${sep}`));
       })
     ));
-
     const errors: string[] = [];
     const failedFolderIds: number[] = [];
     let deletedFolderCount = 0;
@@ -936,22 +1026,13 @@ ipcMain.handle('delete-folders-from-disk', async (event, folderIds: number[]) =>
       }
 
       try {
-        if (existsSync(resolvedTargetPath)) {
-          const info = statSync(resolvedTargetPath);
-          if (!info.isDirectory()) {
-            throw new Error('磁盘路径不是文件夹');
-          }
-          rmSync(resolvedTargetPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
-          if (existsSync(resolvedTargetPath)) {
-            throw new Error('删除后文件夹仍然存在，可能被其他程序占用');
-          }
-        }
-
+        // 使用异步删除，避免递归删除大型目录时阻塞 Electron 主进程。
+        await rmAsync(resolvedTargetPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 150 });
         const result = deleteFolderCascade(target.id, true);
         for (const url of result.thumbnailUrls) {
           const file = thumbnailFilePathFromUrl(url);
-          if (file && existsSync(file)) {
-            try { unlinkSync(file); } catch { /* 缩略图删除失败不阻断目录记录清理 */ }
+          if (file) {
+            try { await unlinkAsync(file); } catch { /* 缩略图删除失败不阻断目录记录清理 */ }
           }
         }
         deletedFolderCount++;

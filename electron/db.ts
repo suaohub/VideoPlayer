@@ -6,6 +6,7 @@ import { join } from 'path';
 export interface VideoRecord {
   id: number;
   path: string;
+  source_path: string | null;
   name: string;
   ext: string;
   size: number;
@@ -59,6 +60,7 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS videos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT UNIQUE NOT NULL,
+      source_path TEXT,
       name TEXT NOT NULL,
       ext TEXT,
       size INTEGER,
@@ -163,6 +165,11 @@ export function initDatabase() {
 
   // 迁移：为旧数据库添加 favorited 字段
   const columns = db.pragma('table_info(videos)') as Array<{ name: string }>;
+  if (!columns.some(c => c.name === 'source_path')) {
+    db.exec(`ALTER TABLE videos ADD COLUMN source_path TEXT;`);
+    db.exec(`UPDATE videos SET source_path = path WHERE source_path IS NULL;`);
+    console.log('[db] Migration: added source_path column');
+  }
   if (!columns.some(c => c.name === 'favorited')) {
     db.exec(`ALTER TABLE videos ADD COLUMN favorited INTEGER DEFAULT 0;`);
     console.log('[db] Migration: added favorited column');

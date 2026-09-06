@@ -709,6 +709,28 @@ export function getOrganizeCandidatesInFolder(folderId: number): OrganizeCandida
   return getOrganizeCandidatesInFolders([folderId]);
 }
 
+/**
+ * 获取全库所有已标记分类的视频。
+ * 整理全部时不依赖侧边栏当前目录，外接盘晚挂载或目录树尚未刷新也不会漏项。
+ */
+export function getAllOrganizeCandidates(): OrganizeCandidate[] {
+  const db = getDb();
+  const videoExt = extClause('video', 'v.ext');
+  return db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT v.id, v.path, v.name, v.folder_id, f.path as folder_path,
+           voc.category_id,
+           c.name as category_name
+    FROM videos v
+    JOIN folders f ON f.id = v.folder_id
+    LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
+    LEFT JOIN organize_categories c ON c.id = voc.category_id
+    WHERE ${videoExt.clause}
+      AND ${VISIBLE_VIDEO_CONDITION}
+    ORDER BY v.path COLLATE NOCASE
+  `).all(...videoExt.params) as OrganizeCandidate[];
+}
+
 export function getOrganizeCandidatesInFolders(folderIds: number[]): OrganizeCandidate[] {
   const db = getDb();
   const ids = Array.from(new Set(folderIds.filter((id) => Number.isInteger(id))));
@@ -833,8 +855,10 @@ export function updateVideoPath(videoId: number, newPath: string, folderId: numb
       }
     }
     db.prepare(
-      'UPDATE videos SET path = ?, name = ?, folder_id = ? WHERE id = ?'
-    ).run(newPath, path.basename(newPath), folderId, videoId);
+      `UPDATE videos
+       SET path = ?, source_path = COALESCE(source_path, ?), name = ?, folder_id = ?
+       WHERE id = ?`
+    ).run(newPath, old?.path ?? newPath, path.basename(newPath), folderId, videoId);
   });
   tx();
 }

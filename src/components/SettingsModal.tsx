@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Pencil, Plus, FolderOpen, EyeOff, Eye,
+  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye,
 } from 'lucide-react';
 import { Folder, ImportProgress, OrganizeCategory } from '../types';
 import './SettingsModal.css';
@@ -25,9 +25,7 @@ interface SettingsModalProps {
   toolbarBlur: number;
   onToolbarBlurChange: (value: number) => void;
   organizeCategories: OrganizeCategory[];
-  selectedFolderName: string | null;
   onCreateOrganizeCategory: (name: string) => void;
-  onRenameOrganizeCategory: (categoryId: number, name: string) => void;
   onDeleteOrganizeCategory: (categoryId: number) => void;
   organizeOutputPath: string | null;
   onSelectOrganizeOutputFolder: () => void;
@@ -38,14 +36,22 @@ interface SettingsModalProps {
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
+function organizeFolderName(outputPath: string | null): string {
+  if (!outputPath) return 'VideoPlayer整理';
+  const normalized = outputPath.replace(/\//g, '\\').replace(/[\\]+$/, '');
+  const segments = normalized.split('\\').filter(Boolean);
+  const name = segments[segments.length - 1] ?? '';
+  return /^[A-Za-z]:$/.test(name) ? 'VideoPlayer整理' : name || 'VideoPlayer整理';
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     onClose, onImport, importing, importProgress, onClearCache,
     hiddenFolders, onRestoreHiddenFolder,
     backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
     onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
-    toolbarBlur, onToolbarBlurChange, organizeCategories, selectedFolderName,
-    onCreateOrganizeCategory, onRenameOrganizeCategory, onDeleteOrganizeCategory,
+    toolbarBlur, onToolbarBlurChange, organizeCategories,
+    onCreateOrganizeCategory, onDeleteOrganizeCategory,
     organizeOutputPath, onSelectOrganizeOutputFolder, onClearOrganizeOutputFolder,
     onOrganizeFolder, organizing,
   } = props;
@@ -177,9 +183,10 @@ export function SettingsModal(props: SettingsModalProps) {
           </div>
           <div className="settings-hint settings-organize-output-path" title={organizeOutputPath ?? undefined}>
             {organizeOutputPath
-              ? `集中整理位置：${organizeOutputPath}`
-              : '未设置集中位置，将在当前选中目录下创建分类文件夹。'}
+              ? `集中整理位置：${organizeOutputPath}；不同盘符会在各自盘符根目录的「${organizeFolderName(organizeOutputPath)}」下整理，避免跨盘复制。`
+              : '未设置集中位置，将按文件所在盘符在盘符根目录的「VideoPlayer整理」下创建分类文件夹。'}
           </div>
+          <div className="settings-hint">整理时遇到同名目标文件会直接覆盖。</div>
           <div className="settings-category-list">
             {organizeCategories.length === 0 && (
               <div className="settings-hint">还没有预设分类。</div>
@@ -189,16 +196,6 @@ export function SettingsModal(props: SettingsModalProps) {
                 <FolderKanban {...ICON} />
                 <span className="settings-category-name">{category.name}</span>
                 <span className="settings-category-count">{category.count ?? 0}</span>
-                <button
-                  className="settings-mini-btn"
-                  title="重命名分类"
-                  onClick={() => {
-                    const name = prompt('请输入新的分类名称', category.name);
-                    if (name != null && name.trim()) onRenameOrganizeCategory(category.id, name);
-                  }}
-                >
-                  <Pencil size={14} />
-                </button>
                 <button
                   className="settings-mini-btn settings-mini-btn-danger"
                   title="删除分类"
@@ -240,13 +237,13 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="settings-row settings-organize-action">
             <button
               className="settings-btn settings-btn-primary"
-              disabled={!selectedFolderName || organizing || organizeCategories.length === 0}
+              disabled={organizing || organizeCategories.length === 0}
               onClick={onOrganizeFolder}
             >
-              {organizing ? <><Loader2 {...ICON} className="spin" /> 整理中...</> : <><FolderKanban {...ICON} /> 开始整理所选目录</>}
+              {organizing ? <><Loader2 {...ICON} className="spin" /> 整理中...</> : <><FolderKanban {...ICON} /> 整理全部已分类视频</>}
             </button>
             <span className="settings-hint">
-              {selectedFolderName ? `已选目录：${selectedFolderName}` : '请先在目录树中选择一个或多个目录'}
+              按当前分类记录整理全部视频；未分类视频不会移动
             </span>
           </div>
         </div>

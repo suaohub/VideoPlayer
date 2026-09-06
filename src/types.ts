@@ -2,6 +2,8 @@
 export interface Video {
   id: number;
   path: string;
+  /** 导入时的原始路径；文件整理移动后仍保留，用于整理预览和再次标记。 */
+  source_path?: string | null;
   name: string;
   ext: string;
   size: number;
@@ -99,6 +101,12 @@ export interface RefreshResult {
   newFiles?: number;
   deletedFiles?: number;
   error?: string;
+}
+
+export interface OrganizeDestination {
+  path: string;
+  movedCount: number;
+  crossDriveFallback: boolean;
 }
 
 // 媒体类型分类
@@ -208,9 +216,14 @@ export interface ElectronAPI {
     success: boolean;
     movedCount?: number;
     skippedCount?: number;
+    overwrittenCount?: number;
+    /** 配置了集中目录但源文件位于其他盘符时，回退到源目录就地整理的文件数。 */
+    crossDriveFallbackCount?: number;
     importedFolders?: number;
     importedFiles?: number;
     missingFolders?: string[];
+    /** 本次实际写入的整理根目录，按盘符分别列出。 */
+    destinations?: OrganizeDestination[];
     errors?: string[];
     error?: string;
   }>;

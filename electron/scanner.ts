@@ -170,12 +170,12 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
 
   let newVideos = 0;
   const insertVideo = db.prepare(`
-    INSERT OR IGNORE INTO videos (path, name, ext, size, folder_id, added_at, mtime)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO videos (path, source_path, name, ext, size, folder_id, added_at, mtime)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const updateVideo = db.prepare(`
     UPDATE videos
-    SET name = ?, ext = ?, size = ?, folder_id = ?, mtime = ?
+    SET source_path = COALESCE(source_path, ?), name = ?, ext = ?, size = ?, folder_id = ?, mtime = ?
     WHERE path = ?
   `);
   const getVideoId = db.prepare('SELECT id FROM videos WHERE path = ?');
@@ -202,11 +202,11 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
       const ext = path.extname(filePath).toLowerCase();
 
       const result = insertVideo.run(
-        filePath, name, ext, stat.size, folderId, Date.now(), Math.floor(stat.mtimeMs)
+        filePath, filePath, name, ext, stat.size, folderId, Date.now(), Math.floor(stat.mtimeMs)
       );
 
       if (result.changes > 0) newVideos++;
-      updateVideo.run(name, ext, stat.size, folderId, Math.floor(stat.mtimeMs), filePath);
+      updateVideo.run(filePath, name, ext, stat.size, folderId, Math.floor(stat.mtimeMs), filePath);
 
       // 获取 video id
       const videoRow = getVideoId.get(filePath) as { id: number };
@@ -262,12 +262,12 @@ function importComicFolders(importRootPath: string, comics: ComicFolder[], rootI
   const db = getDb();
   let newComics = 0;
   const insertComic = db.prepare(`
-    INSERT OR IGNORE INTO videos (path, name, ext, size, thumbnail_path, folder_id, added_at, mtime)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO videos (path, source_path, name, ext, size, thumbnail_path, folder_id, added_at, mtime)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const updateComic = db.prepare(`
     UPDATE videos
-    SET name = ?, ext = ?, size = ?, thumbnail_path = ?, folder_id = ?, mtime = ?
+    SET source_path = COALESCE(source_path, ?), name = ?, ext = ?, size = ?, thumbnail_path = ?, folder_id = ?, mtime = ?
     WHERE path = ?
   `);
   const getId = db.prepare('SELECT id FROM videos WHERE path = ?');
@@ -286,11 +286,12 @@ function importComicFolders(importRootPath: string, comics: ComicFolder[], rootI
       const folderId = ensureFolder(parentDir, importRootPath, rootId);
       const name = path.basename(comic.dir);
       const result = insertComic.run(
-        comic.dir, name, COMIC_EXT, comic.pageCount, comicImageUrl(comic.firstImage),
+        comic.dir, comic.dir, name, COMIC_EXT, comic.pageCount, comicImageUrl(comic.firstImage),
         folderId, Date.now(), Math.floor(stat.mtimeMs),
       );
       if (result.changes > 0) newComics++;
       updateComic.run(
+        comic.dir,
         name,
         COMIC_EXT,
         comic.pageCount,
