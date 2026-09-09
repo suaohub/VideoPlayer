@@ -27,7 +27,6 @@ import {
   Sparkles,
   Square,
   Sun,
-  Tag,
   TriangleAlert,
   X,
   Zap,
@@ -70,8 +69,6 @@ interface ToolbarProps {
   onShowFavoritedChange: (show: boolean) => void;
   showFavoritedInList: boolean;
   onShowFavoritedInListChange: (show: boolean) => void;
-  quickMarkMode: boolean;
-  onQuickMarkModeChange: (enabled: boolean) => void;
   fixedLayoutMode: boolean;
   onFixedLayoutModeChange: (enabled: boolean) => void | Promise<void>;
   favoritedCount: number;
@@ -148,8 +145,6 @@ function Toolbar({
   onShowFavoritedChange,
   showFavoritedInList,
   onShowFavoritedInListChange,
-  quickMarkMode,
-  onQuickMarkModeChange,
   fixedLayoutMode,
   onFixedLayoutModeChange,
   favoritedCount,
@@ -304,14 +299,6 @@ function Toolbar({
         <button className={`toolbar-icon-button quiet${showFavorited ? ' is-active' : ''}`} onClick={() => onShowFavoritedChange(!showFavorited)} title={showFavorited ? '显示全部媒体' : `只看收藏${favoritedCount ? `（${favoritedCount}）` : ''}`}>
           <Heart {...ICON} fill={showFavorited ? 'currentColor' : 'none'} />
         </button>
-        <button
-          className={`toolbar-quiet-button${quickMarkMode ? ' is-open' : ''}`}
-          onClick={() => onQuickMarkModeChange(!quickMarkMode)}
-          title={quickMarkMode ? '退出快速标记（M）' : '快速标记分类（M）'}
-        >
-          <Tag {...ICON} />
-          <span>标记</span>
-        </button>
         <div className="more-control" ref={moreRef}>
           <button className={`toolbar-quiet-button${moreOpen ? ' is-open' : ''}`} onClick={() => setMoreOpen((open) => !open)}>
             <span>更多</span><ChevronDown size={14} className={moreOpen ? 'rotate-180' : undefined} />
@@ -325,10 +312,6 @@ function Toolbar({
               <label className="toolbar-menu-toggle">
                 <span>在列表中显示收藏</span>
                 <input type="checkbox" checked={showFavoritedInList} onChange={(event) => onShowFavoritedInListChange(event.target.checked)} />
-              </label>
-              <label className="toolbar-menu-toggle">
-                <span>快速标记分类（M / 0-9）</span>
-                <input type="checkbox" checked={quickMarkMode} onChange={(event) => onQuickMarkModeChange(event.target.checked)} />
               </label>
               <label className="toolbar-menu-toggle">
                 <span>固定列表布局</span>

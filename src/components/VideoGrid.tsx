@@ -27,8 +27,6 @@ interface VideoGridProps {
   organizeCategories?: OrganizeCategory[];
   onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void;
   onBatchSetOrganizeCategory?: (videoIds: number[], categoryId: number | null) => boolean | Promise<boolean>;
-  quickMarkMode?: boolean;
-  onQuickMarkModeChange?: (enabled: boolean) => void;
 }
 
 const GAP = 12;
@@ -157,11 +155,11 @@ interface VideoCardProps {
   onToggleSelect: (videoId: number) => void;
   organizeCategories: OrganizeCategory[];
   onSetOrganizeCategory: (videoId: number, categoryId: number | null) => void;
-  onQuickMarkEnter?: (video: Video, element: HTMLDivElement) => void;
-  onQuickMarkLeave?: () => void;
+  onCategoryTooltipEnter?: (video: Video, element: HTMLDivElement) => void;
+  onCategoryTooltipLeave?: () => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onSetOrganizeCategory, onQuickMarkEnter, onQuickMarkLeave }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onSetOrganizeCategory, onCategoryTooltipEnter, onCategoryTooltipLeave }: VideoCardProps) {
   const [hover, setHover] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const durLabel = formatDuration(video.duration);
@@ -191,10 +189,12 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         event.currentTarget.focus({ preventScroll: true });
         setHover(true);
       }}
-      onMouseEnter={(event) => onQuickMarkEnter?.(video, event.currentTarget)}
+      onMouseEnter={(event) => {
+        if (!selectionMode) onCategoryTooltipEnter?.(video, event.currentTarget);
+      }}
       onMouseLeave={() => {
         setHover(false);
-        onQuickMarkLeave?.();
+        if (!selectionMode) onCategoryTooltipLeave?.();
       }}
       className={'video-card glass' + (focused ? ' video-card-focused' : '')}
       style={{
@@ -416,7 +416,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory, quickMarkMode = false, onQuickMarkModeChange }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -426,7 +426,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<number>>(new Set());
   const [moreCategoriesOpen, setMoreCategoriesOpen] = useState(false);
   const [batchActionBusy, setBatchActionBusy] = useState(false);
-  const [quickMarkTarget, setQuickMarkTarget] = useState<{
+  const [categoryTooltipTarget, setCategoryTooltipTarget] = useState<{
     video: Video;
     videoId: number;
     element: HTMLDivElement;
@@ -439,7 +439,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       height: number;
     };
   } | null>(null);
-  const quickMarkHideTimer = useRef<number | null>(null);
+  const categoryTooltipHideTimer = useRef<number | null>(null);
 
   // 使用外部传入的选择状态（如果有），否则使用内部状态
   const selectionMode = externalSelectionMode ?? internalSelectionMode;
@@ -467,14 +467,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   videosRef.current = videos;
   const onPlayRef = useRef(onPlay);
   onPlayRef.current = onPlay;
-  const onSetOrganizeCategoryRef = useRef(onSetOrganizeCategory);
-  onSetOrganizeCategoryRef.current = onSetOrganizeCategory;
-  const onQuickMarkModeChangeRef = useRef(onQuickMarkModeChange);
-  onQuickMarkModeChangeRef.current = onQuickMarkModeChange;
-  const quickMarkModeRef = useRef(quickMarkMode);
-  quickMarkModeRef.current = quickMarkMode;
-  const organizeCategoriesRef = useRef(organizeCategories);
-  organizeCategoriesRef.current = organizeCategories;
   const selectionModeRef = useRef(selectionMode);
   const [containerWidth, setContainerWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -491,17 +483,17 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   selectionModeRef.current = selectionMode;
   const hiddenIds = hiddenVideoIds ?? EMPTY_HIDDEN_IDS;
 
-  const clearQuickMarkHideTimer = useCallback(() => {
-    if (quickMarkHideTimer.current != null) {
-      window.clearTimeout(quickMarkHideTimer.current);
-      quickMarkHideTimer.current = null;
+  const clearCategoryTooltipHideTimer = useCallback(() => {
+    if (categoryTooltipHideTimer.current != null) {
+      window.clearTimeout(categoryTooltipHideTimer.current);
+      categoryTooltipHideTimer.current = null;
     }
   }, []);
 
-  const showQuickMarkTarget = useCallback((video: Video, element: HTMLDivElement) => {
-    clearQuickMarkHideTimer();
+  const showCategoryTooltip = useCallback((video: Video, element: HTMLDivElement) => {
+    clearCategoryTooltipHideTimer();
     const rect = element.getBoundingClientRect();
-    setQuickMarkTarget({
+    setCategoryTooltipTarget({
       video,
       videoId: video.id,
       element,
@@ -514,13 +506,13 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
         height: rect.height,
       },
     });
-  }, [clearQuickMarkHideTimer]);
+  }, [clearCategoryTooltipHideTimer]);
 
-  const refreshQuickMarkTargetPosition = useCallback(() => {
-    const target = quickMarkTarget;
+  const refreshCategoryTooltipPosition = useCallback(() => {
+    const target = categoryTooltipTarget;
     if (!target || !target.element.isConnected) return;
     const rect = target.element.getBoundingClientRect();
-    setQuickMarkTarget((current) => {
+    setCategoryTooltipTarget((current) => {
       if (!current || current.videoId !== target.videoId || current.element !== target.element) return current;
       return {
         ...current,
@@ -534,30 +526,30 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
         },
       };
     });
-  }, [quickMarkTarget]);
+  }, [categoryTooltipTarget]);
 
-  const scheduleQuickMarkHide = useCallback(() => {
-    clearQuickMarkHideTimer();
-    quickMarkHideTimer.current = window.setTimeout(() => {
-      quickMarkHideTimer.current = null;
-      setQuickMarkTarget(null);
+  const scheduleCategoryTooltipHide = useCallback(() => {
+    clearCategoryTooltipHideTimer();
+    categoryTooltipHideTimer.current = window.setTimeout(() => {
+      categoryTooltipHideTimer.current = null;
+      setCategoryTooltipTarget(null);
     }, 140);
-  }, [clearQuickMarkHideTimer]);
-
-  useEffect(() => {
-    if (quickMarkMode) return;
-    clearQuickMarkHideTimer();
-    setQuickMarkTarget(null);
-  }, [quickMarkMode, clearQuickMarkHideTimer]);
+  }, [clearCategoryTooltipHideTimer]);
 
   useEffect(() => () => {
-    clearQuickMarkHideTimer();
-  }, [clearQuickMarkHideTimer]);
+    clearCategoryTooltipHideTimer();
+  }, [clearCategoryTooltipHideTimer]);
+
+  useEffect(() => {
+    if (!selectionMode) return;
+    clearCategoryTooltipHideTimer();
+    setCategoryTooltipTarget(null);
+  }, [selectionMode, clearCategoryTooltipHideTimer]);
 
   // Tooltip 使用 fixed + body portal，但卡片会随内部滚动移动，因此需要同步更新位置。
   useEffect(() => {
-    if (!quickMarkMode || !quickMarkTarget) return;
-    const onViewportChange = () => refreshQuickMarkTargetPosition();
+    if (!categoryTooltipTarget) return;
+    const onViewportChange = () => refreshCategoryTooltipPosition();
     const el = containerRef.current;
     window.addEventListener('resize', onViewportChange);
     window.addEventListener('scroll', onViewportChange, true);
@@ -567,7 +559,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       window.removeEventListener('scroll', onViewportChange, true);
       el?.removeEventListener('scroll', onViewportChange);
     };
-  }, [quickMarkMode, quickMarkTarget, refreshQuickMarkTargetPosition]);
+  }, [categoryTooltipTarget, refreshCategoryTooltipPosition]);
 
   // 文件离开当前筛选结果后，清掉残留选择，避免对不可见文件执行批量操作。
   useEffect(() => {
@@ -883,24 +875,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
             onPlayRef.current(currentVideos[current]);
           }
         }
-      } else if (e.key.toLowerCase() === 'm') {
-        if (onQuickMarkModeChangeRef.current) {
-          e.preventDefault();
-          onQuickMarkModeChangeRef.current(!quickMarkModeRef.current);
-        }
-      } else if (quickMarkModeRef.current && /^[0-9]$/.test(e.key)) {
-        const current = focusedIndexRef.current;
-        const currentVideos = videosRef.current;
-        const currentVideo = current >= 0 ? currentVideos[current] : undefined;
-        if (currentVideo) {
-          const categoryId = e.key === '0'
-            ? null
-            : organizeCategoriesRef.current[Number(e.key) - 1]?.id;
-          if (e.key === '0' || categoryId != null) {
-            e.preventDefault();
-            onSetOrganizeCategoryRef.current(currentVideo.id, categoryId);
-          }
-        }
       } else if (e.key === 'Escape' && selectionModeRef.current) {
         updateSelectionMode(false);
         updateSelectedIds(new Set());
@@ -977,64 +951,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
 
   return (
     <div ref={containerRef} style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
-      {quickMarkMode && (
-        <div
-          style={{
-            position: 'sticky',
-            top: 0,
-            zIndex: 11,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-            padding: '8px 12px',
-            marginBottom: 10,
-            border: '1px solid color-mix(in srgb, var(--accent) 30%, var(--line-default))',
-            borderRadius: 8,
-            background: 'color-mix(in srgb, var(--accent-soft) 72%, var(--glass-bg-strong))',
-            backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-            boxShadow: 'var(--shadow), var(--glass-highlight)',
-          }}
-          aria-label="快速标记说明"
-        >
-          <strong style={{ color: 'var(--accent)', fontSize: 12, whiteSpace: 'nowrap' }}>快速标记</strong>
-          <span style={{ color: 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap' }}>
-            悬停卡片后直接点击分类名称；数字键也可用，回车仍然播放
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-            <span
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                minWidth: 24, height: 21, padding: '0 5px', borderRadius: 5,
-                background: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700,
-              }}
-              title="取消当前分类"
-            >
-              0 未分类
-            </span>
-            {organizeCategories.slice(0, 9).map((category, index) => (
-              <span
-                key={category.id}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  minHeight: 21, maxWidth: 170, padding: '0 6px', borderRadius: 5,
-                  background: 'color-mix(in srgb, var(--surface-2) 82%, transparent)',
-                  border: '1px solid var(--line-default)',
-                  color: 'var(--text-primary)', fontSize: 10,
-                }}
-                title={`按 ${index + 1} 设置为「${category.name}」`}
-              >
-                <b style={{ color: 'var(--accent)' }}>{index + 1}</b>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category.name}</span>
-              </span>
-            ))}
-          </div>
-          <span style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: 10, whiteSpace: 'nowrap' }}>
-            M 退出
-          </span>
-        </div>
-      )}
       {/* 批量操作工具栏 */}
       {videos.length > 0 && !selectionMode && (showFavorited || (onBatchSetOrganizeCategory && !onSelectionModeChange)) && (
         <div style={{
@@ -1197,29 +1113,29 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 onToggleSelect={handleToggleSelect}
                 organizeCategories={organizeCategories}
                 onSetOrganizeCategory={onSetOrganizeCategory}
-                onQuickMarkEnter={quickMarkMode ? showQuickMarkTarget : undefined}
-                onQuickMarkLeave={quickMarkMode ? scheduleQuickMarkHide : undefined}
+                onCategoryTooltipEnter={!selectionMode ? showCategoryTooltip : undefined}
+                onCategoryTooltipLeave={!selectionMode ? scheduleCategoryTooltipHide : undefined}
               />
             );
           })}
-          {quickMarkMode && quickMarkTarget && (() => {
-            const targetVideo = videos.find((video) => video.id === quickMarkTarget.videoId) ?? quickMarkTarget.video;
+          {categoryTooltipTarget && (() => {
+            const targetVideo = videos.find((video) => video.id === categoryTooltipTarget.videoId) ?? categoryTooltipTarget.video;
             const viewportPadding = 8;
             // Tooltip 与目标卡片保持同宽，分类按钮在内部自动换行。
             const tooltipWidth = Math.min(
-              Math.max(1, Math.round(quickMarkTarget.rect.width)),
+              Math.max(1, Math.round(categoryTooltipTarget.rect.width)),
               window.innerWidth - viewportPadding * 2,
             );
             const left = Math.max(
               viewportPadding,
-              Math.min(quickMarkTarget.rect.left, window.innerWidth - tooltipWidth - viewportPadding),
+              Math.min(categoryTooltipTarget.rect.left, window.innerWidth - tooltipWidth - viewportPadding),
             );
-            const top = quickMarkTarget.rect.bottom + 8 <= window.innerHeight - 8
-              ? quickMarkTarget.rect.bottom + 8
-              : Math.max(8, quickMarkTarget.rect.top - 44);
+            const top = categoryTooltipTarget.rect.bottom + 8 <= window.innerHeight - 8
+              ? categoryTooltipTarget.rect.bottom + 8
+              : Math.max(8, categoryTooltipTarget.rect.top - 44);
             return createPortal(
               <div
-                className="quick-mark-tooltip"
+                className="category-tooltip"
                 style={{
                   position: 'fixed',
                   left,
@@ -1244,8 +1160,8 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                   boxShadow: '0 10px 24px rgba(0,0,0,.42)',
                   pointerEvents: 'auto',
                 }}
-                onMouseEnter={clearQuickMarkHideTimer}
-                onMouseLeave={scheduleQuickMarkHide}
+                onMouseEnter={clearCategoryTooltipHideTimer}
+                onMouseLeave={scheduleCategoryTooltipHide}
                 onClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
               >

@@ -118,8 +118,6 @@ function App() {
   const [favoritedCount, setFavoritedCount] = useState(0);
   const [showMarkedForDeletion, setShowMarkedForDeletion] = useState(false);
   const [markedForDeletionCount, setMarkedForDeletionCount] = useState(0);
-  // 快速标记模式：只改变分类快捷键，不改变普通回车播放行为。
-  const [quickMarkMode, setQuickMarkMode] = useState(false);
   // 固定布局模式下，标记删除只隐藏卡片，不从布局数据中移除。
   const [fixedLayoutMode, setFixedLayoutMode] = useState(false);
   const [locallyHiddenVideoIds, setLocallyHiddenVideoIds] = useState<Set<number>>(new Set());
@@ -1259,14 +1257,6 @@ function App() {
     setFixedLayoutMode(next);
   }, [fixedLayoutMode, loadVideos]);
 
-  const handleQuickMarkModeChange = useCallback((next: boolean) => {
-    setQuickMarkMode(next);
-    if (next) {
-      setBatchSelectionMode(false);
-      setBatchSelectedIds(new Set());
-    }
-  }, []);
-
   const batchOrganizeAvailable = activePage === 'library'
     && mediaType === 'all'
     && !showFavorited
@@ -1354,8 +1344,6 @@ function App() {
           }}
           showFavoritedInList={showFavoritedInList}
           onShowFavoritedInListChange={setShowFavoritedInList}
-          quickMarkMode={quickMarkMode}
-          onQuickMarkModeChange={handleQuickMarkModeChange}
           fixedLayoutMode={fixedLayoutMode}
           onFixedLayoutModeChange={handleFixedLayoutModeChange}
           favoritedCount={favoritedCount}
@@ -1556,8 +1544,6 @@ function App() {
                   organizeCategories={organizeCategories}
                   onSetOrganizeCategory={handleSetOrganizeCategory}
                   onBatchSetOrganizeCategory={handleBatchSetOrganizeCategory}
-                  quickMarkMode={quickMarkMode}
-                  onQuickMarkModeChange={handleQuickMarkModeChange}
                   selectionMode={batchSelectionMode}
                   selectedIds={batchSelectedIds}
                   onToggleSelect={toggleBatchSelection}
