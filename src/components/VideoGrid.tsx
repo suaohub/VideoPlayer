@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Film, Music2, BookOpen, RefreshCw, FolderKanban, X } from 'lucide-react';
+import { Film, Music2, BookOpen, RefreshCw } from 'lucide-react';
 import { OrganizeCategory, Video } from '../types';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
@@ -154,14 +154,12 @@ interface VideoCardProps {
   isSelected: boolean;
   onToggleSelect: (videoId: number) => void;
   organizeCategories: OrganizeCategory[];
-  onSetOrganizeCategory: (videoId: number, categoryId: number | null) => void;
   onCategoryTooltipEnter?: (video: Video, element: HTMLDivElement) => void;
   onCategoryTooltipLeave?: () => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onSetOrganizeCategory, onCategoryTooltipEnter, onCategoryTooltipLeave }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave }: VideoCardProps) {
   const [hover, setHover] = useState(false);
-  const [flipped, setFlipped] = useState(false);
   const durLabel = formatDuration(video.duration);
   const comicItem = isComicExt(video.ext);
   const thumbHeight = height - 46;
@@ -179,11 +177,6 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
       ref={cardRef}
       tabIndex={-1}
       onClick={handleClick}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!selectionMode) setFlipped(true);
-      }}
       onPointerMove={(event) => {
         onFocus();
         event.currentTarget.focus({ preventScroll: true });
@@ -219,75 +212,6 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         willChange: 'transform, width, height',
       }}
     >
-      {flipped ? (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            padding: 14,
-            background: 'var(--glass-bg-strong)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14 }}>
-            <FolderKanban size={17} />
-            <span style={{ flex: 1 }}>选择整理分类</span>
-            <button
-              onClick={() => setFlipped(false)}
-              title="取消"
-              style={{ border: 0, background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={video.name}>
-            {video.name}
-          </div>
-          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button
-              onClick={() => { onSetOrganizeCategory(video.id, null); setFlipped(false); }}
-              style={{
-                textAlign: 'left', border: '1px solid var(--border)', borderRadius: 6,
-                padding: '7px 9px',
-                background: video.organize_category_id == null ? 'var(--accent)' : 'var(--bg-card)',
-                color: video.organize_category_id == null ? '#fff' : 'var(--text-primary)',
-                cursor: 'pointer',
-              }}
-            >
-              未分类
-            </button>
-            {organizeCategories.length > 0 ? organizeCategories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => { onSetOrganizeCategory(video.id, category.id); setFlipped(false); }}
-                style={{
-                  textAlign: 'left', border: '1px solid var(--border)', borderRadius: 6,
-                  padding: '7px 9px',
-                  background: video.organize_category_id === category.id ? 'var(--accent)' : 'var(--bg-card)',
-                  color: video.organize_category_id === category.id ? '#fff' : 'var(--text-primary)',
-                  cursor: 'pointer',
-                }}
-              >
-                {category.name}
-              </button>
-            )) : (
-              <div style={{
-                padding: '10px 9px',
-                border: '1px dashed var(--border)',
-                borderRadius: 6,
-                color: 'var(--text-secondary)',
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}>
-                还没有预设分类，请先到“设置 → 视频整理”中新建分类。
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ position: 'relative' }}>
         <Thumb video={video} height={thumbHeight} />
@@ -411,7 +335,6 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         </div>
       </div>
       </div>
-      )}
     </div>
   );
 }
@@ -749,11 +672,15 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     const preservedIndex = previousId == null
       ? -1
       : videos.findIndex((video) => video.id === previousId);
+    // 当前卡片被删除后，它的 id 已经不在新列表里。此时保留删除前的索引，
+    // 让焦点落到同一位置的下一项，而不是回到列表第一项。
+    const previousIndex = focusedIndexRef.current;
+    const fallbackIndex = preservedIndex >= 0 ? preservedIndex : previousIndex;
     let nextIndex = preservedIndex >= 0 && !hiddenIds.has(videos[preservedIndex].id)
       ? preservedIndex
       : -1;
     if (nextIndex < 0) {
-      for (let i = Math.max(0, preservedIndex + 1); i < videos.length; i++) {
+      for (let i = Math.max(0, fallbackIndex); i < videos.length; i++) {
         if (!hiddenIds.has(videos[i].id)) {
           nextIndex = i;
           break;
@@ -761,7 +688,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       }
     }
     if (nextIndex < 0) {
-      for (let i = Math.min(preservedIndex - 1, videos.length - 1); i >= 0; i--) {
+      for (let i = Math.min(fallbackIndex - 1, videos.length - 1); i >= 0; i--) {
         if (!hiddenIds.has(videos[i].id)) {
           nextIndex = i;
           break;
@@ -1112,7 +1039,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 isSelected={selectedIds.has(L.video.id)}
                 onToggleSelect={handleToggleSelect}
                 organizeCategories={organizeCategories}
-                onSetOrganizeCategory={onSetOrganizeCategory}
                 onCategoryTooltipEnter={!selectionMode ? showCategoryTooltip : undefined}
                 onCategoryTooltipLeave={!selectionMode ? scheduleCategoryTooltipHide : undefined}
               />
