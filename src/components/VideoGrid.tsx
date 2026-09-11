@@ -177,9 +177,13 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   return (
     <div
       ref={cardRef}
+      data-video-id={video.id}
       tabIndex={-1}
       onClick={handleClick}
-      onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu?.(video, event); }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onContextMenu?.(video, event);
+      }}
       onPointerMove={(event) => {
         onFocus();
         event.currentTarget.focus({ preventScroll: true });
@@ -889,7 +893,17 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const extraCategories = organizeCategories.slice(3);
 
   return (
-    <div ref={containerRef} style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
+    <div
+      ref={containerRef}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        const card = (event.target as HTMLElement).closest<HTMLElement>('[data-video-id]');
+        const videoId = card ? Number(card.dataset.videoId) : NaN;
+        const video = videos.find((item) => item.id === videoId);
+        if (video) setContextMenu({ video, x: event.clientX, y: event.clientY });
+      }}
+      style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}
+    >
       {/* 批量操作工具栏 */}
       {videos.length > 0 && !selectionMode && (showFavorited || (onBatchSetOrganizeCategory && !onSelectionModeChange)) && (
         <div style={{
@@ -1053,7 +1067,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 organizeCategories={organizeCategories}
                 onCategoryTooltipEnter={!selectionMode ? showCategoryTooltip : undefined}
                 onCategoryTooltipLeave={!selectionMode ? scheduleCategoryTooltipHide : undefined}
-                onContextMenu={(video, event) => setContextMenu({ video, x: event.clientX, y: event.clientY })}
+                onContextMenu={(video, event) => {
+                  console.log('Context menu triggered for video:', video.name, 'at', event.clientX, event.clientY);
+                  setContextMenu({ video, x: event.clientX, y: event.clientY });
+                }}
               />
             );
           })}
@@ -1164,22 +1181,25 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
               document.body,
             );
           })()}
-          {contextMenu && createPortal(
-            <div
-              role="menu"
-              onClick={(event) => event.stopPropagation()}
-              style={{ position: 'fixed', left: Math.min(contextMenu.x, window.innerWidth - 230), top: Math.min(contextMenu.y, window.innerHeight - 60), zIndex: 10000, minWidth: 210, padding: 5, borderRadius: 9, background: 'var(--glass-bg-strong)', border: '1px solid var(--glass-border)', boxShadow: '0 12px 30px rgba(0,0,0,.35)', backdropFilter: 'blur(18px)' }}
-            >
-              <button
-                role="menuitem"
-                onClick={() => { void window.electronAPI.openVideoDirectory(contextMenu.video.path); setContextMenu(null); }}
-                style={{ width: '100%', padding: '9px 11px', border: 0, borderRadius: 6, background: 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer', fontSize: 13 }}
+          {contextMenu && (() => {
+            console.log('Rendering context menu at:', contextMenu.x, contextMenu.y);
+            return createPortal(
+              <div
+                role="menu"
+                onClick={(event) => event.stopPropagation()}
+                style={{ position: 'fixed', left: Math.min(contextMenu.x, window.innerWidth - 230), top: Math.min(contextMenu.y, window.innerHeight - 60), zIndex: 10000, minWidth: 210, padding: 5, borderRadius: 9, background: 'var(--glass-bg-strong)', border: '1px solid var(--glass-border)', boxShadow: '0 12px 30px rgba(0,0,0,.35)', backdropFilter: 'blur(18px)' }}
               >
-                在资源管理器中打开视频目录
-              </button>
-            </div>,
-            document.body,
-          )}
+                <button
+                  role="menuitem"
+                  onClick={() => { void window.electronAPI.openVideoDirectory(contextMenu.video.path); setContextMenu(null); }}
+                  style={{ width: '100%', padding: '9px 11px', border: 0, borderRadius: 6, background: 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer', fontSize: 13 }}
+                >
+                  在资源管理器中打开视频目录
+                </button>
+              </div>,
+              document.body,
+            );
+          })()}
         </div>
       )}
       {selectionMode && (onBatchSetOrganizeCategory || showFavorited) && (
