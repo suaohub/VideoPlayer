@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Film, Music2, BookOpen, RefreshCw } from 'lucide-react';
 import { OrganizeCategory, Video } from '../types';
@@ -156,9 +157,10 @@ interface VideoCardProps {
   organizeCategories: OrganizeCategory[];
   onCategoryTooltipEnter?: (video: Video, element: HTMLDivElement) => void;
   onCategoryTooltipLeave?: () => void;
+  onContextMenu?: (video: Video, event: MouseEvent<HTMLDivElement>) => void;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave, onContextMenu }: VideoCardProps) {
   const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
   const comicItem = isComicExt(video.ext);
@@ -177,6 +179,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
       ref={cardRef}
       tabIndex={-1}
       onClick={handleClick}
+      onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu?.(video, event); }}
       onPointerMove={(event) => {
         onFocus();
         event.currentTarget.focus({ preventScroll: true });
@@ -362,6 +365,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       height: number;
     };
   } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ video: Video; x: number; y: number } | null>(null);
   const categoryTooltipHideTimer = useRef<number | null>(null);
 
   // 使用外部传入的选择状态（如果有），否则使用内部状态
@@ -462,6 +466,14 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   useEffect(() => () => {
     clearCategoryTooltipHideTimer();
   }, [clearCategoryTooltipHideTimer]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, [contextMenu]);
 
   useEffect(() => {
     if (!selectionMode) return;
@@ -1041,6 +1053,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 organizeCategories={organizeCategories}
                 onCategoryTooltipEnter={!selectionMode ? showCategoryTooltip : undefined}
                 onCategoryTooltipLeave={!selectionMode ? scheduleCategoryTooltipHide : undefined}
+                onContextMenu={(video, event) => setContextMenu({ video, x: event.clientX, y: event.clientY })}
               />
             );
           })}
@@ -1151,6 +1164,22 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
               document.body,
             );
           })()}
+          {contextMenu && createPortal(
+            <div
+              role="menu"
+              onClick={(event) => event.stopPropagation()}
+              style={{ position: 'fixed', left: Math.min(contextMenu.x, window.innerWidth - 230), top: Math.min(contextMenu.y, window.innerHeight - 60), zIndex: 10000, minWidth: 210, padding: 5, borderRadius: 9, background: 'var(--glass-bg-strong)', border: '1px solid var(--glass-border)', boxShadow: '0 12px 30px rgba(0,0,0,.35)', backdropFilter: 'blur(18px)' }}
+            >
+              <button
+                role="menuitem"
+                onClick={() => { void window.electronAPI.openVideoDirectory(contextMenu.video.path); setContextMenu(null); }}
+                style={{ width: '100%', padding: '9px 11px', border: 0, borderRadius: 6, background: 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer', fontSize: 13 }}
+              >
+                在资源管理器中打开视频目录
+              </button>
+            </div>,
+            document.body,
+          )}
         </div>
       )}
       {selectionMode && (onBatchSetOrganizeCategory || showFavorited) && (

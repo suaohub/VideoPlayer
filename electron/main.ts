@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, shell } from 'electron';
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, statSync } from 'fs';
 import { rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
@@ -186,6 +186,11 @@ app.on('before-quit', (event) => {
 
 ipcMain.handle('play-video', async (event, videoPath: string) => {
   return playVideo(videoPath);
+});
+
+ipcMain.handle('open-video-directory', async (event, videoPath: string) => {
+  const result = await shell.openPath(parse(videoPath).dir);
+  return { success: !result, error: result || undefined };
 });
 
 ipcMain.handle('stop-video', async () => {

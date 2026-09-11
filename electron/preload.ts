@@ -4,6 +4,7 @@ import type { VideoFilter } from '../src/types';
 contextBridge.exposeInMainWorld('electronAPI', {
   // ---------- 播放控制 ----------
   playVideo: (videoPath: string) => ipcRenderer.invoke('play-video', videoPath),
+  openVideoDirectory: (videoPath: string) => ipcRenderer.invoke('open-video-directory', videoPath),
   stopVideo: () => ipcRenderer.invoke('stop-video'),
   togglePause: () => ipcRenderer.invoke('toggle-pause'),
   seek: (seconds: number) => ipcRenderer.invoke('seek', seconds),
