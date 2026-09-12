@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, shell } from 'electron';
-import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, rmdirSync, statSync } from 'fs';
 import { rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { initDatabase, getDb } from './db';
@@ -189,8 +189,9 @@ ipcMain.handle('play-video', async (event, videoPath: string) => {
 });
 
 ipcMain.handle('open-video-directory', async (event, videoPath: string) => {
-  const result = await shell.openPath(parse(videoPath).dir);
-  return { success: !result, error: result || undefined };
+  // showItemInFolder 会打开文件管理器并选中该文件
+  shell.showItemInFolder(videoPath);
+  return { success: true };
 });
 
 ipcMain.handle('stop-video', async () => {
@@ -606,6 +607,34 @@ function getDriveOrganizeRoot(sourcePath: string, configuredDestinationRoot?: st
   return join(pathVolumeRoot(sourcePath), fallbackName);
 }
 
+function removeEmptyFolderRecords(folderPaths: string[]): void {
+  if (folderPaths.length === 0) return;
+  const db = getDb();
+  const uniquePaths = Array.from(new Map(
+    folderPaths
+      .map((folderPath) => resolve(folderPath))
+      .map((folderPath) => [process.platform === 'win32' ? folderPath.toLowerCase() : folderPath, folderPath] as const),
+  ).values()).sort((first, second) => second.length - first.length);
+  const remove = db.transaction(() => {
+    for (const folderPath of uniquePaths) {
+      const folder = db.prepare(`
+        SELECT id
+        FROM folders
+        WHERE path = ? COLLATE NOCASE
+        LIMIT 1
+      `).get(folderPath) as { id: number } | undefined;
+      if (!folder) continue;
+      const hasVideos = db.prepare('SELECT 1 FROM videos WHERE folder_id = ? LIMIT 1').get(folder.id);
+      if (hasVideos) continue;
+      const hasChildren = db.prepare('SELECT 1 FROM folders WHERE parent_id = ? LIMIT 1').get(folder.id);
+      if (hasChildren) continue;
+      db.prepare('DELETE FROM hidden_folder_paths WHERE path = ? COLLATE NOCASE').run(folderPath);
+      db.prepare('DELETE FROM folders WHERE id = ?').run(folder.id);
+    }
+  });
+  remove();
+}
+
 ipcMain.handle('organize-folders', async (event, folderIds: number[], destinationRootPath?: string) => {
   try {
     const requestedIds = Array.isArray(folderIds)
@@ -639,6 +668,22 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         !all.slice(0, index).some((parent) => isPathWithin(folder.path, parent.path))
       ));
     const sourceFolderIds = sourceFolders.map((folder) => folder.id);
+    const cleanupBoundaryPaths = sourceFolders.map((folder) => resolve(folder.path));
+    const sourceCleanupPathMap = new Map<string, string>();
+    const addSourceCleanupPathChain = (sourcePath: string) => {
+      let currentPath = resolve(sourcePath);
+      const boundaryPath = cleanupBoundaryPaths
+        .filter((rootPath) => isPathWithin(currentPath, rootPath))
+        .sort((first, second) => second.length - first.length)[0];
+      while (true) {
+        const pathKey = process.platform === 'win32' ? currentPath.toLowerCase() : currentPath;
+        sourceCleanupPathMap.set(pathKey, currentPath);
+        if (!boundaryPath || isSamePath(currentPath, boundaryPath)) break;
+        const parentPath = resolve(currentPath, '..');
+        if (isSamePath(parentPath, currentPath)) break;
+        currentPath = parentPath;
+      }
+    };
     // 空数组表示全库整理，直接按所有分类记录读取，避免受当前目录或外接盘刷新状态影响。
     const candidates = requestedIds.length === 0
       ? getAllOrganizeCandidates()
@@ -748,6 +793,7 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
           throw error;
         }
         movedCount++;
+        addSourceCleanupPathChain(candidate.folder_path);
         const destinationKey = effectiveDestinationRoot.toLowerCase();
         const destination = destinationMoves.get(destinationKey) ?? {
           path: effectiveDestinationRoot,
@@ -758,6 +804,26 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         destinationMoves.set(destinationKey, destination);
       } catch (error) {
         errors.push(`${candidate.path}: ${error}`);
+      }
+    }
+
+    const deletedSourceFolderPaths: string[] = [];
+    const sourceCleanupPaths = Array.from(sourceCleanupPathMap.values())
+      .sort((first, second) => second.length - first.length);
+    for (const sourceFolderPath of sourceCleanupPaths) {
+      // 不能删除盘符根目录，也不能碰整理目标目录。
+      if (isSamePath(sourceFolderPath, pathVolumeRoot(sourceFolderPath))) continue;
+      if (Array.from(organizeFolderPaths).some((targetPath) => isSamePath(sourceFolderPath, targetPath))) continue;
+      try {
+        if (!existsSync(sourceFolderPath) || !statSync(sourceFolderPath).isDirectory()) continue;
+        if (readdirSync(sourceFolderPath).length !== 0) continue;
+        rmdirSync(sourceFolderPath);
+        deletedSourceFolderPaths.push(sourceFolderPath);
+      } catch (error: any) {
+        // 目录在检查后被重新写入时，保留它即可；其他失败记录到整理结果中。
+        if (error?.code !== 'ENOENT' && error?.code !== 'ENOTEMPTY') {
+          errors.push(`${sourceFolderPath}: 删除空源文件夹失败：${error?.message ?? error}`);
+        }
       }
     }
 
@@ -786,6 +852,9 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         setThumbnailGenerationPaused(false);
       }
     }
+    // refreshImportedSubfolders 会清理普通子目录的数据库记录；被物理删除的导入根
+    // 会被它刻意保留，因此这里再按实际删除路径清理一次对应的空记录。
+    removeEmptyFolderRecords(deletedSourceFolderPaths);
 
     return {
       success: true,
@@ -795,6 +864,7 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
       crossDriveFallbackCount,
       importedFolders,
       importedFiles,
+      deletedSourceFolders: deletedSourceFolderPaths.length,
       missingFolders: missingFolders.length > 0 ? missingFolders : undefined,
       destinations: Array.from(destinationMoves.values()),
       errors: errors.length ? errors : undefined,

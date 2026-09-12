@@ -246,6 +246,8 @@ export interface ElectronAPI {
     crossDriveFallbackCount?: number;
     importedFolders?: number;
     importedFiles?: number;
+    /** 整理后源目录中已无剩余内容、被自动删除的文件夹数量。 */
+    deletedSourceFolders?: number;
     missingFolders?: string[];
     /** 本次实际写入的整理根目录，按盘符分别列出。 */
     destinations?: OrganizeDestination[];

@@ -1021,9 +1021,12 @@ function App() {
       const overwriteDetail = result.overwrittenCount
         ? `\n已覆盖同名文件 ${result.overwrittenCount} 个。`
         : '';
+      const deletedSourceFoldersDetail = result.deletedSourceFolders
+        ? `\n已删除 ${result.deletedSourceFolders} 个空源文件夹。`
+        : '';
       alert(
         `整理完成：移动 ${result.movedCount ?? 0} 个，跳过 ${result.skippedCount ?? 0} 个。` +
-        `${importDetail}${missingDetail}${crossDriveDetail}${destinationDetail}${overwriteDetail}${detail}`,
+        `${importDetail}${missingDetail}${crossDriveDetail}${destinationDetail}${overwriteDetail}${deletedSourceFoldersDetail}${detail}`,
       );
     } finally {
       setOrganizing(false);
