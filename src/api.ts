@@ -115,7 +115,7 @@ export const api = {
     return window.electronAPI.getOrganizeCategories();
   },
   async createOrganizeCategory(name: string) {
-    if (USE_MOCK) return { success: true, category: { id: Date.now(), name, sort_order: 0 } };
+    if (USE_MOCK) return { success: true, category: { id: Date.now(), name, sort_order: 0, enabled: 1 } };
     return window.electronAPI.createOrganizeCategory(name);
   },
   async renameOrganizeCategory(categoryId: number, name: string) {
@@ -125,6 +125,10 @@ export const api = {
   async deleteOrganizeCategory(categoryId: number) {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.deleteOrganizeCategory(categoryId);
+  },
+  async setOrganizeCategoryEnabled(categoryId: number, enabled: boolean) {
+    if (USE_MOCK) return { success: true, enabled };
+    return window.electronAPI.setOrganizeCategoryEnabled(categoryId, enabled);
   },
   async setVideoOrganizeCategory(videoId: number, categoryId: number | null) {
     if (USE_MOCK) return { success: true, categoryId };

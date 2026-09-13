@@ -112,7 +112,8 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS organize_categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
-      sort_order INTEGER DEFAULT 0
+      sort_order INTEGER DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1
     );
   `);
 
@@ -151,6 +152,12 @@ export function initDatabase() {
   if (!folderColumns.some(c => c.name === 'hidden')) {
     db.exec(`ALTER TABLE folders ADD COLUMN hidden INTEGER DEFAULT 0;`);
     console.log('[db] Migration: added folder hidden column');
+  }
+  // 迁移：为整理分类添加启用状态。停用只影响新的分类操作，历史标记仍然保留。
+  const organizeCategoryColumns = db.pragma('table_info(organize_categories)') as Array<{ name: string }>;
+  if (!organizeCategoryColumns.some(c => c.name === 'enabled')) {
+    db.exec(`ALTER TABLE organize_categories ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;`);
+    console.log('[db] Migration: added organize category enabled column');
   }
   db.exec(`
     INSERT OR IGNORE INTO hidden_folder_paths (path, hidden_at)

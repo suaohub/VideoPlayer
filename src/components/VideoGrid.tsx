@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Film, Music2, BookOpen, RefreshCw, FolderOpen } from 'lucide-react';
 import { OrganizeCategory, Video } from '../types';
+import { api } from '../api';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
 import { isAudioFile, isTextFile, isComicExt } from '../media';
@@ -159,15 +160,19 @@ interface VideoCardProps {
   onCategoryTooltipLeave?: () => void;
   onContextMenu?: (video: Video, event: MouseEvent<HTMLDivElement>) => void;
   lastPointerPosRef: React.MutableRefObject<{ x: number; y: number } | null>;
+  /** 播放退出后短暂屏蔽过期的鼠标移动事件，避免它覆盖恢复中的键盘焦点。 */
+  pointerFocusSuppressedUntilRef?: React.MutableRefObject<number>;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave, onContextMenu, lastPointerPosRef }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave, onContextMenu, lastPointerPosRef, pointerFocusSuppressedUntilRef }: VideoCardProps) {
   const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
   const comicItem = isComicExt(video.ext);
   const thumbHeight = height - 46;
 
-  const handleClick = () => {
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    onFocus();
+    event.currentTarget.focus({ preventScroll: true });
     if (selectionMode) {
       onToggleSelect(video.id);
     } else {
@@ -188,19 +193,19 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
       onPointerMove={(event) => {
         // 只在鼠标真正移动时才改变焦点，避免返回列表时因鼠标悬停而抢占焦点
         const last = lastPointerPosRef.current;
-        console.log('onPointerMove', video.name, 'last:', last, 'current:', event.clientX, event.clientY);
-        if (last) {
-          const moved = Math.abs(event.clientX - last.x) > 2 || Math.abs(event.clientY - last.y) > 2;
-          console.log('moved:', moved);
-          if (moved) {
+        const focusSuppressed = (pointerFocusSuppressedUntilRef?.current ?? 0) > performance.now();
+        if (!focusSuppressed) {
+          if (last) {
+            const moved = Math.abs(event.clientX - last.x) > 2 || Math.abs(event.clientY - last.y) > 2;
+            if (moved) {
+              onFocus();
+              event.currentTarget.focus({ preventScroll: true });
+            }
+          } else {
+            // 第一次进入卡片，允许改变焦点
             onFocus();
             event.currentTarget.focus({ preventScroll: true });
           }
-        } else {
-          // 第一次进入卡片，允许改变焦点
-          console.log('First time, allowing focus change');
-          onFocus();
-          event.currentTarget.focus({ preventScroll: true });
         }
         lastPointerPosRef.current = { x: event.clientX, y: event.clientY };
         setHover(true);
@@ -415,7 +420,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const videosRef = useRef(videos);
   videosRef.current = videos;
   const onPlayRef = useRef(onPlay);
-  onPlayRef.current = onPlay;
   const selectionModeRef = useRef(selectionMode);
   const [containerWidth, setContainerWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -432,6 +436,46 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   selectionModeRef.current = selectionMode;
   const hiddenIds = hiddenVideoIds ?? EMPTY_HIDDEN_IDS;
   const lastPointerPos = useRef<{ x: number; y: number } | null>(null);
+  // Enter 播放时记住原始卡片，mpv 退出后恢复到这张卡片，而不是恢复到鼠标最后经过的位置。
+  const playbackFocusVideoIdRef = useRef<number | null>(null);
+  const pointerFocusSuppressedUntilRef = useRef(0);
+  const hiddenIdsRef = useRef(hiddenIds);
+  hiddenIdsRef.current = hiddenIds;
+
+  const focusVideoById = useCallback((videoId: number, preventScroll = true) => {
+    const index = videosRef.current.findIndex((video) => (
+      video.id === videoId && !hiddenIdsRef.current.has(video.id)
+    ));
+    if (index < 0) return false;
+    focusedVideoIdRef.current = videoId;
+    focusedIndexRef.current = index;
+    setFocusedIndex(index);
+    cardEls.current.get(videoId)?.focus({ preventScroll });
+    return true;
+  }, []);
+
+  const handlePlayFromGrid = useCallback((video: Video) => {
+    playbackFocusVideoIdRef.current = video.id;
+    focusVideoById(video.id);
+    onPlay(video);
+  }, [focusVideoById, onPlay]);
+  onPlayRef.current = handlePlayFromGrid;
+
+  // mpv 退出后恢复播放前的卡片焦点。Tooltip 仍由卡片自己的 mouse enter/leave 管理，
+  // 这里只处理键盘焦点，避免两套交互互相覆盖。
+  useEffect(() => {
+    const off = api.onStopped(() => {
+      const videoId = playbackFocusVideoIdRef.current;
+      playbackFocusVideoIdRef.current = null;
+      if (videoId == null) return;
+      pointerFocusSuppressedUntilRef.current = performance.now() + 320;
+      lastPointerPos.current = null;
+      window.requestAnimationFrame(() => {
+        focusVideoById(videoId);
+      });
+    });
+    return () => off?.();
+  }, [focusVideoById]);
 
   const clearCategoryTooltipHideTimer = useCallback(() => {
     if (categoryTooltipHideTimer.current != null) {
@@ -1037,8 +1081,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     updateSelectionMode(false);
   };
 
-  const visibleCategoryButtons = organizeCategories.slice(0, 3);
-  const extraCategories = organizeCategories.slice(3);
+  // 停用分类保留历史标记，但不参与新的快速分类和批量分类操作。
+  const activeOrganizeCategories = organizeCategories.filter((category) => category.enabled !== 0);
+  const visibleCategoryButtons = activeOrganizeCategories.slice(0, 3);
+  const extraCategories = activeOrganizeCategories.slice(3);
 
   return (
     <div
@@ -1079,7 +1125,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                   focusedIndexRef.current = i;
                   setFocusedIndex(i);
                 }}
-                onPlay={onPlay}
+                onPlay={handlePlayFromGrid}
                 onToggleFavorite={onToggleFavorite}
                 onRegenerateThumbnail={onRegenerateThumbnail}
                 regenerating={regeneratingThumbnailId === L.video.id}
@@ -1097,6 +1143,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                   setContextMenu({ video, x: event.clientX, y: event.clientY });
                 }}
                 lastPointerPosRef={lastPointerPos}
+                pointerFocusSuppressedUntilRef={pointerFocusSuppressedUntilRef}
               />
             );
           })}
@@ -1174,7 +1221,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 >
                   未分类
                 </button>
-                {organizeCategories.map((category) => (
+                {activeOrganizeCategories.map((category) => (
                   <button
                     key={category.id}
                     onClick={(event) => {
@@ -1208,9 +1255,9 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                     {category.name}
                   </button>
                 ))}
-                {organizeCategories.length === 0 && (
+                {activeOrganizeCategories.length === 0 && (
                   <span style={{ color: 'rgba(255,255,255,.72)', fontSize: 11, whiteSpace: 'nowrap', padding: '0 4px' }}>
-                    请先在设置中创建分类
+                    请先在设置中创建或启用分类
                   </span>
                 )}
               </div>,

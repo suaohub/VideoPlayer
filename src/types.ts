@@ -62,6 +62,8 @@ export interface OrganizeCategory {
   id: number;
   name: string;
   sort_order: number;
+  /** 是否出现在新的快速分类和批量分类操作中；停用不会删除历史标记。 */
+  enabled: number;
   count?: number;
 }
 
@@ -244,6 +246,7 @@ export interface ElectronAPI {
   createOrganizeCategory: (name: string) => Promise<{ success: boolean; category?: OrganizeCategory; error?: string }>;
   renameOrganizeCategory: (categoryId: number, name: string) => Promise<{ success: boolean; error?: string }>;
   deleteOrganizeCategory: (categoryId: number) => Promise<{ success: boolean; error?: string }>;
+  setOrganizeCategoryEnabled: (categoryId: number, enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
   setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; error?: string }>;
   batchSetVideoOrganizeCategory: (videoIds: number[], categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; updatedCount?: number; error?: string }>;
   organizeFolders: (folderIds: number[], destinationRootPath?: string, confirmExisting?: boolean) => Promise<{

@@ -728,7 +728,7 @@ export function getOrganizeCategories() {
   const db = getDb();
   return db.prepare(`
     ${HIDDEN_FOLDERS_CTE}
-    SELECT c.id, c.name, c.sort_order, COUNT(v.id) as count
+    SELECT c.id, c.name, c.sort_order, c.enabled, COUNT(v.id) as count
     FROM organize_categories c
     LEFT JOIN video_organize_categories voc ON voc.category_id = c.id
     LEFT JOIN videos v ON v.id = voc.video_id AND ${VISIBLE_VIDEO_CONDITION}
@@ -767,6 +767,10 @@ export function deleteOrganizeCategory(categoryId: number) {
     db.prepare('DELETE FROM organize_categories WHERE id = ?').run(categoryId);
   });
   tx();
+}
+
+export function setOrganizeCategoryEnabled(categoryId: number, enabled: boolean): void {
+  getDb().prepare('UPDATE organize_categories SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, categoryId);
 }
 
 export function setVideoOrganizeCategory(videoId: number, categoryId: number | null) {

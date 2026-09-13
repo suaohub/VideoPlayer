@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye,
+  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, Power,
 } from 'lucide-react';
 import { Folder, ImportProgress, OrganizeCategory } from '../types';
 import './SettingsModal.css';
@@ -28,6 +28,7 @@ interface SettingsModalProps {
   organizeCategories: OrganizeCategory[];
   onCreateOrganizeCategory: (name: string) => void;
   onDeleteOrganizeCategory: (categoryId: number) => void;
+  onToggleOrganizeCategory: (categoryId: number, enabled: boolean) => void;
   organizeOutputPath: string | null;
   onSelectOrganizeOutputFolder: () => void;
   onClearOrganizeOutputFolder: () => void;
@@ -53,7 +54,7 @@ export function SettingsModal(props: SettingsModalProps) {
     backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
     onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
     toolbarBlur, onToolbarBlurChange, organizeCategories,
-    onCreateOrganizeCategory, onDeleteOrganizeCategory,
+    onCreateOrganizeCategory, onDeleteOrganizeCategory, onToggleOrganizeCategory,
     organizeOutputPath, onSelectOrganizeOutputFolder, onClearOrganizeOutputFolder,
     onOrganizeFolder, organizing,
   } = props;
@@ -85,9 +86,14 @@ export function SettingsModal(props: SettingsModalProps) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="settings-head">
-          <h2 className="settings-title" id="settings-title">
-            <Settings {...ICON} size={18} /> 设置
-          </h2>
+          <div className="settings-head-brand">
+            <div className="settings-head-icon"><Settings size={19} strokeWidth={1.8} /></div>
+            <div>
+              <div className="settings-eyebrow">WORKSPACE SETTINGS</div>
+              <h2 className="settings-title" id="settings-title">设置中心</h2>
+              <p className="settings-subtitle">把媒体库整理成更顺手的工作空间</p>
+            </div>
+          </div>
           <button type="button" className="settings-close" onClick={onClose} title="关闭 (Esc)" aria-label="关闭设置">
             <X size={16} strokeWidth={1.8} />
           </button>
@@ -95,11 +101,16 @@ export function SettingsModal(props: SettingsModalProps) {
 
         {/* 隐藏目录 */}
         <div className="settings-section">
-          <div className="settings-section-title">隐藏目录</div>
-          <div className="settings-row">
-            <span className="settings-hint">
-              隐藏目录不会出现在目录树、文件列表和统计中，但导入记录、收藏、分类及缩略图都会保留。
-            </span>
+          <div className="settings-section-heading">
+            <div className="settings-section-icon"><EyeOff size={16} /></div>
+            <div>
+              <div className="settings-section-title">隐藏目录</div>
+              <div className="settings-section-description">从日常浏览中收起，不删除任何媒体文件。</div>
+            </div>
+          </div>
+          <div className="settings-callout">
+            <EyeOff size={14} />
+            <span>隐藏目录不会出现在目录树、文件列表和统计中，导入记录、收藏、分类及缩略图都会保留。</span>
           </div>
           {hiddenFolders.length === 0 ? (
             <div className="settings-hint">暂无隐藏目录。可在左侧目录上右键，选择“隐藏目录及子目录”。</div>
@@ -127,8 +138,18 @@ export function SettingsModal(props: SettingsModalProps) {
 
         {/* 媒体库 */}
         <div className="settings-section">
-          <div className="settings-section-title">媒体库</div>
-          <div className="settings-row">
+          <div className="settings-section-heading">
+            <div className="settings-section-icon"><FolderPlus size={16} /></div>
+            <div>
+              <div className="settings-section-title">媒体库</div>
+              <div className="settings-section-description">导入来源、索引和本地缓存。</div>
+            </div>
+          </div>
+          <div className="settings-action-card">
+            <div className="settings-action-copy">
+              <strong>添加媒体来源</strong>
+              <span>支持视频、音频、小说和漫画图片文件夹</span>
+            </div>
             <button
               className="settings-btn settings-btn-primary"
               onClick={onImport}
@@ -138,7 +159,6 @@ export function SettingsModal(props: SettingsModalProps) {
                 ? <><Loader2 {...ICON} className="spin" /> 导入中...</>
                 : <><FolderPlus {...ICON} /> 导入文件夹</>}
             </button>
-            <span className="settings-hint">导入视频、音频、小说或漫画（图片文件夹）</span>
           </div>
           {importing && importProgress && (
             <div>
@@ -153,22 +173,27 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
             </div>
           )}
-          <div className="settings-row" style={{ marginTop: 10 }}>
+          <div className="settings-action-card settings-action-card-danger" style={{ marginTop: 10 }}>
+            <div className="settings-action-copy">
+              <strong>清理媒体库缓存</strong>
+              <span>删除索引、目录、标签和缩略图，源文件不会受影响</span>
+            </div>
             <button className="settings-btn settings-btn-danger" onClick={onClearCache}>
               <Trash2 {...ICON} /> 清除缓存
             </button>
-            <span className="settings-hint">删除所有导入记录、目录、标签与缩略图（源文件保留）</span>
           </div>
         </div>
 
         {/* 整理分类 */}
         <div className="settings-section">
-          <div className="settings-section-title">视频整理</div>
-          <div className="settings-row">
-            <span className="settings-hint">
-              右键单个文件，或使用列表顶部的批量选择，为文件设置一个整理分类。
-            </span>
+          <div className="settings-section-heading">
+            <div className="settings-section-icon"><FolderKanban size={16} /></div>
+            <div>
+              <div className="settings-section-title">视频整理</div>
+              <div className="settings-section-description">用分类建立清晰的目标目录，停用分类不会清除已有标记。</div>
+            </div>
           </div>
+          <div className="settings-subsection-label">整理位置</div>
           <div className="settings-row settings-organize-output">
             <button className="settings-btn" onClick={onSelectOrganizeOutputFolder}>
               <FolderOpen {...ICON} /> {organizeOutputPath ? '更换整理位置' : '选择整理位置'}
@@ -183,21 +208,36 @@ export function SettingsModal(props: SettingsModalProps) {
               </button>
             )}
           </div>
-          <div className="settings-hint settings-organize-output-path" title={organizeOutputPath ?? undefined}>
+          <div className="settings-path-card" title={organizeOutputPath ?? undefined}>
+            <FolderOpen size={14} />
+            <span>
             {organizeOutputPath
               ? `集中整理位置：${organizeOutputPath}；不同盘符会在各自盘符根目录的「${organizeFolderName(organizeOutputPath)}」下整理，避免跨盘复制。`
               : '未设置集中位置，将按文件所在盘符在盘符根目录的「VideoPlayer整理」下创建分类文件夹。'}
+            </span>
           </div>
-          <div className="settings-hint">整理时遇到同名目标文件会直接覆盖。</div>
+          <div className="settings-hint settings-note">同名目标文件会直接覆盖；跨盘文件会按盘符分别处理。</div>
+          <div className="settings-subsection-label">分类</div>
           <div className="settings-category-list">
             {organizeCategories.length === 0 && (
               <div className="settings-hint">还没有预设分类。</div>
             )}
             {organizeCategories.map((category) => (
-              <div className="settings-category-item" key={category.id}>
+              <div className={`settings-category-item${category.enabled === 0 ? ' is-disabled' : ''}`} key={category.id}>
                 <FolderKanban {...ICON} />
                 <span className="settings-category-name">{category.name}</span>
                 <span className="settings-category-count">{category.count ?? 0}</span>
+                <span className="settings-category-status">
+                  {category.enabled === 0 ? '已停用' : '已启用'}
+                </span>
+                <button
+                  className="settings-mini-btn"
+                  title={category.enabled === 0 ? '启用分类' : '停用分类'}
+                  aria-label={category.enabled === 0 ? `启用分类：${category.name}` : `停用分类：${category.name}`}
+                  onClick={() => onToggleOrganizeCategory(category.id, category.enabled === 0)}
+                >
+                  <Power size={14} />
+                </button>
                 <button
                   className="settings-mini-btn settings-mini-btn-danger"
                   title="删除分类"
@@ -257,7 +297,13 @@ export function SettingsModal(props: SettingsModalProps) {
 
         {/* 外观 */}
         <div className="settings-section">
-          <div className="settings-section-title">外观</div>
+          <div className="settings-section-heading">
+            <div className="settings-section-icon"><ImageIcon size={16} /></div>
+            <div>
+              <div className="settings-section-title">外观</div>
+              <div className="settings-section-description">调整背景、透明度与界面层次感。</div>
+            </div>
+          </div>
           <div className="settings-row">
             <button className="settings-btn" onClick={onSelectBackground}>
               <ImageIcon {...ICON} /> {backgroundImagePath ? '更换壁纸' : '选择壁纸'}

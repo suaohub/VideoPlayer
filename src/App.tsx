@@ -982,6 +982,15 @@ function App() {
     await refreshOrganizeCategories();
   };
 
+  const handleToggleOrganizeCategory = async (categoryId: number, enabled: boolean) => {
+    const result = await api.setOrganizeCategoryEnabled(categoryId, enabled);
+    if (!result.success) {
+      notify(`${enabled ? '启用' : '停用'}分类失败：${result.error ?? '未知错误'}`, 'danger');
+      return;
+    }
+    await refreshOrganizeCategories();
+  };
+
   const handleOrganizeFolder = async () => {
     const categorizedCount = organizePreviewVideos.filter((video) => video.organize_category_id != null).length;
     if (categorizedCount === 0) {
@@ -1637,6 +1646,7 @@ function App() {
           organizeCategories={organizeCategories}
           onCreateOrganizeCategory={handleCreateOrganizeCategory}
           onDeleteOrganizeCategory={handleDeleteOrganizeCategory}
+          onToggleOrganizeCategory={handleToggleOrganizeCategory}
           organizeOutputPath={organizeOutputPath}
           onSelectOrganizeOutputFolder={handleSelectOrganizeOutputFolder}
           onClearOrganizeOutputFolder={handleClearOrganizeOutputFolder}
