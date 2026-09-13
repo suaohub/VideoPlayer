@@ -99,7 +99,7 @@ export function usePreferences() {
     if (result.canceled || !result.path) return;
     const imageUrl = await api.getBackgroundImageUrl(result.path);
     if (!imageUrl) {
-      alert('无法读取这张图片，请选择常见的 JPG、PNG、WebP 或 GIF 图片。');
+      console.warn('无法读取这张图片，请选择常见的 JPG、PNG、WebP 或 GIF 图片。');
       return;
     }
     setWallpaperPath(result.path);

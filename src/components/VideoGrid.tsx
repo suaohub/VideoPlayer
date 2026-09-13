@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Film, Music2, BookOpen, RefreshCw } from 'lucide-react';
+import { Film, Music2, BookOpen, RefreshCw, FolderOpen } from 'lucide-react';
 import { OrganizeCategory, Video } from '../types';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
@@ -26,7 +26,7 @@ interface VideoGridProps {
   onMarkForDeletion?: (videoId: number) => void;
   hiddenVideoIds?: Set<number>;
   organizeCategories?: OrganizeCategory[];
-  onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void;
+  onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void | Promise<boolean | void>;
   onBatchSetOrganizeCategory?: (videoIds: number[], categoryId: number | null) => boolean | Promise<boolean>;
 }
 
@@ -158,9 +158,10 @@ interface VideoCardProps {
   onCategoryTooltipEnter?: (video: Video, element: HTMLDivElement) => void;
   onCategoryTooltipLeave?: () => void;
   onContextMenu?: (video: Video, event: MouseEvent<HTMLDivElement>) => void;
+  lastPointerPosRef: React.MutableRefObject<{ x: number; y: number } | null>;
 }
 
-function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave, onContextMenu }: VideoCardProps) {
+function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPlay, onToggleFavorite, onRegenerateThumbnail, regenerating, cardRef, selectionMode, isSelected, onToggleSelect, organizeCategories, onCategoryTooltipEnter, onCategoryTooltipLeave, onContextMenu, lastPointerPosRef }: VideoCardProps) {
   const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
   const comicItem = isComicExt(video.ext);
@@ -185,8 +186,23 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         onContextMenu?.(video, event);
       }}
       onPointerMove={(event) => {
-        onFocus();
-        event.currentTarget.focus({ preventScroll: true });
+        // 只在鼠标真正移动时才改变焦点，避免返回列表时因鼠标悬停而抢占焦点
+        const last = lastPointerPosRef.current;
+        console.log('onPointerMove', video.name, 'last:', last, 'current:', event.clientX, event.clientY);
+        if (last) {
+          const moved = Math.abs(event.clientX - last.x) > 2 || Math.abs(event.clientY - last.y) > 2;
+          console.log('moved:', moved);
+          if (moved) {
+            onFocus();
+            event.currentTarget.focus({ preventScroll: true });
+          }
+        } else {
+          // 第一次进入卡片，允许改变焦点
+          console.log('First time, allowing focus change');
+          onFocus();
+          event.currentTarget.focus({ preventScroll: true });
+        }
+        lastPointerPosRef.current = { x: event.clientX, y: event.clientY };
         setHover(true);
       }}
       onMouseEnter={(event) => {
@@ -356,6 +372,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<number>>(new Set());
   const [moreCategoriesOpen, setMoreCategoriesOpen] = useState(false);
   const [batchActionBusy, setBatchActionBusy] = useState(false);
+  const [categoryActionBusy, setCategoryActionBusy] = useState(false);
   const [categoryTooltipTarget, setCategoryTooltipTarget] = useState<{
     video: Video;
     videoId: number;
@@ -371,6 +388,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ video: Video; x: number; y: number } | null>(null);
   const categoryTooltipHideTimer = useRef<number | null>(null);
+  const categoryTooltipSyncFrame = useRef<number | null>(null);
 
   // 使用外部传入的选择状态（如果有），否则使用内部状态
   const selectionMode = externalSelectionMode ?? internalSelectionMode;
@@ -413,6 +431,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const scrollAnimation = useRef<number | null>(null);
   selectionModeRef.current = selectionMode;
   const hiddenIds = hiddenVideoIds ?? EMPTY_HIDDEN_IDS;
+  const lastPointerPos = useRef<{ x: number; y: number } | null>(null);
 
   const clearCategoryTooltipHideTimer = useCallback(() => {
     if (categoryTooltipHideTimer.current != null) {
@@ -420,6 +439,53 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       categoryTooltipHideTimer.current = null;
     }
   }, []);
+
+  const stopCategoryTooltipSync = useCallback(() => {
+    if (categoryTooltipSyncFrame.current != null) {
+      window.cancelAnimationFrame(categoryTooltipSyncFrame.current);
+      categoryTooltipSyncFrame.current = null;
+    }
+  }, []);
+
+  // 卡片分类后会触发布局位移动画。tooltip 需要在动画期间逐帧跟随，
+  // 否则卡片已经前移，浮层仍会停留在原来的纵向位置。
+  const syncCategoryTooltip = useCallback((
+    videoId: number,
+    element: HTMLDivElement,
+    duration = 460,
+  ) => {
+    stopCategoryTooltipSync();
+    const startedAt = performance.now();
+    const update = () => {
+      if (!element.isConnected) {
+        categoryTooltipSyncFrame.current = null;
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      setCategoryTooltipTarget((current) => {
+        if (!current || current.videoId !== videoId || current.element !== element) return current;
+        const nextRect = {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+        };
+        const unchanged = Math.abs(current.rect.left - nextRect.left) < 0.5
+          && Math.abs(current.rect.top - nextRect.top) < 0.5
+          && Math.abs(current.rect.width - nextRect.width) < 0.5
+          && Math.abs(current.rect.height - nextRect.height) < 0.5;
+        return unchanged ? current : { ...current, rect: nextRect };
+      });
+      if (performance.now() - startedAt < duration) {
+        categoryTooltipSyncFrame.current = window.requestAnimationFrame(update);
+      } else {
+        categoryTooltipSyncFrame.current = null;
+      }
+    };
+    categoryTooltipSyncFrame.current = window.requestAnimationFrame(update);
+  }, [stopCategoryTooltipSync]);
 
   const showCategoryTooltip = useCallback((video: Video, element: HTMLDivElement) => {
     clearCategoryTooltipHideTimer();
@@ -437,7 +503,85 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
         height: rect.height,
       },
     });
-  }, [clearCategoryTooltipHideTimer]);
+    syncCategoryTooltip(video.id, element);
+  }, [clearCategoryTooltipHideTimer, syncCategoryTooltip]);
+
+  // 分类后卡片会从当前列表消失。沿用原卡片的位置寻找下一张卡片，
+  // 让浮层自动接管，连续点击同一个分类时不需要反复移入移出。
+  const continueCategoryTooltip = useCallback((
+    previousVideoId: number,
+    previousRect: { left: number; top: number; width: number; height: number },
+  ) => {
+    const anchorX = previousRect.left + previousRect.width / 2;
+    const anchorY = previousRect.top + previousRect.height / 2;
+    let attempts = 0;
+    const seekNext = () => {
+      window.requestAnimationFrame(() => {
+        attempts += 1;
+        const previousElement = cardEls.current.get(previousVideoId);
+        const previousStillVisible = previousElement?.isConnected
+          && videosRef.current.some((video) => video.id === previousVideoId);
+        if (previousStillVisible) {
+          const previousVideo = videosRef.current.find((video) => video.id === previousVideoId);
+          if (previousVideo && previousElement) showCategoryTooltip(previousVideo, previousElement);
+          return;
+        }
+
+        const candidates = Array.from(cardEls.current.entries())
+          .map(([videoId, element]) => ({ videoId, element }))
+          .filter((item): item is { videoId: number; element: HTMLDivElement } => (
+            item.videoId !== previousVideoId && Boolean(item.element?.isConnected)
+          ))
+          .map(({ videoId, element }) => {
+            const rect = element.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const containsAnchor = anchorX >= rect.left
+              && anchorX <= rect.right
+              && anchorY >= rect.top
+              && anchorY <= rect.bottom;
+            return {
+              videoId,
+              element,
+              containsAnchor,
+              distance: Math.abs(centerX - anchorX) * 2 + Math.abs(centerY - anchorY),
+            };
+          })
+          .sort((first, second) => (
+            Number(second.containsAnchor) - Number(first.containsAnchor)
+            || first.distance - second.distance
+          ));
+        const next = candidates[0];
+        const nextVideo = next && videosRef.current.find((video) => video.id === next.videoId);
+        if (next && nextVideo) {
+          showCategoryTooltip(nextVideo, next.element);
+          return;
+        }
+        if (attempts < 4) {
+          seekNext();
+        } else {
+          setCategoryTooltipTarget(null);
+        }
+      });
+    };
+    seekNext();
+  }, [showCategoryTooltip]);
+
+  const applyCategoryFromTooltip = useCallback(async (
+    videoId: number,
+    categoryId: number | null,
+    targetRect: { left: number; top: number; width: number; height: number },
+  ) => {
+    if (!onSetOrganizeCategory || categoryActionBusy) return;
+    setCategoryActionBusy(true);
+    try {
+      const result = await onSetOrganizeCategory(videoId, categoryId);
+      if (result === false) return;
+      continueCategoryTooltip(videoId, targetRect);
+    } finally {
+      setCategoryActionBusy(false);
+    }
+  }, [categoryActionBusy, continueCategoryTooltip, onSetOrganizeCategory]);
 
   const refreshCategoryTooltipPosition = useCallback(() => {
     const target = categoryTooltipTarget;
@@ -463,27 +607,38 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     clearCategoryTooltipHideTimer();
     categoryTooltipHideTimer.current = window.setTimeout(() => {
       categoryTooltipHideTimer.current = null;
+      stopCategoryTooltipSync();
       setCategoryTooltipTarget(null);
     }, 140);
-  }, [clearCategoryTooltipHideTimer]);
+  }, [clearCategoryTooltipHideTimer, stopCategoryTooltipSync]);
 
   useEffect(() => () => {
     clearCategoryTooltipHideTimer();
-  }, [clearCategoryTooltipHideTimer]);
+    stopCategoryTooltipSync();
+  }, [clearCategoryTooltipHideTimer, stopCategoryTooltipSync]);
 
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setContextMenu(null);
+    };
     window.addEventListener('click', close);
     window.addEventListener('scroll', close, true);
-    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [contextMenu]);
 
   useEffect(() => {
     if (!selectionMode) return;
     clearCategoryTooltipHideTimer();
+    stopCategoryTooltipSync();
     setCategoryTooltipTarget(null);
-  }, [selectionMode, clearCategoryTooltipHideTimer]);
+  }, [selectionMode, clearCategoryTooltipHideTimer, stopCategoryTooltipSync]);
 
   // Tooltip 使用 fixed + body portal，但卡片会随内部滚动移动，因此需要同步更新位置。
   useEffect(() => {
@@ -861,13 +1016,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     }
   };
 
-  const handleBatchDelete = () => {
-    if (selectedIds.size === 0) return;
-    onBatchUnfavorite(Array.from(selectedIds));
-    updateSelectedIds(new Set());
-    updateSelectionMode(false);
-  };
-
   const handleBatchCategory = async (categoryId: number | null) => {
     if (!onBatchSetOrganizeCategory || selectedIds.size === 0 || batchActionBusy) return;
     setBatchActionBusy(true);
@@ -904,128 +1052,6 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       }}
       style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}
     >
-      {/* 批量操作工具栏 */}
-      {videos.length > 0 && !selectionMode && (showFavorited || (onBatchSetOrganizeCategory && !onSelectionModeChange)) && (
-        <div style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-          background: 'var(--glass-bg-strong)',
-          backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-          WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-          borderRadius: 8,
-          padding: '8px 12px',
-          marginBottom: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          boxShadow: 'var(--shadow), var(--glass-highlight)',
-          border: '1px solid var(--glass-border)',
-          }}>
-          {!selectionMode ? (
-            <button
-              onClick={() => updateSelectionMode(true)}
-              style={{
-                padding: '6px 12px',
-                fontSize: 13,
-                background: 'var(--accent)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontWeight: 500,
-              }}
-            >
-              {showFavorited ? '批量管理' : '批量整理'}
-            </button>
-          ) : (
-            <>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                已选择 {selectedIds.size} 项
-              </span>
-              <button
-                onClick={() => updateSelectedIds(new Set(videos.filter((video) => !hiddenIds.has(video.id)).map(v => v.id)))}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  background: 'var(--bg-card)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                }}
-              >
-                全选
-              </button>
-              {onBatchSetOrganizeCategory && (
-                <>
-                  <select
-                    defaultValue=""
-                    disabled={selectedIds.size === 0}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value !== '') void handleBatchCategory(value === 'none' ? null : Number(value));
-                      event.target.value = '';
-                    }}
-                    title="给选中的文件设置同一个整理分类"
-                    style={{
-                      minWidth: 138,
-                      padding: '6px 9px',
-                      fontSize: 13,
-                      background: 'var(--bg-card)',
-                      color: selectedIds.size > 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    <option value="">批量设置分类</option>
-                    <option value="none">未分类</option>
-                    {organizeCategories.map((category) => (
-                      <option key={category.id} value={category.id}>{category.name}</option>
-                    ))}
-                  </select>
-                </>
-              )}
-              {showFavorited && (
-                <button
-                  onClick={handleBatchDelete}
-                  disabled={selectedIds.size === 0}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: 13,
-                    background: selectedIds.size > 0 ? '#ef4444' : 'var(--bg-card)',
-                    color: selectedIds.size > 0 ? '#fff' : 'var(--text-secondary)',
-                    border: 'none',
-                    borderRadius: 6,
-                    cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                    fontWeight: 500,
-                    opacity: selectedIds.size > 0 ? 1 : 0.5,
-                  }}
-                >
-                  移出收藏
-                </button>
-              )}
-              <button
-                onClick={() => { updateSelectionMode(false); updateSelectedIds(new Set()); }}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  background: 'var(--bg-card)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  marginLeft: 'auto',
-                }}
-              >
-                取消
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
       {videos.length === 0 ? (
         <div className="video-grid-empty">
           <div className="empty-state-icon"><Film size={25} strokeWidth={1.7} /></div>
@@ -1068,9 +1094,9 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 onCategoryTooltipEnter={!selectionMode ? showCategoryTooltip : undefined}
                 onCategoryTooltipLeave={!selectionMode ? scheduleCategoryTooltipHide : undefined}
                 onContextMenu={(video, event) => {
-                  console.log('Context menu triggered for video:', video.name, 'at', event.clientX, event.clientY);
                   setContextMenu({ video, x: event.clientX, y: event.clientY });
                 }}
+                lastPointerPosRef={lastPointerPos}
               />
             );
           })}
@@ -1124,8 +1150,13 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 <button
                   onClick={(event) => {
                     event.stopPropagation();
-                    onSetOrganizeCategory(targetVideo.id, null);
+                    void applyCategoryFromTooltip(
+                      targetVideo.id,
+                      null,
+                      categoryTooltipTarget.rect,
+                    );
                   }}
+                  disabled={categoryActionBusy}
                   title="取消分类"
                   style={{
                     flex: '0 0 auto',
@@ -1148,8 +1179,13 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                     key={category.id}
                     onClick={(event) => {
                       event.stopPropagation();
-                      onSetOrganizeCategory(targetVideo.id, category.id);
+                      void applyCategoryFromTooltip(
+                        targetVideo.id,
+                        category.id,
+                        categoryTooltipTarget.rect,
+                      );
                     }}
+                    disabled={categoryActionBusy}
                     title={`标记为「${category.name}」`}
                     aria-label={`设置为分类：${category.name}`}
                     style={{
@@ -1182,18 +1218,19 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
             );
           })()}
           {contextMenu && (() => {
-            console.log('Rendering context menu at:', contextMenu.x, contextMenu.y);
             return createPortal(
               <div
                 role="menu"
+                className="app-context-menu"
                 onClick={(event) => event.stopPropagation()}
-                style={{ position: 'fixed', left: Math.min(contextMenu.x, window.innerWidth - 230), top: Math.min(contextMenu.y, window.innerHeight - 60), zIndex: 10000, minWidth: 210, padding: 5, borderRadius: 9, background: 'var(--glass-bg-strong)', border: '1px solid var(--glass-border)', boxShadow: '0 12px 30px rgba(0,0,0,.35)', backdropFilter: 'blur(18px)' }}
+                style={{ left: Math.min(contextMenu.x, window.innerWidth - 238), top: Math.min(contextMenu.y, window.innerHeight - 70) }}
               >
                 <button
                   role="menuitem"
+                  className="app-context-menu-item"
                   onClick={() => { void window.electronAPI.openVideoDirectory(contextMenu.video.path); setContextMenu(null); }}
-                  style={{ width: '100%', padding: '9px 11px', border: 0, borderRadius: 6, background: 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer', fontSize: 13 }}
                 >
+                  <FolderOpen size={15} />
                   在资源管理器中打开视频目录
                 </button>
               </div>,

@@ -925,6 +925,178 @@ textarea:focus-visible,
   -webkit-backdrop-filter: blur(18px) saturate(1.08);
 }
 
+/* 应用内反馈层：替代 Windows 原生 alert/confirm，保持玻璃拟态和主题一致。 */
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 6, 12, 0.48);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: app-feedback-fade-in 160ms ease-out;
+}
+
+.app-dialog {
+  display: flex;
+  gap: 14px;
+  width: min(480px, calc(100vw - 40px));
+  padding: 20px;
+  color: var(--text-primary);
+  border: 1px solid var(--line-default);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .38), var(--glass-highlight);
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  animation: app-feedback-dialog-in 180ms cubic-bezier(.2,.8,.2,1);
+}
+
+.app-dialog-icon {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
+.app-dialog-warning .app-dialog-icon { color: var(--warning, #f59e0b); background: color-mix(in srgb, #f59e0b 14%, transparent); }
+.app-dialog-danger .app-dialog-icon { color: var(--danger, #ef6672); background: color-mix(in srgb, #ef6672 14%, transparent); }
+.app-dialog-success .app-dialog-icon { color: var(--success, #43d39e); background: color-mix(in srgb, #43d39e 14%, transparent); }
+.app-dialog-content { min-width: 0; flex: 1; }
+.app-dialog-title-row { display: flex; align-items: flex-start; gap: 12px; }
+.app-dialog-title-row h2 { margin: 0; flex: 1; font-size: 17px; line-height: 1.3; letter-spacing: -.01em; }
+.app-dialog-close,
+.app-toast button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  color: var(--text-tertiary);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.app-dialog-close:hover,
+.app-toast button:hover { color: var(--text-primary); background: var(--bg-hover); }
+.app-dialog-message { margin: 10px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; white-space: pre-line; }
+.app-choice-dialog { width: min(520px, calc(100vw - 40px)); }
+.app-choice-options { display: grid; gap: 8px; margin-top: 18px; }
+.app-choice-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  color: var(--text-primary);
+  text-align: left;
+  border: 1px solid var(--line-default);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  cursor: pointer;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+.app-choice-option:hover { border-color: color-mix(in srgb, var(--accent) 52%, var(--line-default)); background: var(--bg-hover); transform: translateY(-1px); }
+.app-choice-option-icon { display: grid; width: 34px; height: 34px; place-items: center; color: var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.app-choice-option-copy { display: grid; gap: 2px; }
+.app-choice-option-copy strong { font-size: 13px; font-weight: 650; }
+.app-choice-option-copy small { color: var(--text-secondary); font-size: 11px; }
+.app-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.app-dialog-button {
+  min-height: 34px;
+  padding: 0 14px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line-default);
+  border-radius: 9px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+.app-dialog-button:hover { border-color: color-mix(in srgb, var(--accent) 48%, var(--line-default)); background: var(--bg-hover); }
+.app-dialog-button:active { transform: translateY(1px); }
+.app-dialog-button-primary { color: var(--accent-contrast); border-color: var(--accent); background: var(--accent); font-weight: 650; }
+.app-dialog-button-primary:hover { color: var(--accent-contrast); border-color: var(--accent-hover); background: var(--accent-hover); }
+.app-dialog-button-primary.is-danger { color: #fff; border-color: #c94b58; background: #c94b58; }
+.app-dialog-button-primary.is-danger:hover { border-color: #dd5e6b; background: #dd5e6b; }
+
+.app-toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 12500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: min(360px, calc(100vw - 44px));
+  max-width: min(520px, calc(100vw - 44px));
+  padding: 11px 12px 11px 14px;
+  color: var(--text-primary);
+  border: 1px solid var(--line-default);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  box-shadow: var(--shadow-md), var(--glass-highlight);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  font-size: 13px;
+  animation: app-feedback-toast-in 200ms cubic-bezier(.2,.8,.2,1);
+}
+.app-toast span { flex: 1; white-space: pre-line; line-height: 1.45; }
+.app-toast-success > svg:first-child { color: var(--success, #43d39e); }
+.app-toast-warning > svg:first-child { color: var(--warning, #f59e0b); }
+.app-toast-danger > svg:first-child { color: var(--danger, #ef6672); }
+.app-toast-info > svg:first-child { color: var(--accent); }
+
+.app-context-menu {
+  position: fixed;
+  z-index: 11000;
+  min-width: 218px;
+  padding: 6px;
+  color: var(--text-primary);
+  border: 1px solid var(--line-default);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  box-shadow: 0 16px 40px rgba(0,0,0,.3), var(--glass-highlight);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  animation: app-feedback-menu-in 130ms ease-out;
+}
+.app-context-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  min-height: 35px;
+  padding: 0 10px;
+  color: var(--text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.app-context-menu-item:hover,
+.app-context-menu-item:focus-visible { outline: 0; background: var(--bg-hover); }
+.app-context-menu-item svg { color: var(--text-secondary); flex: 0 0 auto; }
+.app-context-menu-item.is-danger { color: var(--danger, #ef6672); }
+.app-context-menu-item.is-danger svg { color: currentColor; }
+.app-context-menu-separator { height: 1px; margin: 5px 4px; background: var(--line-default); }
+
+@keyframes app-feedback-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes app-feedback-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes app-feedback-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes app-feedback-menu-in { from { opacity: 0; transform: translateY(-3px) scale(.98); } to { opacity: 1; transform: none; } }
+
 /* ========================================================================
    内容卡片、空状态和可复用媒体组件
    ======================================================================== */

@@ -229,7 +229,16 @@ export interface ElectronAPI {
   toggleMarkedForDeletion: (videoId: number) => Promise<{ success: boolean; marked?: boolean; error?: string }>;
   getMarkedForDeletionCount: () => Promise<number>;
   batchUnmarkForDeletion: (videoIds: number[]) => Promise<{ success: boolean; error?: string }>;
-  batchDeleteVideos: (videoIds: number[]) => Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }>;
+  batchDeleteVideos: (videoIds: number[]) => Promise<{
+    success: boolean;
+    deletedCount?: number;
+    totalCount?: number;
+    deletedFolderCount?: number;
+    deletedFolders?: string[];
+    errors?: string[];
+    folderCleanupErrors?: string[];
+    error?: string;
+  }>;
   deleteUnfavoritedVideosInFolder: (folderId: number) => Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }>;
   getOrganizeCategories: () => Promise<OrganizeCategory[]>;
   createOrganizeCategory: (name: string) => Promise<{ success: boolean; category?: OrganizeCategory; error?: string }>;
@@ -237,8 +246,10 @@ export interface ElectronAPI {
   deleteOrganizeCategory: (categoryId: number) => Promise<{ success: boolean; error?: string }>;
   setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; error?: string }>;
   batchSetVideoOrganizeCategory: (videoIds: number[], categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; updatedCount?: number; error?: string }>;
-  organizeFolders: (folderIds: number[], destinationRootPath?: string) => Promise<{
+  organizeFolders: (folderIds: number[], destinationRootPath?: string, confirmExisting?: boolean) => Promise<{
     success: boolean;
+    requiresConfirmation?: boolean;
+    existingDestinations?: string[];
     movedCount?: number;
     skippedCount?: number;
     overwrittenCount?: number;

@@ -14,8 +14,9 @@ import { ShortsFeed } from './components/ShortsFeed';
 import { MarkedForDeletionManager } from './components/MarkedForDeletionManager';
 import { LibraryHealth } from './components/LibraryHealth';
 import { Overview } from './components/Overview';
+import { useAppFeedback } from './components/AppFeedback';
 import { isAudioFile, isTextFile, isComicExt, isPlayableInBrowser } from './media';
-import { Activity, Eye, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Trash2 } from 'lucide-react';
+import { Activity, Eye, FileVideo, FolderOpen, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Trash2 } from 'lucide-react';
 
 // 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
 export const CARD_MIN = 120;
@@ -100,6 +101,11 @@ function isOrganizedVideo(
 }
 
 function App() {
+  const { confirm: confirmDialog, choose, notify } = useAppFeedback();
+  const ask = useCallback((title: string, message: string, tone: 'info' | 'warning' | 'danger' = 'warning', confirmLabel?: string) => (
+    confirmDialog({ title, message, tone, confirmLabel: confirmLabel ?? (tone === 'danger' ? '永久删除' : '继续') })
+  ), [confirmDialog]);
+
   // 数据
   const [videos, setVideos] = useState<Video[]>([]);
   const [regeneratingThumbnailId, setRegeneratingThumbnailId] = useState<number | null>(null);
@@ -533,14 +539,22 @@ function App() {
 
   // 导入视频文件或文件夹
   const handleImport = async () => {
-    const { canceled, kind, paths } = await api.selectImportSource();
+    const importKind = await choose('导入媒体', [
+      { value: 'files', label: '导入视频文件', description: '选择一个或多个视频、音频文件', icon: <FileVideo size={17} /> },
+      { value: 'folders', label: '导入文件夹', description: '扫描文件夹及其子目录中的媒体', icon: <FolderOpen size={17} /> },
+    ], '选择你要加入媒体库的内容。');
+    if (!importKind) return;
+    const selection = importKind === 'files'
+      ? await api.selectVideoFiles()
+      : await api.selectFolders();
+    const { canceled, paths } = selection;
     if (canceled || paths.length === 0) return;
     setImporting(true);
     setImportProgress(null);
     try {
-      if (kind === 'files') {
+      if (importKind === 'files') {
         await api.importVideoFiles(paths);
-      } else if (kind === 'folders') {
+      } else if (importKind === 'folders') {
         await api.importFolders(paths);
       }
       setSelectedFolderIds([]);
@@ -549,7 +563,7 @@ function App() {
       await loadOverview();
     } catch (error) {
       console.error('[import] failed', error);
-      alert(`导入失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`导入失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     } finally {
       setImporting(false);
       setImportProgress(null);
@@ -561,7 +575,7 @@ function App() {
     if (result.canceled || !result.path) return;
     const imageUrl = await api.getBackgroundImageUrl(result.path);
     if (!imageUrl) {
-      alert('无法读取这张图片，请选择常见的 JPG、PNG、WebP 或 GIF 图片。');
+      notify('无法读取这张图片，请选择常见的 JPG、PNG、WebP 或 GIF 图片。', 'warning');
       return;
     }
     setWallpaperPath(result.path);
@@ -616,11 +630,11 @@ function App() {
     try {
       const result = await api.regenerateThumbnail(videoId);
       if (!result.success) {
-        alert(`缩略图生成失败：${result.error ?? '未知错误'}`);
+        notify(`缩略图生成失败：${result.error ?? '未知错误'}`, 'danger');
       }
     } catch (error) {
       console.error('[thumbnail] regenerate failed', error);
-      alert(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     } finally {
       setRegeneratingThumbnailId(null);
     }
@@ -656,7 +670,7 @@ function App() {
     try {
       const result = await api.refreshImportedFolders();
       if (!result.success) {
-        alert(`刷新失败：${result.error ?? '未知错误'}`);
+        notify(`刷新失败：${result.error ?? '未知错误'}`, 'danger');
         return;
       }
 
@@ -670,10 +684,10 @@ function App() {
           ? `未找到导入目录：${missingRoots.slice(0, 2).join('、')}${missingRoots.length > 2 ? ' 等' : ''}`
           : '',
       ].filter(Boolean).join('，');
-      alert(`刷新完成：${details}。`);
+      notify(`刷新完成：${details}。`, 'success');
     } catch (error) {
       console.error('[refresh] failed', error);
-      alert(`刷新失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`刷新失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     } finally {
       setRefreshing(false);
       setImporting(false);
@@ -711,7 +725,7 @@ function App() {
     }
     const result = await api.playVideo(video.path, { alertOnError: false });
     if (!result.success && result.error) {
-      alert(`播放失败：${result.error}`);
+      notify(`播放失败：${result.error}`, 'danger');
       return;
     }
     // mpv 启动时就会记录“最近播放”，概览页可在返回后立即更新。
@@ -720,7 +734,7 @@ function App() {
 
   // 清除所有数据（视频、目录、标签、缩略图）
   const handleClearCache = async () => {
-    if (!confirm('清除所有数据？\n\n这将删除：\n• 所有视频记录和目录\n• 所有标签\n• 所有缩略图文件\n\n主题和界面设置不受影响，视频文件本身不会被删除。')) return;
+    if (!await ask('清除所有数据？', '这将删除所有视频记录、目录、标签和缩略图文件。主题与界面设置不受影响，视频文件本身不会被删除。', 'danger', '清除数据')) return;
     await api.stopVideo();
     const result = await api.clearCache();
     if (result.success) {
@@ -744,9 +758,9 @@ function App() {
       setLibraryHealth(null);
       setHealthError(null);
       setSettingsOpen(false);
-      alert('已清除所有数据，重新导入视频即可恢复。');
+      notify('已清除所有数据，重新导入视频即可恢复。', 'success');
     } else {
-      alert(`清除失败：${result.error}`);
+      notify(`清除失败：${result.error}`, 'danger');
     }
   };
 
@@ -756,10 +770,10 @@ function App() {
     try {
       const result = await api.generateThumbnails();
       if (!result.success) {
-        alert('缩略图生成任务启动失败。');
+        notify('缩略图生成任务启动失败。', 'danger');
       }
     } catch (error) {
-      alert(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     } finally {
       // 生成队列在主进程后台运行；健康中心会在下一次检查时显示最新结果。
       setGeneratingHealthThumbnails(false);
@@ -769,36 +783,31 @@ function App() {
 
   // 删除单个目录（含子目录）：删除文件记录、缩略图、标签关联，保留源文件
   const handleDeleteFolder = async (folder: Folder) => {
-    if (!confirm(
-      `删除目录「${folder.name}」？\n\n` +
-      `这将删除该目录及其所有子目录下：\n` +
-      `• 文件的导入记录\n` +
-      `• 已生成的缩略图缓存\n` +
-      `• 相关的标签关联（不再被使用的标签会一并清理）\n\n` +
-      `磁盘上的文件本身不会被删除，重新导入即可恢复。`
+    if (!await ask(
+      `删除目录「${folder.name}」？`,
+      '这将删除该目录及其所有子目录下的文件导入记录、缩略图缓存和相关标签关联。磁盘上的文件本身不会被删除，重新导入即可恢复。',
     )) return;
     const result = await api.deleteFolder(folder.id);
     if (result.success) {
       setSelectedFolderIds((prev) => prev.filter((id) => id !== folder.id));
       await refreshVisibleData();
       await loadOverview();
-      alert(`已删除目录「${folder.name}」：清理了 ${result.videoCount ?? 0} 条文件记录、${result.thumbCount ?? 0} 张缩略图。`);
+      notify(`已删除目录「${folder.name}」：清理了 ${result.videoCount ?? 0} 条文件记录、${result.thumbCount ?? 0} 张缩略图。`, 'success');
     } else {
-      alert(`删除失败：${result.error}`);
+      notify(`删除失败：${result.error}`, 'danger');
     }
   };
 
   // 隐藏目录及其子目录：只改变显示状态，不删除磁盘文件或库内记录。
   const handleHideFolder = async (folder: Folder) => {
-    if (!confirm(
-      `隐藏目录「${folder.name}」？\n\n` +
-      `该目录及其所有子目录中的文件将不再出现在目录树、文件列表和统计中。\n` +
-      `硬盘文件、导入记录、收藏、分类和缩略图都会保留，可在设置中恢复显示。`
+    if (!await ask(
+      `隐藏目录「${folder.name}」？`,
+      '该目录及所有子目录中的文件将不再出现在目录树、文件列表和统计中。硬盘文件、导入记录、收藏、分类和缩略图都会保留，可在设置中恢复显示。',
     )) return;
 
     const result = await api.setFolderHidden(folder.id, true);
     if (!result.success) {
-      alert(`隐藏目录失败：${result.error ?? '未知错误'}`);
+      notify(`隐藏目录失败：${result.error ?? '未知错误'}`, 'danger');
       return;
     }
 
@@ -819,7 +828,7 @@ function App() {
   const handleRestoreHiddenFolder = async (folder: Folder) => {
     const result = await api.setFolderHidden(folder.id, false);
     if (!result.success) {
-      alert(`恢复目录失败：${result.error ?? '未知错误'}`);
+      notify(`恢复目录失败：${result.error ?? '未知错误'}`, 'danger');
       return;
     }
     await refreshVisibleData();
@@ -835,10 +844,10 @@ function App() {
     const scope = ids.length === 1
       ? `目录 ${names} 及其所有子目录`
       : `选中的 ${ids.length} 个目录及其所有子目录`;
-    if (!confirm(
-      `永久删除${scope}？\n\n` +
-      `将从硬盘删除目录中的所有文件和文件夹，同时清理对应的文件导入记录、缩略图和标签关联。\n` +
-      `已删除的数据无法恢复，请确认重要文件已经备份。`
+    if (!await ask(
+      `永久删除${scope}？`,
+      '将从硬盘删除目录中的所有文件和文件夹，同时清理对应的文件导入记录、缩略图和标签关联。已删除的数据无法恢复，请确认重要文件已经备份。',
+      'danger',
     )) return;
 
     const result = await api.deleteFoldersFromDisk(ids);
@@ -848,27 +857,27 @@ function App() {
     await loadOverview();
 
     if (result.error) {
-      alert(`永久删除失败：${result.error}`);
+      notify(`永久删除失败：${result.error}`, 'danger');
       return;
     }
     if (result.errors && result.errors.length > 0) {
-      alert(
+      notify(
         `已删除 ${result.deletedFolderCount ?? 0} 个目录，清理 ${result.videoCount ?? 0} 条文件记录。\n\n` +
-        `${result.errors.join('\n')}`
+        `${result.errors.join('\n')}`, 'warning'
       );
       return;
     }
-    alert(
+    notify(
       `已永久删除 ${result.deletedFolderCount ?? 0} 个目录，` +
-      `清理 ${result.videoCount ?? 0} 条文件记录、${result.thumbCount ?? 0} 张缩略图。`
+      `清理 ${result.videoCount ?? 0} 条文件记录、${result.thumbCount ?? 0} 张缩略图。`, 'success'
     );
   };
 
-  const handleSetOrganizeCategory = async (videoId: number, categoryId: number | null) => {
+  const handleSetOrganizeCategory = async (videoId: number, categoryId: number | null): Promise<boolean> => {
     const result = await api.setVideoOrganizeCategory(videoId, categoryId);
     if (!result.success) {
-      alert(`设置整理分类失败：${result.error ?? '未知错误'}`);
-      return;
+      notify(`设置整理分类失败：${result.error ?? '未知错误'}`, 'danger');
+      return false;
     }
     const currentVideo = videos.find((item) => item.id === videoId)
       ?? organizePreviewVideos.find((item) => item.id === videoId);
@@ -903,6 +912,7 @@ function App() {
       await loadVideos();
     }
     await loadOrganizePreview();
+    return true;
   };
 
   const handleBatchSetOrganizeCategory = async (videoIds: number[], categoryId: number | null): Promise<boolean> => {
@@ -910,7 +920,7 @@ function App() {
     if (ids.length === 0) return false;
     const result = await api.batchSetVideoOrganizeCategory(ids, categoryId);
     if (!result.success) {
-      alert(`批量设置整理分类失败：${result.error ?? '未知错误'}`);
+      notify(`批量设置整理分类失败：${result.error ?? '未知错误'}`, 'danger');
       return false;
     }
     setVideos((prev) => prev.map((video) => (
@@ -947,7 +957,7 @@ function App() {
   const handleCreateOrganizeCategory = async (name: string) => {
     const result = await api.createOrganizeCategory(name);
     if (!result.success) {
-      alert(`新建分类失败：${result.error ?? '未知错误'}`);
+      notify(`新建分类失败：${result.error ?? '未知错误'}`, 'danger');
       return;
     }
     await refreshOrganizeCategories();
@@ -956,7 +966,7 @@ function App() {
   const handleDeleteOrganizeCategory = async (categoryId: number) => {
     const result = await api.deleteOrganizeCategory(categoryId);
     if (!result.success) {
-      alert(`删除分类失败：${result.error ?? '未知错误'}`);
+      notify(`删除分类失败：${result.error ?? '未知错误'}`, 'danger');
       return;
     }
     setVideos((prev) => prev.map((video) => (
@@ -975,22 +985,30 @@ function App() {
   const handleOrganizeFolder = async () => {
     const categorizedCount = organizePreviewVideos.filter((video) => video.organize_category_id != null).length;
     if (categorizedCount === 0) {
-      alert('还没有已标记分类的视频。请先在媒体卡片上完成分类。');
+      notify('还没有已标记分类的视频。请先在媒体卡片上完成分类。', 'info');
       return;
     }
-    if (!confirm(
-      `确认整理全部已标记分类的视频？\n\n` +
-      `当前共有 ${categorizedCount} 个视频已完成分类。\n` +
-      `程序会按分类创建子文件夹并移动这些视频。\n` +
-      `同名目标文件将直接覆盖，跨盘文件会按盘符分开整理。\n` +
-      `未分类视频不会移动，收藏和原始标签会保留。`
+    if (!await ask(
+      '整理全部已标记分类的视频？',
+      `当前共有 ${categorizedCount} 个视频已完成分类。程序会按分类创建子文件夹并移动这些视频；同名目标文件会直接覆盖，跨盘文件会按盘符分开整理，未分类视频不会移动。`,
+      'warning',
     )) return;
 
     setOrganizing(true);
     try {
-      const result = await api.organizeFolders([], organizeOutputPath ?? undefined);
+      let result = await api.organizeFolders([], organizeOutputPath ?? undefined);
+      if (result.requiresConfirmation && result.existingDestinations?.length) {
+        const destinationList = result.existingDestinations.join('\n');
+        const shouldContinue = await ask(
+          '发现整理目录已存在',
+          `${destinationList}\n\n是否继续整理到该目录？`,
+          'warning',
+        );
+        if (!shouldContinue) return;
+        result = await api.organizeFolders([], organizeOutputPath ?? undefined, true);
+      }
       if (!result.success) {
-        alert(`整理失败：${result.error ?? '未知错误'}`);
+        notify(`整理失败：${result.error ?? '未知错误'}`, 'danger');
         return;
       }
       // 全库整理后，旧的目录筛选可能已经指向整理前的目录；
@@ -1024,9 +1042,10 @@ function App() {
       const deletedSourceFoldersDetail = result.deletedSourceFolders
         ? `\n已删除 ${result.deletedSourceFolders} 个空源文件夹。`
         : '';
-      alert(
+      notify(
         `整理完成：移动 ${result.movedCount ?? 0} 个，跳过 ${result.skippedCount ?? 0} 个。` +
         `${importDetail}${missingDetail}${crossDriveDetail}${destinationDetail}${overwriteDetail}${deletedSourceFoldersDetail}${detail}`,
+        result.errors?.length ? 'warning' : 'success',
       );
     } finally {
       setOrganizing(false);
@@ -1036,25 +1055,25 @@ function App() {
 
   // 从磁盘删除目录及其子目录内所有未收藏的文件，收藏文件不会受影响。
   const handleDeleteUnfavoritedVideos = async (folder: Folder) => {
-    if (!confirm(
-      `确认删除目录「${folder.name}」及其子目录中的所有未收藏文件？\n\n` +
-      `这会从磁盘永久删除未收藏的文件，并清理对应的库记录和缩略图。\n` +
-      `已收藏的文件不会被删除，此操作无法撤销。`
+    if (!await ask(
+      `删除目录「${folder.name}」及其子目录中的未收藏文件？`,
+      '这会从磁盘永久删除未收藏文件，并清理对应的库记录和缩略图。已收藏文件不会被删除，此操作无法撤销。',
+      'danger',
     )) return;
 
     const result = await api.deleteUnfavoritedVideosInFolder(folder.id);
     if (!result.success) {
-      alert(`删除未收藏文件失败：${result.error ?? '未知错误'}`);
+      notify(`删除未收藏文件失败：${result.error ?? '未知错误'}`, 'danger');
       return;
     }
     if ((result.totalCount ?? 0) === 0) {
-      alert(`目录「${folder.name}」及其子目录中没有可删除的未收藏文件。`);
+      notify(`目录「${folder.name}」及其子目录中没有可删除的未收藏文件。`, 'info');
       return;
     }
     const detail = result.errors && result.errors.length > 0
       ? `\n\n有 ${result.errors.length} 个文件删除失败，仍保留在列表中。`
       : '';
-    alert(`已从磁盘删除 ${result.deletedCount ?? 0}/${result.totalCount ?? 0} 个未收藏文件。${detail}`);
+    notify(`已从磁盘删除 ${result.deletedCount ?? 0}/${result.totalCount ?? 0} 个未收藏文件。${detail}`, result.errors?.length ? 'warning' : 'success');
     await refreshVisibleData();
     await loadOverview();
   };
@@ -1086,7 +1105,7 @@ function App() {
   // 批量取消收藏
   const handleBatchUnfavorite = async (videoIds: number[]): Promise<boolean> => {
     if (videoIds.length === 0) return false;
-    if (!confirm(`确认将 ${videoIds.length} 个文件移出收藏夹？`)) return false;
+    if (!await ask('移出收藏夹？', `确认将 ${videoIds.length} 个文件移出收藏夹？`)) return false;
     const result = await api.batchUnfavorite(videoIds);
     if (result.success) {
       // 更新本地视频列表
@@ -1102,7 +1121,7 @@ function App() {
       await loadOverview();
       return true;
     } else {
-      alert(`批量取消收藏失败：${result.error}`);
+      notify(`批量取消收藏失败：${result.error}`, 'danger');
       return false;
     }
   };
@@ -1261,7 +1280,8 @@ function App() {
   }, [fixedLayoutMode, loadVideos]);
 
   const batchOrganizeAvailable = activePage === 'library'
-    && mediaType === 'all'
+    && sidebarFolderTab === 'source'
+    && (mediaType === 'all' || mediaType === 'video')
     && !showFavorited
     && !showMarkedForDeletion
     && visibleVideos.length > 0;
@@ -1504,7 +1524,7 @@ function App() {
                     {selectedFolderIds.length > 0 && <span className="active-filter-chip">已筛选 {selectedFolderIds.length} 个文件夹</span>}
                     {search && <span className="active-filter-chip">搜索中</span>}
                     {batchActionAvailable && !batchSelectionMode && (
-                      <button className="batch-action-button" onClick={enterBatchSelection} title={showFavorited ? '批量管理收藏' : '批量整理全部媒体'}>
+                      <button className="batch-action-button" onClick={enterBatchSelection} title={showFavorited ? '批量管理收藏' : '批量整理当前列表中的视频'}>
                         <ListChecks size={15} strokeWidth={1.9} />
                         <span>{showFavorited ? '批量管理' : '批量整理'}</span>
                       </button>

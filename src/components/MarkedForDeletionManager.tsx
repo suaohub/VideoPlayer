@@ -3,6 +3,7 @@ import { Trash2, RotateCcw, Download, X } from 'lucide-react';
 import { Video } from '../types';
 import { api } from '../api';
 import { VideoGrid } from './VideoGrid';
+import { useAppFeedback } from './AppFeedback';
 
 interface MarkedForDeletionManagerProps {
   onClose: () => void;
@@ -10,6 +11,7 @@ interface MarkedForDeletionManagerProps {
 }
 
 export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeletionManagerProps) {
+  const { confirm: confirmDialog, notify } = useAppFeedback();
   const [videos, setVideos] = useState<Video[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -37,12 +39,12 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
     try {
       const result = await api.exportMarkedForDeletionList();
       if (result.success) {
-        alert(`已导出 ${result.count} 个文件名到：\n${result.path}`);
+        notify(`已导出 ${result.count} 个文件名到：\n${result.path}`, 'success');
       } else {
-        alert(`导出失败：${result.error}`);
+        notify(`导出失败：${result.error}`, 'danger');
       }
     } catch (error) {
-      alert(`导出失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`导出失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     } finally {
       setExporting(false);
     }
@@ -50,7 +52,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
 
   const handleRestore = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`确认恢复 ${selectedIds.size} 个文件到正常列表？`)) return;
+    if (!await confirmDialog({ title: '恢复文件？', message: `确认恢复 ${selectedIds.size} 个文件到正常列表？`, tone: 'info', confirmLabel: '恢复' })) return;
 
     try {
       const result = await api.batchUnmarkForDeletion(Array.from(selectedIds));
@@ -59,36 +61,46 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
         await loadVideos();
         onRefresh();
       } else {
-        alert(`恢复失败：${result.error}`);
+        notify(`恢复失败：${result.error}`, 'danger');
       }
     } catch (error) {
-      alert(`恢复失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`恢复失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     }
   };
 
   const handleDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(
-      `⚠️ 危险操作 ⚠️\n\n确认彻底删除 ${selectedIds.size} 个文件？\n\n这将从磁盘永久删除这些文件，无法恢复！`
-    )) return;
+    if (!await confirmDialog({
+      title: '永久删除文件？',
+      message: `确认彻底删除 ${selectedIds.size} 个文件？这将从磁盘永久删除这些文件，无法恢复。`,
+      tone: 'danger',
+      confirmLabel: '永久删除',
+    })) return;
 
     try {
       const result = await api.batchDeleteVideos(Array.from(selectedIds));
       if (result.success) {
-        const msg = `已删除 ${result.deletedCount}/${result.totalCount} 个文件`;
-        if (result.errors && result.errors.length > 0) {
-          alert(`${msg}\n\n部分文件删除失败：\n${result.errors.slice(0, 5).join('\n')}${result.errors.length > 5 ? '\n...' : ''}`);
+        const folderMsg = result.deletedFolderCount
+          ? `，同时清理 ${result.deletedFolderCount} 个空文件夹`
+          : '';
+        const msg = `已删除 ${result.deletedCount}/${result.totalCount} 个文件${folderMsg}`;
+        const cleanupErrors = [
+          ...(result.errors ?? []),
+          ...(result.folderCleanupErrors ?? []),
+        ];
+        if (cleanupErrors.length > 0) {
+          notify(`${msg}\n\n部分清理未完成：\n${cleanupErrors.slice(0, 5).join('\n')}${cleanupErrors.length > 5 ? '\n...' : ''}`, 'warning');
         } else {
-          alert(msg);
+          notify(msg, 'success');
         }
         setSelectedIds(new Set());
         await loadVideos();
         onRefresh();
       } else {
-        alert(`删除失败：${result.error}`);
+        notify(`删除失败：${result.error}`, 'danger');
       }
     } catch (error) {
-      alert(`删除失败：${error instanceof Error ? error.message : String(error)}`);
+      notify(`删除失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     }
   };
 

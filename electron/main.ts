@@ -635,7 +635,52 @@ function removeEmptyFolderRecords(folderPaths: string[]): void {
   remove();
 }
 
-ipcMain.handle('organize-folders', async (event, folderIds: number[], destinationRootPath?: string) => {
+/**
+ * 删除视频后，只清理本次成功删除的视频所属目录。
+ * 导入根目录和磁盘根目录始终保留，避免删除媒体库入口或整个盘符。
+ */
+function cleanupEmptyVideoFolders(targets: Array<{
+  folder_path: string | null;
+  folder_is_import_root: number;
+}>): { deletedFolders: string[]; errors: string[] } {
+  const folderCandidates = Array.from(new Map(
+    targets
+      .filter((target) => target.folder_path && !target.folder_is_import_root)
+      .map((target) => {
+        const folderPath = resolve(target.folder_path as string);
+        const key = process.platform === 'win32' ? folderPath.toLowerCase() : folderPath;
+        return [key, folderPath] as const;
+      }),
+  ).values()).sort((first, second) => second.length - first.length);
+  const deletedFolders: string[] = [];
+  const errors: string[] = [];
+
+  for (const folderPath of folderCandidates) {
+    // 盘符根目录（如 F:\）不是可清理的普通目录。
+    if (isSamePath(folderPath, pathVolumeRoot(folderPath))) continue;
+    if (!existsSync(folderPath)) continue;
+
+    try {
+      if (!statSync(folderPath).isDirectory()) continue;
+      if (readdirSync(folderPath).length !== 0) continue;
+      rmdirSync(folderPath);
+      if (existsSync(folderPath)) {
+        errors.push(`${folderPath}: 删除后文件夹仍然存在，可能被其他程序占用`);
+        continue;
+      }
+      deletedFolders.push(folderPath);
+    } catch (error) {
+      errors.push(`${folderPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (deletedFolders.length > 0) {
+    removeEmptyFolderRecords(deletedFolders);
+  }
+  return { deletedFolders, errors };
+}
+
+ipcMain.handle('organize-folders', async (event, folderIds: number[], destinationRootPath?: string, confirmExisting = false) => {
   try {
     const requestedIds = Array.isArray(folderIds)
       ? Array.from(new Set(folderIds.filter((id) => Number.isInteger(id))))
@@ -684,19 +729,46 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         currentPath = parentPath;
       }
     };
-    // 空数组表示全库整理，直接按所有分类记录读取，避免受当前目录或外接盘刷新状态影响。
-    const candidates = requestedIds.length === 0
-      ? getAllOrganizeCandidates()
-      : getOrganizeCandidatesInFolders(sourceFolderIds);
-    const folderCache = new Map<string, { id: number; path: string }>();
-    const organizeFolderPaths = new Set<string>();
-    const errors: string[] = [];
     const configuredDestinationRoot = destinationRootPath?.trim()
       ? resolve(destinationRootPath)
       : undefined;
     const configuredDestinationVolume = configuredDestinationRoot
       ? pathVolumeKey(configuredDestinationRoot)
       : undefined;
+    // 空数组表示全库整理，直接按所有分类记录读取，避免受当前目录或外接盘刷新状态影响。
+    const candidates = requestedIds.length === 0
+      ? getAllOrganizeCandidates()
+      : getOrganizeCandidatesInFolders(sourceFolderIds);
+    if (!confirmExisting) {
+      const existingDestinations = new Set<string>();
+      for (const candidate of candidates) {
+        if (!candidate.category_id || !candidate.category_name || !isVideoFile(candidate.path) || !existsSync(candidate.path)) continue;
+        const sourceFolder = requestedIds.length === 0
+          ? { id: candidate.folder_id, path: candidate.folder_path }
+          : sourceFolders.find((folder) => isPathWithin(candidate.folder_path, folder.path));
+        if (!sourceFolder) continue;
+        const sameVolumeAsDestination = Boolean(
+          configuredDestinationRoot
+          && configuredDestinationVolume === pathVolumeKey(candidate.path),
+        );
+        const effectiveDestinationRoot = sameVolumeAsDestination
+          ? configuredDestinationRoot
+          : getDriveOrganizeRoot(candidate.path, configuredDestinationRoot);
+        if (existsSync(effectiveDestinationRoot)) {
+          existingDestinations.add(effectiveDestinationRoot);
+        }
+      }
+      if (existingDestinations.size > 0) {
+        return {
+          success: false,
+          requiresConfirmation: true,
+          existingDestinations: Array.from(existingDestinations).sort(),
+        };
+      }
+    }
+    const folderCache = new Map<string, { id: number; path: string }>();
+    const organizeFolderPaths = new Set<string>();
+    const errors: string[] = [];
     const destinationMoves = new Map<string, { path: string; movedCount: number; crossDriveFallback: boolean }>();
     let crossDriveFallbackCount = 0;
     let movedCount = 0;
@@ -1269,12 +1341,18 @@ ipcMain.handle('batch-delete-videos', async (event, videoIds: number[]) => {
         try { unlinkSync(file); } catch { /* 缩略图删除失败不阻断记录清理 */ }
       }
     }
+    const folderCleanup = cleanupEmptyVideoFolders(
+      targets.filter((target) => deletedIds.includes(target.id)),
+    );
 
     return {
       success: true,
       deletedCount,
       totalCount: targets.length,
-      errors: errors.length > 0 ? errors : undefined
+      deletedFolderCount: folderCleanup.deletedFolders.length,
+      deletedFolders: folderCleanup.deletedFolders.length > 0 ? folderCleanup.deletedFolders : undefined,
+      errors: errors.length > 0 ? errors : undefined,
+      folderCleanupErrors: folderCleanup.errors.length > 0 ? folderCleanup.errors : undefined,
     };
   } catch (error) {
     console.error('[batch-delete-videos] failed:', error);

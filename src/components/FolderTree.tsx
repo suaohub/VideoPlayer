@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Folder as FolderIcon, Heart, Trash2 } from 'lucide-react';
+import { Folder as FolderIcon, Heart, Trash2, ListPlus, FolderX, HardDrive, EyeOff } from 'lucide-react';
 import { Folder } from '../types';
 
 interface FolderTreeProps {
@@ -177,12 +177,6 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
   const mx = menu ? Math.min(menu.x, window.innerWidth - MENU_W - 8) : 0;
   const my = menu ? Math.min(menu.y, window.innerHeight - MENU_H - 8) : 0;
 
-  const itemStyle: React.CSSProperties = {
-    display: 'block', width: '100%', textAlign: 'left', border: 'none',
-    background: 'transparent', color: 'var(--text-primary)',
-    padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderRadius: 6,
-  };
-
   return (
     <div className="folder-tree" style={{ padding: 12 }}>
       {/* 快捷入口：收藏和删除标记 */}
@@ -306,18 +300,14 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
 
       {menu && (
         <div
+          className="app-context-menu"
           onMouseDown={(e) => e.stopPropagation()}
           style={{
-            position: 'fixed', left: mx, top: my, minWidth: MENU_W,
-            background: 'var(--bg-toolbar)', border: '1px solid var(--border)',
-            borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, zIndex: 3000,
-            display: 'flex', flexDirection: 'column', gap: 2,
+            left: mx, top: my, minWidth: MENU_W,
           }}
         >
           <button
-            style={itemStyle}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            className="app-context-menu-item"
             onClick={() => {
               const id = menu.node.id;
               const has = selectedFolderIds.includes(id);
@@ -326,21 +316,19 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
               setMenu(null);
             }}
           >
+            <ListPlus size={15} />
             {menu.selected ? '从多选中移除' : '加入多选'}
           </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '2px 4px' }} />
+          <div className="app-context-menu-separator" />
           <button
-            style={{ ...itemStyle, color: '#e5735f' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            className="app-context-menu-item is-danger"
             onClick={() => { onDeleteFolder(menu.node); setMenu(null); }}
           >
+            <FolderX size={15} />
             删除目录
           </button>
           <button
-            style={{ ...itemStyle, color: '#dc4c3e', fontWeight: 600 }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            className="app-context-menu-item is-danger"
             onClick={() => {
               const ids = selectedFolderIds.includes(menu.node.id)
                 ? selectedFolderIds
@@ -349,23 +337,22 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
               setMenu(null);
             }}
           >
+            <HardDrive size={15} />
             永久删除磁盘内容
           </button>
           <button
-            style={{ ...itemStyle, color: '#ef4444' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            className="app-context-menu-item is-danger"
             onClick={() => { onDeleteUnfavoritedVideos(menu.node); setMenu(null); }}
           >
+            <Trash2 size={15} />
             删除未收藏文件（含子目录）
           </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '2px 4px' }} />
+          <div className="app-context-menu-separator" />
           <button
-            style={{ ...itemStyle, color: 'var(--text-primary)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            className="app-context-menu-item"
             onClick={() => { onHideFolder(menu.node); setMenu(null); }}
           >
+            <EyeOff size={15} />
             隐藏目录及子目录
           </button>
         </div>

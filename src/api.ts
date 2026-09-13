@@ -134,9 +134,9 @@ export const api = {
     if (USE_MOCK) return { success: true, categoryId, updatedCount: videoIds.length };
     return window.electronAPI.batchSetVideoOrganizeCategory(videoIds, categoryId);
   },
-  async organizeFolders(folderIds: number[], destinationRootPath?: string) {
+  async organizeFolders(folderIds: number[], destinationRootPath?: string, confirmExisting = false) {
     if (USE_MOCK) return { success: true, movedCount: 0, skippedCount: 0 };
-    return window.electronAPI.organizeFolders(folderIds, destinationRootPath);
+    return window.electronAPI.organizeFolders(folderIds, destinationRootPath, confirmExisting);
   },
   async getFolderTree(mediaType?: import('./types').MediaType): Promise<Folder[]> {
     if (USE_MOCK) return dataset.folders;
@@ -199,7 +199,6 @@ export const api = {
   // 导入（mock 下不可用，提示即可）
   async selectImportSource(): Promise<ImportSourceSelection> {
     if (USE_MOCK) {
-      alert('当前为 UI 预览模式（mock 数据），导入功能需在真实环境运行。');
       return { canceled: true, kind: 'none', paths: [] };
     }
     return window.electronAPI.selectImportSource();
@@ -214,21 +213,18 @@ export const api = {
   },
   async selectFolders(): Promise<{ canceled: boolean; paths: string[] }> {
     if (USE_MOCK) {
-      alert('当前为 UI 预览模式（mock 数据），导入功能需在真实环境运行。');
       return { canceled: true, paths: [] };
     }
     return window.electronAPI.selectFolders();
   },
   async selectOrganizeOutputFolder(): Promise<{ canceled: boolean; path: string | null }> {
     if (USE_MOCK) {
-      alert('当前为 UI 预览模式（mock 数据），导入功能需在真实环境运行。');
       return { canceled: true, path: null };
     }
     return window.electronAPI.selectOrganizeOutputFolder();
   },
   async selectVideoFiles(): Promise<{ canceled: boolean; paths: string[] }> {
     if (USE_MOCK) {
-      alert('当前为 UI 预览模式（mock 数据），导入功能需在真实环境运行。');
       return { canceled: true, paths: [] };
     }
     return window.electronAPI.selectVideoFiles();
@@ -288,14 +284,13 @@ export const api = {
   },
   async playVideo(path: string, options?: { alertOnError?: boolean }): Promise<{ success: boolean; error?: string }> {
     if (USE_MOCK && path.startsWith('/Movies/mock/')) {
-      alert('这是占位视频（mock），无法播放。点击带真实缩略图的卡片可实际播放。');
       return { success: false, error: 'mock placeholder' };
     }
     // 真实视频即便在 mock 模式也走 IPC 真播放
     if (window.electronAPI?.playVideo) {
       const result = await window.electronAPI.playVideo(path);
       if (!result.success && options?.alertOnError !== false) {
-        alert(`播放失败：${result.error ?? '未知错误'}`);
+        console.warn(`播放失败：${result.error ?? '未知错误'}`);
       }
       return result;
     }
@@ -499,7 +494,16 @@ export const api = {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.batchUnmarkForDeletion(videoIds);
   },
-  async batchDeleteVideos(videoIds: number[]): Promise<{ success: boolean; deletedCount?: number; totalCount?: number; errors?: string[]; error?: string }> {
+  async batchDeleteVideos(videoIds: number[]): Promise<{
+    success: boolean;
+    deletedCount?: number;
+    totalCount?: number;
+    deletedFolderCount?: number;
+    deletedFolders?: string[];
+    errors?: string[];
+    folderCleanupErrors?: string[];
+    error?: string;
+  }> {
     if (USE_MOCK) return { success: true, deletedCount: 0, totalCount: 0 };
     return window.electronAPI.batchDeleteVideos(videoIds);
   },

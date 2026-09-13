@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { Folder, ImportProgress, OrganizeCategory } from '../types';
 import './SettingsModal.css';
+import { useAppFeedback } from './AppFeedback';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -45,6 +46,7 @@ function organizeFolderName(outputPath: string | null): string {
 }
 
 export function SettingsModal(props: SettingsModalProps) {
+  const { confirm: confirmDialog } = useAppFeedback();
   const {
     onClose, onImport, importing, importProgress, onClearCache,
     hiddenFolders, onRestoreHiddenFolder,
@@ -200,9 +202,14 @@ export function SettingsModal(props: SettingsModalProps) {
                   className="settings-mini-btn settings-mini-btn-danger"
                   title="删除分类"
                   onClick={() => {
-                    if (confirm(`删除分类「${category.name}」？已标记的视频将变为未分类。`)) {
-                      onDeleteOrganizeCategory(category.id);
-                    }
+                    void confirmDialog({
+                      title: `删除分类「${category.name}」？`,
+                      message: '已标记的视频将变为未分类，此操作不会删除视频文件。',
+                      tone: 'danger',
+                      confirmLabel: '删除分类',
+                    }).then((confirmed) => {
+                      if (confirmed) onDeleteOrganizeCategory(category.id);
+                    });
                   }}
                 >
                   <X size={14} />

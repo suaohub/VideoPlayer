@@ -700,6 +700,10 @@ export interface VideoDeleteTarget {
   id: number;
   path: string;
   thumbnail_path: string | null;
+  folder_id: number | null;
+  folder_path: string | null;
+  /** 导入根目录不应因删除最后一个文件而被移除，避免丢失已配置的媒体库入口。 */
+  folder_is_import_root: number;
 }
 
 export function getVideoDeleteTargets(videoIds: number[]): VideoDeleteTarget[] {
@@ -707,7 +711,16 @@ export function getVideoDeleteTargets(videoIds: number[]): VideoDeleteTarget[] {
   const db = getDb();
   const placeholders = videoIds.map(() => '?').join(',');
   return db.prepare(
-    `SELECT id, path, thumbnail_path FROM videos WHERE id IN (${placeholders})`
+    `SELECT
+       v.id,
+       v.path,
+       v.thumbnail_path,
+       v.folder_id,
+       f.path AS folder_path,
+       CASE WHEN f.id = f.import_root_id THEN 1 ELSE 0 END AS folder_is_import_root
+     FROM videos v
+     LEFT JOIN folders f ON f.id = v.folder_id
+     WHERE v.id IN (${placeholders})`
   ).all(...videoIds) as VideoDeleteTarget[];
 }
 

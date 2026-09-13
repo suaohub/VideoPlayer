@@ -84,10 +84,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     videoIds,
     categoryId,
   ),
-  organizeFolders: (folderIds: number[], destinationRootPath?: string) => ipcRenderer.invoke(
+  organizeFolders: (folderIds: number[], destinationRootPath?: string, confirmExisting?: boolean) => ipcRenderer.invoke(
     'organize-folders',
     folderIds,
     destinationRootPath,
+    confirmExisting,
   ),
   getFolderTree: (mediaType?: string) => ipcRenderer.invoke('get-folder-tree', mediaType),
   getVideos: (filter: VideoFilter) => ipcRenderer.invoke('get-videos', filter),
