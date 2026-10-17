@@ -73,8 +73,9 @@ interface ToolbarProps {
   onFixedLayoutModeChange: (enabled: boolean) => void | Promise<void>;
   favoritedCount: number;
   toolbarOpacity: number;
-  toolbarBlur: number;
   isMaximized: boolean;
+  isExpanded: boolean;
+  isFullscreen: boolean;
   onMinimize: () => void;
   onToggleMaximize: () => void;
   onClose: () => void;
@@ -144,8 +145,9 @@ function Toolbar({
   onFixedLayoutModeChange,
   favoritedCount,
   toolbarOpacity,
-  toolbarBlur,
   isMaximized,
+  isExpanded,
+  isFullscreen,
   onMinimize,
   onToggleMaximize,
   onClose,
@@ -195,10 +197,9 @@ function Toolbar({
 
   return (
     <header
-      className="app-topbar"
+      className={`app-topbar${isExpanded ? ' is-expanded' : ''}${isFullscreen ? ' is-fullscreen' : ''}`}
       style={{
-        '--topbar-opacity': `${toolbarOpacity}%`,
-        '--topbar-blur': `${toolbarBlur}px`,
+        '--interface-opacity': `${toolbarOpacity}%`,
       } as React.CSSProperties}
     >
       <div className="titlebar-row">
@@ -319,7 +320,7 @@ function Toolbar({
               </label>
               <div className="toolbar-menu-separator" />
               <div className="toolbar-menu-label"><Grid2x2 {...ICON} /><span>卡片大小</span><span className="toolbar-menu-value">{cardSize}px</span></div>
-              <input className="card-size-range" type="range" min={120} max={420} value={cardSize} onChange={(event) => onCardSizeChange(Number(event.target.value))} />
+              <input className="card-size-range app-range" type="range" min={120} max={420} value={cardSize} style={{ ['--range-progress' as string]: `${((cardSize - 120) / 300) * 100}%` }} onChange={(event) => onCardSizeChange(Number(event.target.value))} />
               <div className="toolbar-menu-separator" />
               <div className="theme-picker" ref={themeRef}>
                 <button className="toolbar-menu-item" onClick={() => setThemeOpen((open) => !open)}><currentTheme.Icon {...ICON} /><span>界面主题：{currentTheme.label}</span><ChevronDown size={14} /></button>

@@ -126,6 +126,10 @@ export const api = {
     if (USE_MOCK) return { success: true };
     return window.electronAPI.deleteOrganizeCategory(categoryId);
   },
+  async reorderOrganizeCategories(categoryIds: number[]) {
+    if (USE_MOCK) return { success: true };
+    return window.electronAPI.reorderOrganizeCategories(categoryIds);
+  },
   async setOrganizeCategoryEnabled(categoryId: number, enabled: boolean) {
     if (USE_MOCK) return { success: true, enabled };
     return window.electronAPI.setOrganizeCategoryEnabled(categoryId, enabled);

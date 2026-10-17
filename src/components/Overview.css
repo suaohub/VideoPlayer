@@ -62,7 +62,18 @@
 .overview-section-count { color: var(--text-tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
 .overview-section-action { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; color: var(--text-tertiary); font-size: 11px; border: 0; background: transparent; cursor: pointer; }
 .overview-section-action:hover { color: var(--accent); }
-.overview-card-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(160px, 190px); gap: 12px; overflow-x: auto; padding: 1px 2px 8px; scrollbar-width: thin; }
+.overview-card-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(160px, 190px);
+  gap: 12px;
+  overflow-x: auto;
+  padding: 1px 2px 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.overview-card-row::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .overview-media-card { min-width: 0; padding: 0; overflow: hidden; color: var(--text-primary); text-align: left; border: 1px solid var(--line-default); border-radius: 10px; background: var(--surface-1); cursor: pointer; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
 .overview-media-card:hover { border-color: color-mix(in srgb, var(--accent) 54%, var(--line-default)); transform: translateY(-2px); box-shadow: var(--shadow-card); }
 .overview-media-art { position: relative; overflow: hidden; background: var(--surface-2); }
@@ -71,8 +82,8 @@
 .overview-thumb-empty { color: var(--text-tertiary); background: var(--surface-2); }
 .overview-card-play { position: absolute; right: 9px; bottom: 9px; width: 28px; height: 28px; opacity: 0; transform: translateY(4px); transition: opacity .18s ease, transform .18s ease; }
 .overview-media-card:hover .overview-card-play { opacity: 1; transform: translateY(0); }
-.overview-progress-track { position: absolute; right: 8px; bottom: 7px; left: 8px; height: 3px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.22); }
-.overview-progress-track span { display: block; height: 100%; background: var(--accent); }
+.overview-progress-track { position: absolute; right: 8px; bottom: 7px; left: 8px; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.26); }
+.overview-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .overview-media-copy { display: flex; flex-direction: column; gap: 4px; padding: 9px 10px 10px; }
 .overview-media-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; }
 .overview-media-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); font-size: 10px; }

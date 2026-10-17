@@ -178,13 +178,13 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
           <span className="music-time">{formatTime(position)}</span>
           <div className="music-seek-wrap">
             <input
-              className="music-seek"
+              className="music-seek app-range"
               type="range"
               min={0}
               max={Math.max(duration, 0.1)}
               step="any"
               value={Math.min(position, duration || 0)}
-              style={{ ['--progress' as any]: `${progress * 100}%` }}
+              style={{ ['--range-progress' as string]: `${progress * 100}%` }}
               onChange={(e) => onSeekInput(Number(e.target.value))}
               onMouseUp={(e) => onSeekCommit(Number((e.target as HTMLInputElement).value))}
               onKeyUp={(e) => onSeekCommit(Number((e.target as HTMLInputElement).value))}
@@ -221,11 +221,12 @@ export function MusicPlayer({ video, onClose }: MusicPlayerProps) {
               {volume > 0 ? <Volume2 size={18} /> : <VolumeX size={18} />}
             </button>
             <input
-              className="music-volume-slider"
+              className="music-volume-slider app-range"
               type="range"
               min={0}
               max={100}
               value={volume}
+              style={{ ['--range-progress' as string]: `${volume}%` }}
               onChange={(e) => changeVolume(Number(e.target.value))}
             />
           </div>

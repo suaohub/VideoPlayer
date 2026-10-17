@@ -147,9 +147,10 @@ function App() {
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
   const [wallpaperOpacity, setWallpaperOpacity] = useState(32);
   const [toolbarOpacity, setToolbarOpacity] = useState(62);
-  const [toolbarBlur, setToolbarBlur] = useState(14);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isViewportFullscreen, setIsViewportFullscreen] = useState(false);
 
   // 可移动磁盘检测
   const [unmountedDrives, setUnmountedDrives] = useState<string[]>([]);
@@ -208,11 +209,21 @@ function App() {
 
   useEffect(() => {
     api.isWindowMaximized().then(setIsMaximized);
+    api.getFullscreen().then(setIsFullscreen);
+    const updateViewportMode = () => {
+      const fullscreenViewport = window.innerHeight >= window.screen.height - 4;
+      setIsViewportFullscreen(fullscreenViewport);
+    };
+    updateViewportMode();
+    window.addEventListener('resize', updateViewportMode);
     const offMaximized = api.onWindowMaximized(() => setIsMaximized(true));
     const offUnmaximized = api.onWindowUnmaximized(() => setIsMaximized(false));
+    const offFullscreenChanged = api.onFullscreenChanged(setIsFullscreen);
     return () => {
       offMaximized?.();
       offUnmaximized?.();
+      offFullscreenChanged?.();
+      window.removeEventListener('resize', updateViewportMode);
     };
   }, []);
 
@@ -245,14 +256,22 @@ function App() {
       sortBy,
       sortDir,
     };
-    const list = await api.getVideos(filter);
-    if (requestId !== videosRequestId.current) return;
-    // 目录选中态属于高优先级交互；大列表数据放进 transition，避免查询返回时卡住侧栏点击反馈。
-    startTransition(() => {
-      setVideos(list);
-      setLocallyHiddenVideoIds(new Set());
-    });
-  }, [selectedFolderIds, search, showFavorited, showFavoritedInList, mediaType, sortBy, sortDir]);
+    try {
+      const list = await api.getVideos(filter);
+      if (requestId !== videosRequestId.current) return;
+      // 目录选中态属于高优先级交互；大列表数据放进 transition，避免查询返回时卡住侧栏点击反馈。
+      startTransition(() => {
+        setVideos(list);
+        setLocallyHiddenVideoIds(new Set());
+      });
+    } catch (error) {
+      // 点击媒体库时旧请求可能正在返回，异常只提示当前请求，避免未处理 Promise 让渲染层进入黑屏。
+      if (requestId === videosRequestId.current) {
+        console.error('[library] failed to load videos:', error);
+        notify(`媒体库加载失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
+      }
+    }
+  }, [notify, selectedFolderIds, search, showFavorited, showFavoritedInList, mediaType, sortBy, sortDir]);
 
   // 整理预览使用完整的视频记录，不受当前搜索、收藏和目录筛选影响。
   // 视频移动后 source_path 仍保留，因此预览和再次标记始终基于原始文件记录。
@@ -399,12 +418,6 @@ function App() {
 
   useEffect(() => {
     if (preferencesLoaded) {
-      api.setSetting('toolbarBlur', String(toolbarBlur));
-    }
-  }, [toolbarBlur, preferencesLoaded]);
-
-  useEffect(() => {
-    if (preferencesLoaded) {
       api.setSetting('listFixedMode', fixedLayoutMode ? '1' : '0');
     }
   }, [fixedLayoutMode, preferencesLoaded]);
@@ -418,7 +431,12 @@ function App() {
       const savedTheme = await api.getSetting('theme');
       if (savedTheme === 'day' || savedTheme === 'night') setTheme(savedTheme);
       const savedSize = await api.getSetting('cardSize');
-      if (savedSize) setCardSize(Number(savedSize));
+      if (savedSize) {
+        const parsedSize = Number(savedSize);
+        if (Number.isFinite(parsedSize)) {
+          setCardSize(Math.min(CARD_MAX, Math.max(CARD_MIN, parsedSize)));
+        }
+      }
       const savedSortBy = await api.getSetting('sortBy');
       if (savedSortBy) setSortBy(savedSortBy as SortBy);
       const savedSortDir = await api.getSetting('sortDir');
@@ -435,13 +453,6 @@ function App() {
         const parsedToolbarOpacity = Number(savedToolbarOpacity);
         if (Number.isFinite(parsedToolbarOpacity)) {
           setToolbarOpacity(Math.min(100, Math.max(0, parsedToolbarOpacity)));
-        }
-      }
-      const savedToolbarBlur = await api.getSetting('toolbarBlur');
-      if (savedToolbarBlur) {
-        const parsedToolbarBlur = Number(savedToolbarBlur);
-        if (Number.isFinite(parsedToolbarBlur)) {
-          setToolbarBlur(Math.min(30, Math.max(0, parsedToolbarBlur)));
         }
       }
       const savedFixedLayoutMode = await api.getSetting('listFixedMode');
@@ -1059,6 +1070,15 @@ function App() {
     await refreshOrganizeCategories();
   };
 
+  const handleReorderOrganizeCategories = async (categoryIds: number[]) => {
+    const result = await api.reorderOrganizeCategories(categoryIds);
+    if (!result.success) {
+      notify(`分类排序失败：${result.error ?? '未知错误'}`, 'danger');
+      return;
+    }
+    await refreshOrganizeCategories();
+  };
+
   const handleOrganizeFolder = async () => {
     const categorizedCount = organizePreviewVideos.filter((video) => video.organize_category_id != null).length;
     if (categorizedCount === 0) {
@@ -1398,7 +1418,9 @@ function App() {
         aria-hidden="true"
         style={{
           backgroundImage: wallpaperUrl ? `url("${wallpaperUrl}")` : undefined,
-          opacity: wallpaperUrl ? wallpaperOpacity / 100 : 0,
+          // Use a perceptual curve so low slider values still show the wallpaper
+          // clearly through the transparent library surfaces.
+          opacity: wallpaperUrl ? Math.sqrt(wallpaperOpacity / 100) : 0,
         }}
       />
       <div className="app-content">
@@ -1451,8 +1473,9 @@ function App() {
           onFixedLayoutModeChange={handleFixedLayoutModeChange}
           favoritedCount={favoritedCount}
           toolbarOpacity={toolbarOpacity}
-          toolbarBlur={toolbarBlur}
           isMaximized={isMaximized}
+          isExpanded={isMaximized || isFullscreen || isViewportFullscreen}
+          isFullscreen={isFullscreen || isViewportFullscreen}
           onMinimize={handleMinimize}
           onToggleMaximize={handleToggleMaximize}
           onClose={handleClose}
@@ -1728,12 +1751,11 @@ function App() {
           onBackgroundOpacityChange={setWallpaperOpacity}
           toolbarOpacity={toolbarOpacity}
           onToolbarOpacityChange={setToolbarOpacity}
-          toolbarBlur={toolbarBlur}
-          onToolbarBlurChange={setToolbarBlur}
           organizeCategories={organizeCategories}
           onCreateOrganizeCategory={handleCreateOrganizeCategory}
           onDeleteOrganizeCategory={handleDeleteOrganizeCategory}
           onToggleOrganizeCategory={handleToggleOrganizeCategory}
+          onReorderOrganizeCategories={handleReorderOrganizeCategories}
           organizeOutputPath={organizeOutputPath}
           onSelectOrganizeOutputFolder={handleSelectOrganizeOutputFolder}
           onClearOrganizeOutputFolder={handleClearOrganizeOutputFolder}

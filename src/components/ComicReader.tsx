@@ -199,10 +199,11 @@ export function ComicReader({ video, onClose }: ComicReaderProps) {
         <div className="comic-footer">
           <input
             type="range"
-            className="comic-slider"
+            className="comic-slider app-range"
             min={0}
             max={Math.max(0, pageCount - 1)}
             value={page}
+            style={{ ['--range-progress' as string]: `${pageCount > 1 ? (page / (pageCount - 1)) * 100 : 0}%` }}
             onChange={(e) => {
               const v = Number(e.target.value);
               setPage(spread === 2 ? v - (v % 2) : v);

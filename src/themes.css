@@ -1,5 +1,54 @@
 /* ============ 主题系统 ============ */
 
+/* 全局进度控件：统一成细轨道、主题色填充和轻量圆形滑块。 */
+input.app-range {
+  --range-progress: 0%;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: linear-gradient(90deg,
+    var(--accent) 0 var(--range-progress),
+    color-mix(in srgb, var(--text-secondary) 20%, transparent) var(--range-progress) 100%) !important;
+  background-size: 100% 4px !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  cursor: pointer;
+  transition: filter 140ms ease;
+}
+
+input.app-range:hover { filter: brightness(1.06); }
+input.app-range:focus-visible { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent); }
+input.app-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: transparent; }
+input.app-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--surface-2);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .24), 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+input.app-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 1px 5px rgba(15, 23, 42, .3), 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+input.app-range::-moz-range-track { height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--text-secondary) 20%, transparent); }
+input.app-range::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
+input.app-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface-2);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .24);
+}
+
 /* 白天主题：浅色、清爽 */
 [data-theme='day'] {
   --bg-primary: linear-gradient(150deg, #eef1f8 0%, #f5f6fa 50%, #e9edf6 100%);
@@ -1709,6 +1758,16 @@ textarea:focus-visible,
   transition: width var(--motion-normal) ease;
 }
 
+.status-progress-track {
+  height: 4px;
+  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+}
+
+.status-progress-track > div {
+  background: var(--accent);
+  box-shadow: none;
+}
+
 .library-workspace {
   display: flex;
   flex: 1;
@@ -2413,7 +2472,7 @@ textarea:focus-visible,
 }
 
 .library-main .video-card {
-  border-radius: 11px !important;
+  border-radius: 14px !important;
 }
 
 @media (max-width: 1000px) {
@@ -2714,9 +2773,9 @@ body {
 /* iOS 风格第一阶段：轻表面、柔和选中态、稳定的圆角层级。 */
 .titlebar-row,
 .app-topbar {
-  background: color-mix(in srgb, var(--bg-toolbar) 92%, transparent);
-  backdrop-filter: blur(28px) saturate(1.18);
-  -webkit-backdrop-filter: blur(28px) saturate(1.18);
+  background: color-mix(in srgb, var(--bg-toolbar) var(--topbar-opacity, 92%), transparent);
+  backdrop-filter: blur(var(--topbar-blur, 28px)) saturate(1.18);
+  -webkit-backdrop-filter: blur(var(--topbar-blur, 28px)) saturate(1.18);
 }
 
 .primary-toolbar-row,
@@ -2777,5 +2836,331 @@ body {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--line-default));
   box-shadow: 0 7px 20px color-mix(in srgb, var(--text-primary) 11%, transparent);
   filter: none;
+}
+
+/* iOS 风格第二阶段：收紧顶栏节奏，让搜索、分段切换和操作按钮形成一条稳定的控制带。 */
+.app-topbar,
+.toolbar,
+.content-toolbar {
+  min-height: 56px;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--line-subtle) 72%, transparent);
+}
+
+/* 顶栏由内部控制行负责留白，外层不再叠加一圈内边距。 */
+.app-topbar {
+  min-height: 0;
+  padding: 0;
+}
+
+.primary-toolbar-row {
+  min-height: 40px;
+  padding: 4px 16px;
+  gap: 7px;
+}
+
+.secondary-toolbar-row {
+  min-height: 36px;
+  padding: 3px 16px 5px;
+  gap: 6px;
+}
+
+.sidebar-trigger,
+.toolbar-icon-button,
+.toolbar-quiet-button {
+  min-height: 30px;
+  height: 30px;
+}
+
+.sidebar-trigger,
+.toolbar-icon-button {
+  width: 30px;
+  flex-basis: 30px;
+}
+
+.search-field {
+  height: 32px;
+  min-width: 140px;
+  border-radius: 999px;
+  padding-inline: 10px;
+}
+
+.media-tabs {
+  border: 0;
+  border-radius: 999px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--bg-hover) 78%, transparent);
+}
+
+.media-tab {
+  min-height: 27px;
+  border-radius: 999px;
+}
+
+.import-button {
+  min-height: 30px;
+  padding-inline: 12px;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.toolbar-icon-button:active,
+.toolbar-quiet-button:active,
+.sidebar-trigger:active,
+.import-button:active,
+.settings-btn:active {
+  transform: scale(.97);
+}
+
+/* 最大化或全屏时扩大顶栏，让标题与操作控件保持舒适的垂直空间。 */
+.app-topbar.is-expanded {
+  min-height: 72px !important;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.app-topbar.is-expanded .primary-toolbar-row {
+  min-height: 56px !important;
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+/* 全屏会隐藏 Windows 原生标题栏，用同等高度补偿顶部视觉空间。 */
+.app-topbar.is-fullscreen {
+  min-height: 0 !important;
+  padding-top: 38px;
+  padding-bottom: 8px;
+}
+
+.app-topbar.is-fullscreen .primary-toolbar-row {
+  min-height: 40px !important;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* iOS 风格第三阶段：侧栏用轻量选中底色与系统列表节奏承载主导航。 */
+.library-sidebar {
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  backdrop-filter: blur(24px) saturate(1.12);
+  -webkit-backdrop-filter: blur(24px) saturate(1.12);
+}
+
+.sidebar-nav {
+  gap: 2px;
+  padding: 12px 10px 9px;
+}
+
+.sidebar-nav-item {
+  min-height: 34px;
+  gap: 9px;
+  border-radius: 9px;
+  transition: color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.sidebar-nav-item:hover {
+  background: color-mix(in srgb, var(--bg-hover) 82%, transparent);
+}
+
+.sidebar-nav-item.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.sidebar-nav-item.is-active svg,
+.sidebar-nav-item.is-active .sidebar-nav-count {
+  color: var(--accent);
+}
+
+.sidebar-nav-item:active,
+.sidebar-folder-tab:active,
+.sidebar-collapse-button:active {
+  transform: scale(.98);
+}
+
+.sidebar-folder-section {
+  padding-inline: 9px;
+}
+
+.sidebar-folder-tabs {
+  border-bottom: 0;
+  padding: 4px 3px 7px;
+}
+
+.sidebar-folder-tab {
+  min-height: 29px;
+  border-radius: 999px;
+  transition: color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.sidebar-folder-tab.is-active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-hover) 84%, transparent);
+  border-color: transparent;
+}
+
+.sidebar-folder-tab.is-active span,
+.sidebar-folder-tab.is-active svg {
+  color: var(--accent);
+}
+
+.sidebar-section-heading {
+  min-height: 30px;
+  letter-spacing: .01em;
+  text-transform: none;
+}
+
+.sidebar-footer {
+  min-height: 34px;
+}
+
+.folder-tree-item {
+  transition: color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.folder-tree-item:hover {
+  background: color-mix(in srgb, var(--bg-hover) 82%, transparent);
+}
+
+.folder-tree-item.is-selected {
+  background: var(--accent-soft);
+}
+
+.video-card,
+.media-card,
+.overview-media-card {
+  border-radius: 15px;
+  border-color: color-mix(in srgb, var(--line-default) 60%, transparent);
+}
+
+/* 媒体库卡片数量较多时，不为每张卡片创建独立的背景模糊层，避免切换媒体库瞬间压满 GPU。 */
+.video-card.glass,
+.media-card.glass,
+.overview-media-card.glass {
+  background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.video-card::after,
+.media-card::after {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--glass-border) 50%, transparent);
+}
+
+/* iOS 风格收尾：轻量层级、连续滚动和克制的触感反馈。 */
+.app-topbar,
+.library-sidebar,
+.library-main,
+.content-heading,
+.video-grid,
+.folder-tree,
+.organize-preview-tree {
+  scrollbar-width: none;
+}
+
+/* 壁纸可见度收尾：内容表面保持可读，同时让底层壁纸真正透出来。 */
+.app-topbar {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-topbar .primary-toolbar-row,
+.app-topbar .secondary-toolbar-row {
+  background: transparent !important;
+}
+
+.app-topbar .search-field {
+  border-color: color-mix(in srgb, var(--line-strong) 72%, transparent) !important;
+  background: color-mix(in srgb, var(--bg-toolbar) 22%, transparent) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 10%, transparent) !important;
+}
+
+.library-sidebar {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.library-main {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.content-heading {
+  background: transparent !important;
+}
+
+.app-topbar::-webkit-scrollbar,
+.library-sidebar::-webkit-scrollbar,
+.library-main::-webkit-scrollbar,
+.content-heading::-webkit-scrollbar,
+.video-grid::-webkit-scrollbar,
+.folder-tree::-webkit-scrollbar,
+.organize-preview-tree::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.sidebar-nav-item,
+.sidebar-folder-tab,
+.folder-tree-item,
+.media-tab,
+.toolbar-icon-button,
+.toolbar-quiet-button,
+.sidebar-trigger,
+.import-button,
+.video-card,
+.media-card,
+.overview-media-card {
+  transition-timing-function: cubic-bezier(.22, 1, .36, 1);
+}
+
+.video-card:hover,
+.media-card:hover,
+.overview-media-card:hover {
+  box-shadow: 0 7px 20px color-mix(in srgb, var(--text-primary) 11%, transparent);
+}
+
+.content-heading {
+  min-height: 72px;
+  padding-top: 14px;
+  padding-bottom: 12px;
+}
+
+.content-eyebrow,
+.sidebar-eyebrow {
+  letter-spacing: .08em;
+  font-weight: 600;
+}
+
+.content-heading h1 {
+  letter-spacing: -.015em;
+}
+
+.content-heading p {
+  color: var(--text-tertiary);
+}
+
+.library-main > div[style*='overflow-y'] {
+  padding-top: 18px !important;
+  padding-right: 24px !important;
+  padding-bottom: 24px !important;
+  padding-left: 24px !important;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+.sidebar-folder-section > .folder-tree,
+.organize-preview-tree {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-main > div[style*='overflow-y'],
+  .sidebar-folder-section > .folder-tree,
+  .organize-preview-tree {
+    scroll-behavior: auto;
+  }
 }
 

@@ -55,7 +55,6 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   onRowClick: (id: number, e: React.MouseEvent) => void;
   onOpenMenu: (m: MenuState) => void;
 }) {
-  const [hover, setHover] = useState(false);
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.id);
   const selected = selectedFolderIds.includes(node.id);
@@ -63,13 +62,11 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   return (
     <div>
       <div
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        className={`folder-tree-item${selected ? ' is-selected' : ''}`}
         style={{
           display: 'flex', alignItems: 'center', gap: 4,
-          padding: '5px 8px', paddingLeft: 8 + depth * 14, borderRadius: 6,
-          background: selected ? 'var(--accent)' : (hover ? 'var(--bg-hover)' : 'transparent'),
-          color: selected ? '#fff' : 'var(--text-primary)',
+          padding: '6px 8px', paddingLeft: 8 + depth * 14, borderRadius: 9,
+          color: 'var(--text-primary)',
           cursor: 'pointer', fontSize: 13,
           userSelect: 'none',
         }}
@@ -87,7 +84,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
         ) : (
           <span style={{ width: 14, display: 'inline-block' }} />
         )}
-        <FolderIcon size={15} strokeWidth={1.7} style={{ opacity: 0.72, flexShrink: 0 }} />
+        <FolderIcon size={15} strokeWidth={1.7} style={{ opacity: selected ? 1 : 0.72, color: selected ? 'var(--accent)' : undefined, flexShrink: 0 }} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </span>

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
-  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, SlidersHorizontal, RefreshCw, Sun, Moon,
+  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, SlidersHorizontal, RefreshCw, Sun, Moon, GripVertical, Film,
 } from 'lucide-react';
 import { Folder, ImportProgress, OrganizeCategory, Theme } from '../types';
 import { api } from '../api';
@@ -28,12 +28,11 @@ interface SettingsModalProps {
   onBackgroundOpacityChange: (value: number) => void;
   toolbarOpacity: number;
   onToolbarOpacityChange: (value: number) => void;
-  toolbarBlur: number;
-  onToolbarBlurChange: (value: number) => void;
   organizeCategories: OrganizeCategory[];
   onCreateOrganizeCategory: (name: string) => void;
   onDeleteOrganizeCategory: (categoryId: number) => void;
   onToggleOrganizeCategory: (categoryId: number, enabled: boolean) => void;
+  onReorderOrganizeCategories: (categoryIds: number[]) => void;
   organizeOutputPath: string | null;
   onSelectOrganizeOutputFolder: () => void;
   onClearOrganizeOutputFolder: () => void;
@@ -64,8 +63,9 @@ export function SettingsModal(props: SettingsModalProps) {
     theme, onThemeChange,
     backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
     onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
-    toolbarBlur, onToolbarBlurChange, organizeCategories,
+    organizeCategories,
     onCreateOrganizeCategory, onDeleteOrganizeCategory, onToggleOrganizeCategory,
+    onReorderOrganizeCategories,
     organizeOutputPath, onSelectOrganizeOutputFolder, onClearOrganizeOutputFolder,
     onOrganizeFolder, organizing,
   } = props;
@@ -73,6 +73,8 @@ export function SettingsModal(props: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('all');
   const [tabOrder, setTabOrder] = useState<SettingsSection[]>(DEFAULT_SETTINGS_TAB_ORDER);
   const [draggingTab, setDraggingTab] = useState<SettingsSection | null>(null);
+  const [draggingCategoryId, setDraggingCategoryId] = useState<number | null>(null);
+  const [dropCategoryId, setDropCategoryId] = useState<number | null>(null);
   const settingsContentRef = useRef<HTMLDivElement>(null);
   const [settingsHasMore, setSettingsHasMore] = useState(false);
 
@@ -238,51 +240,53 @@ export function SettingsModal(props: SettingsModalProps) {
               <div className="settings-section-description">导入来源、索引和本地缓存。</div>
             </div>
           </div>
-          <div className="settings-action-card">
-            <div className="settings-action-copy">
-              <strong>添加媒体来源</strong>
-              <span>支持视频、音频、小说和漫画图片文件夹</span>
-            </div>
-            <button
-              className="settings-btn settings-btn-primary"
-              onClick={onImport}
-              disabled={importing}
-            >
-              {importing
-                ? <><Loader2 {...ICON} className="spin" /> 导入中...</>
-                : <><FolderPlus {...ICON} /> 导入文件夹</>}
-            </button>
-          </div>
-          {importing && importProgress && (
-            <div>
-              <div className="settings-hint">
-                扫描中: {importProgress.current} / {importProgress.total} — {importProgress.file}
+          <div className="settings-action-group">
+            <div className="settings-action-card">
+              <div className="settings-action-copy">
+                <strong>添加媒体来源</strong>
+                <span>支持视频、音频、小说和漫画图片文件夹</span>
               </div>
-              <div className="settings-progress-track">
-                <div
-                  className="settings-progress-fill"
-                  style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-                />
+              <button
+                className="settings-btn settings-btn-primary"
+                onClick={onImport}
+                disabled={importing}
+              >
+                {importing
+                  ? <><Loader2 {...ICON} className="spin" /> 导入中...</>
+                  : <><FolderPlus {...ICON} /> 导入文件夹</>}
+              </button>
+            </div>
+            {importing && importProgress && (
+              <div className="settings-action-progress">
+                <div className="settings-hint">
+                  扫描中: {importProgress.current} / {importProgress.total} — {importProgress.file}
+                </div>
+                <div className="settings-progress-track">
+                  <div
+                    className="settings-progress-fill"
+                    style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                  />
+                </div>
               </div>
+            )}
+            <div className="settings-action-card settings-action-card-danger">
+              <div className="settings-action-copy">
+                <strong>清理媒体库缓存</strong>
+                <span>删除索引、目录、标签和缩略图，源文件不会受影响</span>
+              </div>
+              <button className="settings-btn settings-btn-danger" onClick={onClearCache}>
+                <Trash2 {...ICON} /> 清除缓存
+              </button>
             </div>
-          )}
-          <div className="settings-action-card settings-action-card-danger" style={{ marginTop: 10 }}>
-            <div className="settings-action-copy">
-              <strong>清理媒体库缓存</strong>
-              <span>删除索引、目录、标签和缩略图，源文件不会受影响</span>
+            <div className="settings-action-card">
+              <div className="settings-action-copy">
+                <strong>检查失效媒体</strong>
+                <span>扫描磁盘并清理已被其他程序删除的媒体记录</span>
+              </div>
+              <button className="settings-btn" onClick={onRefreshLibrary} disabled={refreshing || importing}>
+                <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} /> {refreshing ? '检查中…' : '开始检查'}
+              </button>
             </div>
-            <button className="settings-btn settings-btn-danger" onClick={onClearCache}>
-              <Trash2 {...ICON} /> 清除缓存
-            </button>
-          </div>
-          <div className="settings-action-card">
-            <div className="settings-action-copy">
-              <strong>检查失效媒体</strong>
-              <span>扫描磁盘并清理已被其他程序删除的媒体记录</span>
-            </div>
-            <button className="settings-btn" onClick={onRefreshLibrary} disabled={refreshing || importing}>
-              <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} /> {refreshing ? '检查中…' : '开始检查'}
-            </button>
           </div>
         </div>
 
@@ -337,10 +341,52 @@ export function SettingsModal(props: SettingsModalProps) {
               <div className="settings-hint">还没有预设分类。</div>
             )}
             {organizeCategories.map((category) => (
-              <div className={`settings-category-item${category.enabled === 0 ? ' is-disabled' : ''}`} key={category.id}>
+              <div
+                className={`settings-category-item${category.enabled === 0 ? ' is-disabled' : ''}${draggingCategoryId === category.id ? ' is-dragging' : ''}${dropCategoryId === category.id ? ' is-drop-target' : ''}`}
+                key={category.id}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                  setDropCategoryId(category.id);
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropCategoryId(null);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const fromId = draggingCategoryId ?? Number(event.dataTransfer.getData('text/plain'));
+                  if (Number.isInteger(fromId) && fromId !== category.id) {
+                    const next = [...organizeCategories];
+                    const fromIndex = next.findIndex((item) => item.id === fromId);
+                    const toIndex = next.findIndex((item) => item.id === category.id);
+                    if (fromIndex >= 0 && toIndex >= 0) {
+                      const [moved] = next.splice(fromIndex, 1);
+                      next.splice(toIndex, 0, moved);
+                      onReorderOrganizeCategories(next.map((item) => item.id));
+                    }
+                  }
+                  setDraggingCategoryId(null);
+                  setDropCategoryId(null);
+                }}
+              >
+                <span
+                  className="settings-category-drag-handle"
+                  draggable
+                  title={`拖动调整「${category.name}」顺序`}
+                  aria-label={`拖动调整「${category.name}」顺序`}
+                  onDragStart={(event) => {
+                    event.stopPropagation();
+                    setDraggingCategoryId(category.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', String(category.id));
+                  }}
+                  onDragEnd={() => { setDraggingCategoryId(null); setDropCategoryId(null); }}
+                >
+                  <GripVertical size={16} strokeWidth={2} />
+                </span>
                 <FolderKanban {...ICON} />
                 <span className="settings-category-name">{category.name}</span>
-                <span className="settings-category-count">{category.count ?? 0}</span>
+                <span className="settings-category-count" title={`${category.count ?? 0} 个视频`}><Film size={12} strokeWidth={2} />{category.count ?? 0}</span>
                 <button
                   type="button"
                   className={`settings-switch${category.enabled === 0 ? '' : ' is-on'}`}
@@ -426,43 +472,34 @@ export function SettingsModal(props: SettingsModalProps) {
 
           {backgroundImagePath && (
             <div className="settings-slider-row">
-              <span>壁纸透明度</span>
+              <span>壁纸显示强度</span>
               <input
+                className="settings-range app-range"
                 type="range"
                 min={0}
                 max={100}
-                value={100 - backgroundOpacity}
-                onChange={(e) => onBackgroundOpacityChange(100 - Number(e.target.value))}
-                title="调整壁纸透明度，100% 为完全透明"
+                value={backgroundOpacity}
+                style={{ '--range-progress': `${backgroundOpacity}%` } as CSSProperties}
+                onChange={(e) => onBackgroundOpacityChange(Number(e.target.value))}
+                title="调整壁纸显示强度，100% 为完全显示"
               />
-              <span className="settings-slider-val">{100 - backgroundOpacity}%</span>
+              <span className="settings-slider-val">{backgroundOpacity}%</span>
             </div>
           )}
 
           <div className="settings-slider-row">
-            <span>操作区透明</span>
+            <span>界面透明度</span>
             <input
+              className="settings-range app-range"
               type="range"
               min={0}
               max={100}
               value={100 - toolbarOpacity}
+              style={{ '--range-progress': `${100 - toolbarOpacity}%` } as CSSProperties}
               onChange={(e) => onToolbarOpacityChange(100 - Number(e.target.value))}
-              title="调整顶部操作区和右上角窗口按钮的透明度，100% 为完全透明"
+              title="统一调整顶栏、侧栏和内容区的透明度；100% 为完全透明"
             />
             <span className="settings-slider-val">{100 - toolbarOpacity}%</span>
-          </div>
-
-          <div className="settings-slider-row">
-            <span>操作区模糊</span>
-            <input
-              type="range"
-              min={0}
-              max={30}
-              value={toolbarBlur}
-              onChange={(e) => onToolbarBlurChange(Number(e.target.value))}
-              title="调整顶部操作区和侧边栏的模糊程度"
-            />
-            <span className="settings-slider-val">{toolbarBlur}px</span>
           </div>
 
           <details className="settings-help">
@@ -482,7 +519,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
               <div>
                 <strong>外观</strong>
-                <p>日间/夜间主题会自动保存；可设置自定义壁纸、壁纸透明度、操作区透明度和模糊程度。</p>
+                <p>日间/夜间主题会自动保存；可设置自定义壁纸显示强度和整个界面的统一透明度。</p>
               </div>
               <div>
                 <strong>播放快捷键</strong>

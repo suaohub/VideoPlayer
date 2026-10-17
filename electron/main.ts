@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, shell, globalShortcut, nativeTheme } from 'electron';
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, rmdirSync, statSync } from 'fs';
-import { rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
+import { readFile as readFileAsync, rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { initDatabase, getDb } from './db';
 import {
@@ -11,7 +11,7 @@ import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, r
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
 import { setThumbnailListeners, setThumbnailGenerationPaused, setThumbnailGenerationBoost } from './thumbnailQueue';
 import { getMediaLibraryHealth } from './health';
-import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, setFolderLocked, isFolderLocked, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setOrganizeCategoryEnabled, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, setFolderLocked, isFolderLocked, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, reorderOrganizeCategories, setOrganizeCategoryEnabled, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
@@ -87,14 +87,19 @@ function createWindow() {
 app.whenReady().then(() => {
   globalShortcut.register('CommandOrControl+Alt+R', () => rotateVideo());
   globalShortcut.register('CommandOrControl+Alt+M', () => toggleVideoMirror());
-  protocol.handle('thumb', (request) => {
+  protocol.handle('thumb', async (request) => {
     const filePath = thumbnailFilePathFromUrl(request.url);
-    if (!filePath || !existsSync(filePath)) {
+    if (!filePath) {
       return new Response(null, { status: 404 });
     }
-    return new Response(new Uint8Array(readFileSync(filePath)), {
-      headers: { 'Content-Type': 'image/jpeg' },
-    });
+    try {
+      const data = await readFileAsync(filePath);
+      return new Response(new Uint8Array(data), {
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
   });
 
   // 漫画页图片：comic:///<encodeURIComponent(路径)> → 读取本地图片（仅限图片扩展名）
@@ -568,6 +573,15 @@ ipcMain.handle('rename-organize-category', async (event, categoryId: number, nam
 ipcMain.handle('delete-organize-category', async (event, categoryId: number) => {
   try {
     deleteOrganizeCategory(categoryId);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('reorder-organize-categories', async (event, categoryIds: number[]) => {
+  try {
+    reorderOrganizeCategories(categoryIds);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };

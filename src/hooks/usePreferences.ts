@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Theme, SortBy, SortDir } from '../types';
 import { api } from '../api';
 
-// 用户偏好与持久化：主题、卡片大小、排序、壁纸、工具栏透明度/模糊、整理输出目录。
+// 用户偏好与持久化：主题、卡片大小、排序、壁纸、界面透明度、整理输出目录。
 // 所有 setSetting 持久化副作用集中在此，App 只消费状态与 setter。
 export function usePreferences() {
   const [theme, setTheme] = useState<Theme>('night');
@@ -13,7 +13,6 @@ export function usePreferences() {
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
   const [wallpaperOpacity, setWallpaperOpacity] = useState(32);
   const [toolbarOpacity, setToolbarOpacity] = useState(62);
-  const [toolbarBlur, setToolbarBlur] = useState(14);
   const [organizeOutputPath, setOrganizeOutputPath] = useState<string | null>(null);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
@@ -42,9 +41,6 @@ export function usePreferences() {
     if (preferencesLoaded) api.setSetting('toolbarOpacity', String(toolbarOpacity));
   }, [toolbarOpacity, preferencesLoaded]);
 
-  useEffect(() => {
-    if (preferencesLoaded) api.setSetting('toolbarBlur', String(toolbarBlur));
-  }, [toolbarBlur, preferencesLoaded]);
 
   // 读取全部持久化偏好并置 preferencesLoaded=true。由 App 初始化流程调用。
   const loadPreferences = useCallback(async () => {
@@ -68,13 +64,6 @@ export function usePreferences() {
       const parsedToolbarOpacity = Number(savedToolbarOpacity);
       if (Number.isFinite(parsedToolbarOpacity)) {
         setToolbarOpacity(Math.min(100, Math.max(0, parsedToolbarOpacity)));
-      }
-    }
-    const savedToolbarBlur = await api.getSetting('toolbarBlur');
-    if (savedToolbarBlur) {
-      const parsedToolbarBlur = Number(savedToolbarBlur);
-      if (Number.isFinite(parsedToolbarBlur)) {
-        setToolbarBlur(Math.min(30, Math.max(0, parsedToolbarBlur)));
       }
     }
     const savedWallpaperPath = await api.getSetting('wallpaperPath');
@@ -156,7 +145,6 @@ export function usePreferences() {
     wallpaperPath, wallpaperUrl,
     wallpaperOpacity, setWallpaperOpacity,
     toolbarOpacity, setToolbarOpacity,
-    toolbarBlur, setToolbarBlur,
     organizeOutputPath,
     preferencesLoaded,
     loadPreferences,

@@ -21,8 +21,8 @@ const MPV_DEBUG_LOG = join(app.getPath('temp'), 'mpv-place-debug.log');
 // 唯一 ASCII 标题：用于按标题定位 mpv 窗口（避免编码/PID 问题）
 const MPV_WINDOW_TITLE = 'VideoPlayerMpvEmbedWindow';
 // mpv 全屏时 app 收不到普通按键，故用系统级快捷键截帧设背景。
-// 必须带修饰键，否则会劫持全局单字母键导致别处无法打字。
-const WALLPAPER_ACCEL = 'CommandOrControl+Shift+B';
+// 播放器运行期间只在 mpv 场景注册 B；保留组合键作为备用入口。
+const WALLPAPER_ACCELS = ['B', 'CommandOrControl+Shift+B'] as const;
 
 let getWin: () => BrowserWindow | null = () => null;
 
@@ -838,14 +838,18 @@ async function captureMpvFrameToWallpaper() {
 
 function registerMpvWallpaperShortcut() {
   try {
-    if (!globalShortcut.isRegistered(WALLPAPER_ACCEL)) {
-      globalShortcut.register(WALLPAPER_ACCEL, () => { void captureMpvFrameToWallpaper(); });
+    for (const accelerator of WALLPAPER_ACCELS) {
+      if (!globalShortcut.isRegistered(accelerator)) {
+        globalShortcut.register(accelerator, () => { void captureMpvFrameToWallpaper(); });
+      }
     }
   } catch (e) { console.error('[wallpaper] register shortcut failed:', e); }
 }
 
 function unregisterMpvWallpaperShortcut() {
-  try { globalShortcut.unregister(WALLPAPER_ACCEL); } catch { /* ignore */ }
+  for (const accelerator of WALLPAPER_ACCELS) {
+    try { globalShortcut.unregister(accelerator); } catch { /* ignore */ }
+  }
 }
 
 async function stopMpvInternal() {

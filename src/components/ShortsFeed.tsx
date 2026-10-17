@@ -393,7 +393,7 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
           </span>
         </div>
         <input
-          className="shorts-progress"
+          className="shorts-progress app-range"
           type="range"
           min="0"
           max="1"
@@ -401,7 +401,7 @@ export function ShortsFeed({ videos, startIndex = 0, onClose, onCaptureWallpaper
           value={progress}
           disabled={!duration}
           onChange={onSeek}
-          style={{ ['--progress' as string]: `${progress * 100}%` }}
+          style={{ ['--range-progress' as string]: `${progress * 100}%` }}
           aria-label="视频播放进度"
         />
       </div>

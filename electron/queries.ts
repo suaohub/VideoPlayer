@@ -749,7 +749,7 @@ export function getOrganizeCategories() {
     LEFT JOIN video_organize_categories voc ON voc.category_id = c.id
     LEFT JOIN videos v ON v.id = voc.video_id AND ${VISIBLE_VIDEO_CONDITION}
     GROUP BY c.id
-    ORDER BY c.sort_order ASC, c.name COLLATE NOCASE ASC
+    ORDER BY c.enabled DESC, c.sort_order ASC, c.name COLLATE NOCASE ASC
   `).all();
 }
 
@@ -783,6 +783,16 @@ export function deleteOrganizeCategory(categoryId: number) {
     db.prepare('DELETE FROM organize_categories WHERE id = ?').run(categoryId);
   });
   tx();
+}
+
+export function reorderOrganizeCategories(categoryIds: number[]): void {
+  const db = getDb();
+  const existingIds = (db.prepare('SELECT id FROM organize_categories ORDER BY enabled DESC, sort_order ASC, id ASC').all() as Array<{ id: number }>).map((row) => row.id);
+  const requested = Array.isArray(categoryIds) ? categoryIds.filter((id) => Number.isInteger(id)) : [];
+  const orderedIds = [...new Set(requested)].filter((id) => existingIds.includes(id));
+  for (const id of existingIds) if (!orderedIds.includes(id)) orderedIds.push(id);
+  const update = db.prepare('UPDATE organize_categories SET sort_order = ? WHERE id = ?');
+  db.transaction(() => orderedIds.forEach((id, index) => update.run(index, id)))();
 }
 
 export function setOrganizeCategoryEnabled(categoryId: number, enabled: boolean): void {

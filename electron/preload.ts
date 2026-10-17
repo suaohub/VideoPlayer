@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createOrganizeCategory: (name: string) => ipcRenderer.invoke('create-organize-category', name),
   renameOrganizeCategory: (categoryId: number, name: string) => ipcRenderer.invoke('rename-organize-category', categoryId, name),
   deleteOrganizeCategory: (categoryId: number) => ipcRenderer.invoke('delete-organize-category', categoryId),
+  reorderOrganizeCategories: (categoryIds: number[]) => ipcRenderer.invoke('reorder-organize-categories', categoryIds),
   setOrganizeCategoryEnabled: (categoryId: number, enabled: boolean) => ipcRenderer.invoke('set-organize-category-enabled', categoryId, enabled),
   setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => ipcRenderer.invoke('set-video-organize-category', videoId, categoryId),
   batchSetVideoOrganizeCategory: (videoIds: number[], categoryId: number | null) => ipcRenderer.invoke(

@@ -257,6 +257,7 @@ export interface ElectronAPI {
   createOrganizeCategory: (name: string) => Promise<{ success: boolean; category?: OrganizeCategory; error?: string }>;
   renameOrganizeCategory: (categoryId: number, name: string) => Promise<{ success: boolean; error?: string }>;
   deleteOrganizeCategory: (categoryId: number) => Promise<{ success: boolean; error?: string }>;
+  reorderOrganizeCategories: (categoryIds: number[]) => Promise<{ success: boolean; error?: string }>;
   setOrganizeCategoryEnabled: (categoryId: number, enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
   setVideoOrganizeCategory: (videoId: number, categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; error?: string }>;
   batchSetVideoOrganizeCategory: (videoIds: number[], categoryId: number | null) => Promise<{ success: boolean; categoryId?: number | null; updatedCount?: number; error?: string }>;

@@ -164,10 +164,11 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
 
         <span className="player-time">{formatTime(position)}</span>
         <input
-          className="player-seek"
+          className="player-seek app-range"
           type="range"
           min={0}
           max={Math.max(duration, 0.1)}
+          style={{ ['--range-progress' as string]: `${duration > 0 ? Math.min(position / duration, 1) * 100 : 0}%` }}
           step="any"
           value={Math.min(position, duration || 0)}
           onChange={(e) => onSeekInput(Number(e.target.value))}
@@ -179,11 +180,12 @@ export function InternalPlayer({ video, onClose }: InternalPlayerProps) {
         <div className="player-group" title="音量">
           <span className="player-icon">🔊</span>
           <input
-            className="player-volume"
+            className="player-volume app-range"
             type="range"
             min={0}
             max={100}
             value={volume}
+            style={{ ['--range-progress' as string]: `${volume}%` }}
             onChange={(e) => changeVolume(Number(e.target.value))}
           />
         </div>

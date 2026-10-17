@@ -33,7 +33,7 @@ interface VideoGridProps {
 
 const GAP = 12;
 // 视口外上下各预渲染这么多像素，防止快速滚动时空白闪烁
-const OVERSCAN = 1000;
+const OVERSCAN = 640;
 const VERTICAL_REPEAT_DELAY = 420;
 const VERTICAL_REPEAT_INTERVAL = 190;
 const EMPTY_HIDDEN_IDS = new Set<number>();
@@ -70,7 +70,7 @@ function Thumb({ video, height }: { video: Video; height: number }) {
     return (
       <div style={{ ...base, background: '#000', position: 'relative' }}>
         {tp
-          ? <img src={tp} alt={video.name} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          ? <img src={tp} alt={video.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <BookOpen size={50} strokeWidth={1.35} color="#fff" />}
         <span style={{
           position: 'absolute', left: 8, top: 8,
@@ -128,7 +128,7 @@ function Thumb({ video, height }: { video: Video; height: number }) {
   if (tp) {
     return (
       <div style={{ ...base, background: '#000' }}>
-        <img src={tp} alt={video.name} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <img src={tp} alt={video.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       </div>
     );
   }
@@ -807,6 +807,17 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     return set;
   }, [layouts, scrollTop, viewportHeight]);
 
+  const renderedLayouts = useMemo(() => {
+    const rendered: Array<{ layout: CardLayout; index: number }> = [];
+    layouts.forEach((layout, index) => {
+      if (hiddenIds.has(layout.video.id)) return;
+      if (visibleIndices.has(index) || index === focusedIndex) {
+        rendered.push({ layout, index });
+      }
+    });
+    return rendered;
+  }, [layouts, hiddenIds, visibleIndices, focusedIndex]);
+
   useEffect(() => {
     const current = focusedIndexRef.current;
     const currentLayout = current >= 0 ? layouts[current] : undefined;
@@ -1132,10 +1143,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
         </div>
       ) : (
         <div style={{ position: 'relative', height: totalHeight }}>
-          {layouts.map((L, i) => {
-            if (hiddenIds.has(L.video.id)) return null;
-            // 不在视口范围且不是焦点卡片 → 跳过渲染（虚拟化）
-            if (!visibleIndices.has(i) && i !== focusedIndex) return null;
+          {renderedLayouts.map(({ layout: L, index: i }) => {
             return (
               <VideoCard
                 key={L.video.id}
