@@ -78,7 +78,7 @@ export interface Folder {
 }
 
 // 主题
-export type Theme = 'day' | 'night' | 'romantic' | 'ocean' | 'forest' | 'sunset' | 'slate' | 'cyberpunk';
+export type Theme = 'day' | 'night';
 
 // 全屏模式
 export type FullscreenMode = 'app' | 'window' | 'desktop';

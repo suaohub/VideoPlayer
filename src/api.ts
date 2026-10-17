@@ -2,8 +2,8 @@ import { Video, Tag, Folder, VideoFilter, ImportSourceSelection, RefreshResult, 
 import { generateMockData } from './mock/mockData';
 import { isAudioFile, isTextFile, isComicExt } from './media';
 
-// ⚠️ 开发开关：需要纯 UI 预览时可临时改为 true；正式运行走真实 IPC。
-const USE_MOCK = false;
+// 浏览器预览没有 Electron preload 时自动使用 mock，Electron 窗口仍走真实 IPC。
+const USE_MOCK = typeof window === 'undefined' || !window.electronAPI;
 
 // ---------- Mock 实现 ----------
 const dataset = generateMockData();

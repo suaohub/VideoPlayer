@@ -1,6 +1,7 @@
 import { getDb } from './db';
-import { buildThumbnailAsync, thumbnailFilePathFromUrl } from './thumbnail';
+import { generateThumbnailAsync, probeVideoAsync, thumbnailFilePathFromUrl, VideoMetadata } from './thumbnail';
 import * as fs from 'fs';
+import * as os from 'os';
 import { isAudioFile, isTextFile, isComicExt } from './media';
 
 // 缩略图后台生成队列：限并发、非阻塞，逐个生成后更新 DB 并通过事件通知渲染进程。
@@ -32,7 +33,9 @@ export function setThumbnailListeners(ready: ReadyListener, progress: ProgressLi
 }
 
 // 缩略图属于后台任务，不能与 mpv 播放争抢磁盘、CPU 和解码器。
-const CONCURRENCY = 2;
+// 单个 ffmpeg 任务仍然受控，避免把播放和磁盘 IO 压满；在常见 8 核机器上
+// 从 2 路提高到 4 路，首屏批量出图速度明显更快，低配机器仍保持 2 路。
+const CONCURRENCY = Math.min(4, Math.max(2, Math.floor((os.cpus().length || 4) / 2)));
 
 // 待处理队列（去重：已在队列或处理中的 id 不重复加入）
 const pending: number[] = [];
@@ -101,8 +104,19 @@ export function setThumbnailGenerationPaused(value: boolean) {
 async function processOne(id: number) {
   const db = getDb();
   const row = db
-    .prepare('SELECT path, ext, thumbnail_path FROM videos WHERE id = ?')
-    .get(id) as { path: string; ext: string | null; thumbnail_path: string | null } | undefined;
+    .prepare(`
+      SELECT path, ext, thumbnail_path, duration, width, height, aspect_ratio
+      FROM videos WHERE id = ?
+    `)
+    .get(id) as {
+      path: string;
+      ext: string | null;
+      thumbnail_path: string | null;
+      duration: number | null;
+      width: number | null;
+      height: number | null;
+      aspect_ratio: number | null;
+    } | undefined;
   if (!row) return;
 
   // 音频/文本没有视频画面，漫画缩略图直接指向首图，都不启动 ffmpeg 生成缩略图。
@@ -120,7 +134,19 @@ async function processOne(id: number) {
   if (!fs.existsSync(row.path)) return;
 
   try {
-    const thumb = await buildThumbnailAsync(row.path);
+    // 健康中心补图时直接复用数据库里的媒体信息，避免为了生成一张图再次启动 ffprobe。
+    // 新导入文件只有在元数据缺失时才需要探测。
+    const storedMetadata: VideoMetadata = {
+      duration: row.duration,
+      width: row.width,
+      height: row.height,
+      aspect_ratio: row.aspect_ratio,
+    };
+    const metadata = row.duration != null && row.width != null && row.height != null
+      ? storedMetadata
+      : await probeVideoAsync(row.path);
+    const thumbnail_path = await generateThumbnailAsync(row.path, metadata);
+    const thumb = { ...metadata, thumbnail_path };
     db.prepare(`
       UPDATE videos
       SET thumbnail_path = COALESCE(?, thumbnail_path),

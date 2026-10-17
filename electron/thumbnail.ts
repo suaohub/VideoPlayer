@@ -10,6 +10,10 @@ import * as path from 'path';
 // GTX 1060+ 用 NVDEC (cuda)，其次 d3d11va 通用兜底
 const HW_PRIORITY = ['cuda', 'd3d11va', 'dxva2'];
 let _hwaccel: string | null | undefined = undefined; // undefined = 尚未检测
+let _hwaccelPromise: Promise<string | null> | null = null;
+// scale_cuda 是否可用只需要验证一次。某些 ffmpeg 构建虽然声明支持 CUDA，
+// 但实际运行时并没有对应滤镜；不缓存这个结果会让每个视频都多跑一次失败的 ffmpeg。
+let _cudaPipelineSupported: boolean | undefined;
 
 function detectHwAccelSync(): string | null {
   if (_hwaccel !== undefined) return _hwaccel;
@@ -32,18 +36,23 @@ function detectHwAccelSync(): string | null {
 
 async function detectHwAccelAsync(): Promise<string | null> {
   if (_hwaccel !== undefined) return _hwaccel;
-  const ffmpeg = resolveBinary('ffmpeg');
-  const { stdout } = await runProcess(ffmpeg, ['-hwaccels', '-hide_banner']);
-  for (const accel of HW_PRIORITY) {
-    if (stdout.toLowerCase().includes(accel)) {
-      _hwaccel = accel;
-      console.log(`[thumbnail] GPU hw-accel: ${accel}`);
-      return accel;
-    }
+  if (!_hwaccelPromise) {
+    _hwaccelPromise = (async () => {
+      const ffmpeg = resolveBinary('ffmpeg');
+      const { stdout } = await runProcess(ffmpeg, ['-hwaccels', '-hide_banner']);
+      for (const accel of HW_PRIORITY) {
+        if (stdout.toLowerCase().includes(accel)) {
+          _hwaccel = accel;
+          console.log(`[thumbnail] GPU hw-accel: ${accel}`);
+          return accel;
+        }
+      }
+      _hwaccel = null;
+      console.log('[thumbnail] GPU hw-accel: none, using CPU');
+      return null;
+    })();
   }
-  _hwaccel = null;
-  console.log('[thumbnail] GPU hw-accel: none, using CPU');
-  return null;
+  return _hwaccelPromise;
 }
 
 export interface VideoMetadata {
@@ -91,11 +100,24 @@ function toThumbUrl(filePath: string): string {
   return `thumb://${path.basename(filePath)}`;
 }
 
+// 不再固定截取视频前 10%。同系列视频常有相同片头，固定位置会生成相同缩略图。
+// 使用路径哈希得到稳定的分散时间点：同一个文件重启后仍保持一致，不同文件会落在不同位置。
+function chooseThumbnailTimestamp(videoPath: string, duration: number | null): number {
+  const safeDuration = Number.isFinite(duration) && (duration ?? 0) > 0 ? duration as number : 1;
+  const digest = createHash('sha1').update(videoPath).digest();
+  const sample = digest.readUInt32BE(0) / 0xffffffff;
+  if (safeDuration <= 2) return Math.max(0.1, safeDuration * (0.25 + sample * 0.5));
+  const start = Math.min(3, safeDuration * 0.15);
+  const end = Math.max(start, safeDuration * 0.85);
+  return start + sample * (end - start);
+}
+
 export function probeVideo(videoPath: string): VideoMetadata {
   const ffprobe = resolveBinary('ffprobe');
   const result = spawnSync(ffprobe, [
     '-v', 'error',
-    '-show_entries', 'stream=codec_type,width,height:format=duration',
+    '-select_streams', 'v:0',
+    '-show_entries', 'stream=width,height:format=duration',
     '-of', 'json',
     videoPath,
   ], { encoding: 'utf8' });
@@ -124,9 +146,7 @@ export function generateThumbnail(videoPath: string, metadata: VideoMetadata): s
   if (fs.existsSync(outputPath)) return toThumbUrl(outputPath);
 
   const ffmpeg = resolveBinary('ffmpeg');
-  const ss = metadata.duration && metadata.duration > 20
-    ? Math.min(Math.max(metadata.duration * 0.1, 3), 60)
-    : 1;
+  const ss = chooseThumbnailTimestamp(videoPath, metadata.duration);
   const hwaccel = detectHwAccelSync();
 
   // hwArgs: ffmpeg 输入前的硬件选项；vf: 滤镜链
@@ -213,7 +233,8 @@ export async function probeVideoAsync(videoPath: string): Promise<VideoMetadata>
   const ffprobe = resolveBinary('ffprobe');
   const { code, stdout } = await runProcess(ffprobe, [
     '-v', 'error',
-    '-show_entries', 'stream=codec_type,width,height:format=duration',
+    '-select_streams', 'v:0',
+    '-show_entries', 'stream=width,height:format=duration',
     '-of', 'json',
     videoPath,
   ]);
@@ -246,17 +267,15 @@ export async function generateThumbnailAsync(
   if (!options.force && fs.existsSync(outputPath)) return toThumbUrl(outputPath);
 
   const ffmpeg = resolveBinary('ffmpeg');
-  const ss = options.timestamp ?? (
-    metadata.duration && metadata.duration > 20
-      ? Math.min(Math.max(metadata.duration * 0.1, 3), 60)
-      : 1
-  );
+  const ss = options.timestamp ?? chooseThumbnailTimestamp(videoPath, metadata.duration);
   const hwaccel = await detectHwAccelAsync();
 
   async function run(hwArgs: string[], vf: string): Promise<boolean> {
     const { code } = await runProcess(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error', '-nostdin',
       ...hwArgs, '-y',
       '-ss', String(ss), '-i', videoPath,
+      '-map', '0:v:0', '-an', '-sn', '-dn',
       '-frames:v', '1', '-vf', vf, '-q:v', '3', outputPath,
     ]);
     return code === 0 && fs.existsSync(outputPath);
@@ -264,8 +283,13 @@ export async function generateThumbnailAsync(
 
   if (hwaccel === 'cuda') {
     // ① 完整 CUDA 管线：NVDEC → 帧留在 GPU → scale_cuda → hwdownload
-    if (await run(['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'], 'scale_cuda=480:-1,hwdownload,format=nv12'))
-      return toThumbUrl(outputPath);
+    if (_cudaPipelineSupported !== false) {
+      if (await run(['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'], 'scale_cuda=480:-1,hwdownload,format=nv12')) {
+        _cudaPipelineSupported = true;
+        return toThumbUrl(outputPath);
+      }
+      _cudaPipelineSupported = false;
+    }
     // ② NVDEC + CPU scale（不支持 scale_cuda 的格式/编解码器）
     if (await run(['-hwaccel', 'cuda'], 'scale=480:-1')) return toThumbUrl(outputPath);
     console.warn('[thumbnail] CUDA failed, trying d3d11va:', path.basename(videoPath));

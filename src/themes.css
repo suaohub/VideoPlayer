@@ -51,156 +51,6 @@
   --glass-radius: 14px;
 }
 
-/* 浪漫情趣主题：暖色、紫红渐变、柔光 */
-[data-theme='romantic'] {
-  --bg-primary: linear-gradient(135deg, #2d1b3d 0%, #3d1f2e 50%, #4a1f38 100%);
-  --bg-secondary: rgba(60, 30, 55, 0.6);
-  --bg-toolbar: rgba(70, 35, 60, 0.75);
-  --bg-card: rgba(80, 40, 70, 0.5);
-  --bg-hover: rgba(120, 60, 100, 0.5);
-  --text-primary: #ffe8f5;
-  --text-secondary: #d9a8c5;
-  --border: rgba(200, 120, 170, 0.25);
-  --accent: #ff6b9d;
-  --accent-hover: #ff8fb3;
-  --shadow: 0 8px 32px rgba(180, 60, 130, 0.3);
-  --shadow-card: 0 4px 20px rgba(180, 60, 130, 0.25);
-  --focus-ring: #ff6b9d;
-  --glass-bg-light: rgba(80, 40, 70, 0.28);
-  --glass-bg-medium: rgba(80, 40, 70, 0.42);
-  --glass-bg: rgba(80, 40, 70, 0.42);
-  --glass-bg-strong: rgba(70, 35, 60, 0.78);
-  --glass-blur: 20px;
-  --glass-border: rgba(255, 180, 220, 0.18);
-  --glass-highlight: inset 0 1px 0 rgba(255, 200, 230, 0.14);
-  --glass-radius: 14px;
-}
-
-/* 海洋主题：深蓝青绿，冷静清澈 */
-[data-theme='ocean'] {
-  --bg-primary: linear-gradient(160deg, #0a1929 0%, #0d2438 55%, #0a2e3a 100%);
-  --bg-secondary: rgba(13, 34, 54, 0.72);
-  --bg-toolbar: rgba(14, 38, 58, 0.85);
-  --bg-card: rgba(18, 46, 68, 0.6);
-  --bg-hover: rgba(30, 74, 104, 0.6);
-  --text-primary: #e2f4ff;
-  --text-secondary: #8bb8cf;
-  --border: rgba(90, 160, 200, 0.22);
-  --accent: #22d3ee;
-  --accent-hover: #67e8f9;
-  --shadow: 0 8px 28px rgba(10, 60, 90, 0.45);
-  --shadow-card: 0 3px 12px rgba(10, 50, 80, 0.35);
-  --focus-ring: #22d3ee;
-  --glass-bg-light: rgba(18, 46, 68, 0.3);
-  --glass-bg-medium: rgba(18, 46, 68, 0.45);
-  --glass-bg: rgba(18, 46, 68, 0.45);
-  --glass-bg-strong: rgba(14, 38, 58, 0.8);
-  --glass-blur: 20px;
-  --glass-border: rgba(130, 200, 235, 0.18);
-  --glass-highlight: inset 0 1px 0 rgba(160, 220, 245, 0.14);
-  --glass-radius: 14px;
-}
-
-/* 森林主题：墨绿沉稳，护眼自然 */
-[data-theme='forest'] {
-  --bg-primary: linear-gradient(160deg, #0f1c12 0%, #13251a 55%, #16301f 100%);
-  --bg-secondary: rgba(19, 37, 26, 0.72);
-  --bg-toolbar: rgba(22, 42, 30, 0.85);
-  --bg-card: rgba(26, 48, 34, 0.6);
-  --bg-hover: rgba(42, 78, 54, 0.6);
-  --text-primary: #e6f4e6;
-  --text-secondary: #9cc09c;
-  --border: rgba(110, 170, 120, 0.22);
-  --accent: #4ade80;
-  --accent-hover: #86efac;
-  --shadow: 0 8px 28px rgba(10, 50, 25, 0.45);
-  --shadow-card: 0 3px 12px rgba(10, 40, 20, 0.35);
-  --focus-ring: #4ade80;
-  --glass-bg-light: rgba(26, 48, 34, 0.3);
-  --glass-bg-medium: rgba(26, 48, 34, 0.45);
-  --glass-bg: rgba(26, 48, 34, 0.45);
-  --glass-bg-strong: rgba(22, 42, 30, 0.8);
-  --glass-blur: 20px;
-  --glass-border: rgba(140, 200, 150, 0.18);
-  --glass-highlight: inset 0 1px 0 rgba(170, 220, 175, 0.13);
-  --glass-radius: 14px;
-}
-
-/* 日落主题：暖橙琥珀，温柔黄昏 */
-[data-theme='sunset'] {
-  --bg-primary: linear-gradient(150deg, #2b1810 0%, #3d2114 45%, #4a2418 100%);
-  --bg-secondary: rgba(61, 33, 20, 0.72);
-  --bg-toolbar: rgba(70, 38, 22, 0.85);
-  --bg-card: rgba(80, 44, 26, 0.55);
-  --bg-hover: rgba(120, 66, 38, 0.55);
-  --text-primary: #fff0e2;
-  --text-secondary: #d9b193;
-  --border: rgba(210, 150, 100, 0.24);
-  --accent: #fb923c;
-  --accent-hover: #fdba74;
-  --shadow: 0 8px 30px rgba(140, 70, 20, 0.35);
-  --shadow-card: 0 4px 16px rgba(140, 70, 20, 0.28);
-  --focus-ring: #fb923c;
-  --glass-bg-light: rgba(80, 44, 26, 0.28);
-  --glass-bg-medium: rgba(80, 44, 26, 0.42);
-  --glass-bg: rgba(80, 44, 26, 0.42);
-  --glass-bg-strong: rgba(70, 38, 22, 0.8);
-  --glass-blur: 20px;
-  --glass-border: rgba(240, 180, 130, 0.18);
-  --glass-highlight: inset 0 1px 0 rgba(255, 205, 160, 0.14);
-  --glass-radius: 14px;
-}
-
-/* 极简灰主题：中性石板，专注内容 */
-[data-theme='slate'] {
-  --bg-primary: linear-gradient(155deg, #191919 0%, #1c1c1e 50%, #212124 100%);
-  --bg-secondary: #242427;
-  --bg-toolbar: #2a2a2e;
-  --bg-card: #2e2e33;
-  --bg-hover: #3a3a40;
-  --text-primary: #ececec;
-  --text-secondary: #9a9aa0;
-  --border: #3c3c42;
-  --accent: #a1a1aa;
-  --accent-hover: #c4c4cc;
-  --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.35);
-  --focus-ring: #d4d4d8;
-  --glass-bg-light: rgba(46, 46, 51, 0.35);
-  --glass-bg-medium: rgba(46, 46, 51, 0.55);
-  --glass-bg: rgba(46, 46, 51, 0.55);
-  --glass-bg-strong: rgba(42, 42, 46, 0.82);
-  --glass-blur: 18px;
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --glass-radius: 14px;
-}
-
-/* 赛博霓虹主题：暗底霓虹，强烈科技感 */
-[data-theme='cyberpunk'] {
-  --bg-primary: linear-gradient(155deg, #0d0221 0%, #150b2e 50%, #1a0b2e 100%);
-  --bg-secondary: rgba(21, 11, 46, 0.75);
-  --bg-toolbar: rgba(26, 13, 52, 0.88);
-  --bg-card: rgba(32, 16, 60, 0.6);
-  --bg-hover: rgba(60, 28, 100, 0.6);
-  --text-primary: #f0e6ff;
-  --text-secondary: #b088d9;
-  --border: rgba(180, 100, 255, 0.28);
-  --accent: #f000b8;
-  --accent-hover: #ff44dd;
-  --shadow: 0 8px 32px rgba(240, 0, 184, 0.28);
-  --shadow-card: 0 3px 16px rgba(120, 40, 220, 0.3);
-  --focus-ring: #00f0ff;
-  --glass-bg-light: rgba(32, 16, 60, 0.32);
-  --glass-bg-medium: rgba(32, 16, 60, 0.48);
-  --glass-bg: rgba(32, 16, 60, 0.48);
-  --glass-bg-strong: rgba(26, 13, 52, 0.82);
-  --glass-blur: 22px;
-  --glass-border: rgba(190, 120, 255, 0.24);
-  --glass-highlight: inset 0 1px 0 rgba(0, 240, 255, 0.14);
-  --glass-radius: 14px;
-}
-
 /* ============ 全局基础样式 ============ */
 
 * {
@@ -620,18 +470,6 @@ button {
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
-/* 其他主题保留主题色，但降低玻璃透明度和发光感，确保信息层级一致。 */
-[data-theme='romantic'],
-[data-theme='ocean'],
-[data-theme='forest'],
-[data-theme='sunset'],
-[data-theme='slate'],
-[data-theme='cyberpunk'] {
-  --glass-blur: 16px;
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --glass-radius: 12px;
-}
-
 /* ========================================================================
    基础层
    ======================================================================== */
@@ -1031,7 +869,8 @@ textarea:focus-visible,
 .app-toast {
   position: fixed;
   right: 22px;
-  bottom: 22px;
+  top: 138px;
+  bottom: auto;
   z-index: 12500;
   display: flex;
   align-items: center;
@@ -1094,7 +933,7 @@ textarea:focus-visible,
 
 @keyframes app-feedback-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes app-feedback-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
-@keyframes app-feedback-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes app-feedback-toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
 @keyframes app-feedback-menu-in { from { opacity: 0; transform: translateY(-3px) scale(.98); } to { opacity: 1; transform: none; } }
 
 /* ========================================================================
@@ -2651,4 +2490,180 @@ textarea:focus-visible,
   .import-button span {
     display: none;
   }
+}
+
+/* ========================================================================
+   iOS / Apple UI theme system
+   只有日间与夜间两套系统主题；壁纸仍作为 app-wallpaper 的底层视觉保留。
+   ======================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --glass-blur: 24px;
+  --motion-fast: 140ms;
+  --motion-normal: 220ms;
+}
+
+html, body, button, input, textarea, select {
+  font-family: var(--font-ui);
+}
+
+[data-theme='day'] {
+  color-scheme: light;
+  --bg-primary: #f2f2f7;
+  --bg-secondary: rgba(255, 255, 255, .72);
+  --bg-toolbar: rgba(249, 249, 251, .78);
+  --bg-card: rgba(255, 255, 255, .88);
+  --bg-hover: rgba(118, 118, 128, .12);
+  --text-primary: #1c1c1e;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #8e8e93;
+  --border: rgba(60, 60, 67, .18);
+  --line-subtle: rgba(60, 60, 67, .12);
+  --line-default: rgba(60, 60, 67, .18);
+  --line-strong: rgba(60, 60, 67, .28);
+  --accent: #007aff;
+  --accent-hover: #006ee6;
+  --accent-soft: rgba(0, 122, 255, .12);
+  --accent-contrast: #fff;
+  --focus-ring: #007aff;
+  --focus-shadow: 0 0 0 4px rgba(0, 122, 255, .18);
+  --surface-0: #f2f2f7;
+  --surface-1: #fff;
+  --surface-2: rgba(255, 255, 255, .82);
+  --surface-3: #f8f8fa;
+  --surface-elevated: #fff;
+  --glass-bg-light: rgba(255, 255, 255, .56);
+  --glass-bg-medium: rgba(255, 255, 255, .72);
+  --glass-bg: rgba(255, 255, 255, .78);
+  --glass-bg-strong: rgba(249, 249, 251, .92);
+  --glass-border: rgba(60, 60, 67, .14);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .9);
+  --shadow: 0 8px 24px rgba(0, 0, 0, .08);
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, .08);
+}
+
+[data-theme='night'] {
+  color-scheme: dark;
+  --bg-primary: #000;
+  --bg-secondary: rgba(28, 28, 30, .72);
+  --bg-toolbar: rgba(28, 28, 30, .78);
+  --bg-card: rgba(28, 28, 30, .88);
+  --bg-hover: rgba(118, 118, 128, .24);
+  --text-primary: #f5f5f7;
+  --text-secondary: #98989d;
+  --text-tertiary: #8e8e93;
+  --border: rgba(84, 84, 88, .65);
+  --line-subtle: rgba(84, 84, 88, .42);
+  --line-default: rgba(84, 84, 88, .65);
+  --line-strong: rgba(116, 116, 122, .72);
+  --accent: #0a84ff;
+  --accent-hover: #409cff;
+  --accent-soft: rgba(10, 132, 255, .18);
+  --accent-contrast: #fff;
+  --focus-ring: #0a84ff;
+  --focus-shadow: 0 0 0 4px rgba(10, 132, 255, .24);
+  --surface-0: #000;
+  --surface-1: #1c1c1e;
+  --surface-2: rgba(28, 28, 30, .9);
+  --surface-3: #2c2c2e;
+  --surface-elevated: #2c2c2e;
+  --glass-bg-light: rgba(28, 28, 30, .54);
+  --glass-bg-medium: rgba(28, 28, 30, .72);
+  --glass-bg: rgba(28, 28, 30, .82);
+  --glass-bg-strong: rgba(28, 28, 30, .94);
+  --glass-border: rgba(84, 84, 88, .56);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .07);
+  --shadow: 0 12px 32px rgba(0, 0, 0, .42);
+  --shadow-card: 0 5px 16px rgba(0, 0, 0, .34);
+}
+
+body {
+  letter-spacing: -.01em;
+}
+
+.app-shell::before {
+  background:
+    radial-gradient(700px 460px at 100% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 72%),
+    radial-gradient(600px 440px at -10% 110%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%);
+}
+
+.app-topbar,
+.toolbar,
+.content-toolbar {
+  min-height: 64px;
+  padding: 12px 20px;
+  border-bottom-color: var(--line-subtle);
+  box-shadow: 0 1px 0 var(--line-subtle);
+  backdrop-filter: blur(30px) saturate(1.35);
+  -webkit-backdrop-filter: blur(30px) saturate(1.35);
+}
+
+.sidebar,
+.app-sidebar,
+.folder-sidebar,
+.app-main-layout > aside,
+.app-content > .app-body > aside,
+.app-content > div > aside {
+  background: color-mix(in srgb, var(--bg-secondary) 84%, transparent);
+  border-right-color: var(--line-subtle);
+  backdrop-filter: blur(30px) saturate(1.25);
+  -webkit-backdrop-filter: blur(30px) saturate(1.25);
+}
+
+.toolbar button,
+.content-toolbar button,
+.content-header button,
+.page-header button,
+.sidebar button,
+.app-sidebar button,
+.settings-btn,
+.settings-mini-btn {
+  border-radius: var(--radius-sm);
+}
+
+.toolbar input[type='text'],
+.toolbar input[type='search'],
+.content-toolbar input[type='text'],
+.content-toolbar input[type='search'],
+.content-header input,
+.page-header input {
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+}
+
+.popover,
+.menu-floater,
+.toolbar-menu,
+.dropdown-menu {
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(30px) saturate(1.3);
+  -webkit-backdrop-filter: blur(30px) saturate(1.3);
+}
+
+.video-card,
+.overview-media-card,
+.content-card {
+  border-radius: var(--radius-md);
+}
+
+/* 卡片数量较多时，单卡毛玻璃会让滚动反复触发昂贵的背景重绘。
+   卡片改用半透明表面，毛玻璃保留在导航和浮层上，滚动更接近原生列表。 */
+.video-card {
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  contain: layout paint;
+}
+
+[data-theme='day'] .video-card {
+  background: rgba(255, 255, 255, .94) !important;
+}
+
+[data-theme='night'] .video-card {
+  background: rgba(28, 28, 30, .94) !important;
 }

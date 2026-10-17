@@ -1,6 +1,6 @@
 {
   "name": "videoplayer",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "main": "dist/electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -24,7 +24,7 @@
     "appId": "com.sususu.videoplayer",
     "productName": "VideoPlayer",
     "directories": {
-      "output": "release/v1.4.0"
+      "output": "release/v1.5.0"
     },
     "files": [
       "dist/**/*",
@@ -80,3 +80,4 @@
     "better-sqlite3@11.10.0": true
   }
 }
+

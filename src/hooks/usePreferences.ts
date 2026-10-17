@@ -49,7 +49,7 @@ export function usePreferences() {
   // 读取全部持久化偏好并置 preferencesLoaded=true。由 App 初始化流程调用。
   const loadPreferences = useCallback(async () => {
     const savedTheme = await api.getSetting('theme');
-    if (savedTheme) setTheme(savedTheme as Theme);
+    if (savedTheme === 'day' || savedTheme === 'night') setTheme(savedTheme);
     const savedSize = await api.getSetting('cardSize');
     if (savedSize) setCardSize(Number(savedSize));
     const savedSortBy = await api.getSetting('sortBy');

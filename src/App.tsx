@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
 import './themes.css';
 import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
 import { api, IS_MOCK } from './api';
@@ -108,7 +108,7 @@ function App() {
 
   // 数据
   const [videos, setVideos] = useState<Video[]>([]);
-  const [regeneratingThumbnailId, setRegeneratingThumbnailId] = useState<number | null>(null);
+  const [regeneratingThumbnailIds, setRegeneratingThumbnailIds] = useState<Set<number>>(new Set());
   const [folders, setFolders] = useState<Folder[]>([]);
   const [hiddenFolders, setHiddenFolders] = useState<Folder[]>([]);
   const [videoCount, setVideoCount] = useState(0);
@@ -183,6 +183,7 @@ function App() {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [generatingHealthThumbnails, setGeneratingHealthThumbnails] = useState(false);
   const overviewRequestId = useRef(0);
+  const videosRequestId = useRef(0);
   const initializationStarted = useRef(false);
 
   // 定期检测磁盘挂载状态（启动时 + 每30秒一次）
@@ -232,6 +233,7 @@ function App() {
 
   // 根据过滤条件加载视频列表
   const loadVideos = useCallback(async () => {
+    const requestId = ++videosRequestId.current;
     const filter: VideoFilter = {
       folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
       search: search || undefined,
@@ -243,8 +245,12 @@ function App() {
       sortDir,
     };
     const list = await api.getVideos(filter);
-    setVideos(list);
-    setLocallyHiddenVideoIds(new Set());
+    if (requestId !== videosRequestId.current) return;
+    // 目录选中态属于高优先级交互；大列表数据放进 transition，避免查询返回时卡住侧栏点击反馈。
+    startTransition(() => {
+      setVideos(list);
+      setLocallyHiddenVideoIds(new Set());
+    });
   }, [selectedFolderIds, search, showFavorited, showFavoritedInList, mediaType, sortBy, sortDir]);
 
   // 整理预览使用完整的视频记录，不受当前搜索、收藏和目录筛选影响。
@@ -257,11 +263,9 @@ function App() {
         sortBy: 'name',
         sortDir: 'asc',
       });
-      // 预览只展示尚未实际移动的待整理视频；已整理文件回到真实目录树中显示。
-      setOrganizePreviewVideos(list.filter((video) => (
-        video.organize_category_id != null
-        && !isOrganizedVideo(video, organizeCategories, organizeOutputPath)
-      )));
+      // 整理预览展示所有已标记分类的视频，包括已经整理过的文件。
+      // 这样用户可以改分类后再次整理，后端会把文件移动到新的分类目录。
+      setOrganizePreviewVideos(list.filter((video) => video.organize_category_id != null));
     } finally {
       setOrganizePreviewLoading(false);
     }
@@ -408,7 +412,7 @@ function App() {
     initializationStarted.current = true;
     (async () => {
       const savedTheme = await api.getSetting('theme');
-      if (savedTheme) setTheme(savedTheme as Theme);
+      if (savedTheme === 'day' || savedTheme === 'night') setTheme(savedTheme);
       const savedSize = await api.getSetting('cardSize');
       if (savedSize) setCardSize(Number(savedSize));
       const savedSortBy = await api.getSetting('sortBy');
@@ -625,8 +629,8 @@ function App() {
   };
 
   const handleRegenerateThumbnail = async (videoId: number) => {
-    if (regeneratingThumbnailId != null) return;
-    setRegeneratingThumbnailId(videoId);
+    if (regeneratingThumbnailIds.has(videoId)) return;
+    setRegeneratingThumbnailIds((prev) => new Set(prev).add(videoId));
     try {
       const result = await api.regenerateThumbnail(videoId);
       if (!result.success) {
@@ -636,7 +640,11 @@ function App() {
       console.error('[thumbnail] regenerate failed', error);
       notify(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
     } finally {
-      setRegeneratingThumbnailId(null);
+      setRegeneratingThumbnailIds((prev) => {
+        const next = new Set(prev);
+        next.delete(videoId);
+        return next;
+      });
     }
   };
 
@@ -1571,7 +1579,7 @@ function App() {
                   onBatchUnfavorite={handleBatchUnfavorite}
                   showFavorited={showFavorited}
                   onRegenerateThumbnail={handleRegenerateThumbnail}
-                  regeneratingThumbnailId={regeneratingThumbnailId}
+                  regeneratingThumbnailIds={regeneratingThumbnailIds}
                   onMarkForDeletion={handleMarkForDeletion}
                   organizeCategories={organizeCategories}
                   onSetOrganizeCategory={handleSetOrganizeCategory}
@@ -1632,6 +1640,8 @@ function App() {
           importing={importing}
           importProgress={importProgress}
           onClearCache={handleClearCache}
+          onRefreshLibrary={handleRefreshImportedFolders}
+          refreshing={refreshing}
           hiddenFolders={hiddenFolders}
           onRestoreHiddenFolder={handleRestoreHiddenFolder}
           backgroundImagePath={wallpaperPath}

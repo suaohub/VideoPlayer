@@ -313,7 +313,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
             onBatchUnfavorite={() => {}}
             showFavorited={false}
             onRegenerateThumbnail={() => {}}
-            regeneratingThumbnailId={null}
+            regeneratingThumbnailIds={new Set()}
             selectionMode={true}
             selectedIds={selectedIds}
             onToggleSelect={(videoId) => {

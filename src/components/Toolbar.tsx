@@ -29,7 +29,6 @@ import {
   Sun,
   TriangleAlert,
   X,
-  Zap,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Theme, ImportProgress, ThumbnailProgress, MediaType, SortBy, SortDir } from '../types';
@@ -81,14 +80,8 @@ interface ToolbarProps {
 }
 
 const THEMES: { value: Theme; label: string; Icon: typeof Sun }[] = [
-  { value: 'day', label: '浅色', Icon: Sun },
-  { value: 'night', label: '深色', Icon: Moon },
-  { value: 'slate', label: '石板灰', Icon: Square },
-  { value: 'ocean', label: '海洋', Icon: MonitorPlay },
-  { value: 'forest', label: '森林', Icon: Sparkles },
-  { value: 'sunset', label: '日落', Icon: Sun },
-  { value: 'romantic', label: '浪漫', Icon: Heart },
-  { value: 'cyberpunk', label: '赛博', Icon: Zap },
+  { value: 'day', label: '日间', Icon: Sun },
+  { value: 'night', label: '夜间', Icon: Moon },
 ];
 
 const MEDIA_TABS: { value: MediaType; label: string; Icon: typeof LayoutGrid }[] = [

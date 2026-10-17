@@ -18,7 +18,7 @@ interface VideoGridProps {
   onBatchUnfavorite: (videoIds: number[]) => void;
   showFavorited: boolean;
   onRegenerateThumbnail: (videoId: number) => void;
-  regeneratingThumbnailId: number | null;
+  regeneratingThumbnailIds: Set<number>;
   selectionMode?: boolean;
   selectedIds?: Set<number>;
   onToggleSelect?: (videoId: number) => void;
@@ -33,7 +33,7 @@ interface VideoGridProps {
 
 const GAP = 12;
 // 视口外上下各预渲染这么多像素，防止快速滚动时空白闪烁
-const OVERSCAN = 600;
+const OVERSCAN = 1000;
 const VERTICAL_REPEAT_DELAY = 420;
 const VERTICAL_REPEAT_INTERVAL = 190;
 const EMPTY_HIDDEN_IDS = new Set<number>();
@@ -70,7 +70,7 @@ function Thumb({ video, height }: { video: Video; height: number }) {
     return (
       <div style={{ ...base, background: '#000', position: 'relative' }}>
         {tp
-          ? <img src={tp} alt={video.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          ? <img src={tp} alt={video.name} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <BookOpen size={50} strokeWidth={1.35} color="#fff" />}
         <span style={{
           position: 'absolute', left: 8, top: 8,
@@ -128,7 +128,7 @@ function Thumb({ video, height }: { video: Video; height: number }) {
   if (tp) {
     return (
       <div style={{ ...base, background: '#000' }}>
-        <img src={tp} alt={video.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        <img src={tp} alt={video.name} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       </div>
     );
   }
@@ -235,9 +235,9 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
           ? '0 0 0 3px var(--accent), var(--shadow)'
           : 'var(--shadow-card)',
         transition: animate
-          ? 'transform 0.32s cubic-bezier(0.22,0.61,0.36,1), width 0.32s cubic-bezier(0.22,0.61,0.36,1), height 0.32s cubic-bezier(0.22,0.61,0.36,1), box-shadow 0.15s ease'
+          ? 'transform 0.14s cubic-bezier(0.22,0.61,0.36,1), width 0.14s ease-out, height 0.14s ease-out, box-shadow 0.15s ease'
           : 'box-shadow 0.15s ease',
-        willChange: 'transform, width, height',
+        willChange: 'transform',
       }}
     >
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -298,7 +298,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
               style={{
                 position: 'absolute', top: 6, right: 44,
                 width: 32, height: 32,
-                background: 'var(--glass-bg-strong)',
+                background: 'color-mix(in srgb, var(--surface-elevated) 94%, transparent)',
                 backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
                 WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
                 border: '1px solid var(--glass-border)',
@@ -306,7 +306,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: regenerating ? 'wait' : 'pointer',
                 transition: 'all 0.2s ease',
-                color: '#fff',
+                color: 'var(--accent)',
                 opacity: regenerating ? 0.7 : 1,
                 boxShadow: 'var(--glass-highlight)',
               }}
@@ -320,7 +320,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
             style={{
               position: 'absolute', top: 6, right: 6,
               width: 32, height: 32,
-              background: 'var(--glass-bg-strong)',
+              background: 'color-mix(in srgb, var(--surface-elevated) 94%, transparent)',
               backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
               WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
               border: '1px solid var(--glass-border)',
@@ -328,7 +328,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
-              color: video.favorited ? '#ef4444' : '#fff',
+              color: video.favorited ? '#ff375f' : 'var(--text-primary)',
               boxShadow: 'var(--glass-highlight)',
             }}
             title={video.favorited ? '取消收藏' : '收藏'}
@@ -367,7 +367,7 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailId, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -433,6 +433,8 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const verticalRepeatTimer = useRef<number | null>(null);
   const heldVerticalKey = useRef<'ArrowUp' | 'ArrowDown' | null>(null);
   const scrollAnimation = useRef<number | null>(null);
+  const scrollFrame = useRef<number | null>(null);
+  const cardSizeFrame = useRef<number | null>(null);
   selectionModeRef.current = selectionMode;
   const hiddenIds = hiddenVideoIds ?? EMPTY_HIDDEN_IDS;
   const lastPointerPos = useRef<{ x: number; y: number } | null>(null);
@@ -735,11 +737,22 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     const el = containerRef.current;
     if (!el) return;
     const onScroll = () => {
-      const nextScrollTop = el.scrollTop;
-      setScrollTop(nextScrollTop);
+      // 滚轮事件可能一帧内触发多次，只在下一帧提交一次虚拟化窗口更新。
+      // 这样滚动手感保持原生惯性，React 也不会被高频 setState 拖慢。
+      if (scrollFrame.current != null) return;
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = null;
+        setScrollTop(el.scrollTop);
+      });
     };
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (scrollFrame.current != null) {
+        cancelAnimationFrame(scrollFrame.current);
+        scrollFrame.current = null;
+      }
+    };
   }, []);
 
   // 首帧后开启动画
@@ -758,10 +771,23 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       e.preventDefault();
       const step = -e.deltaY * 0.5;
       const next = Math.max(min, Math.min(max, Math.round(cardSizeRef.current + step)));
-      onCardSizeChange(next);
+      // 合并同一帧内的高频 Ctrl+滚轮事件，避免每个 wheel 都重算瀑布流。
+      cardSizeRef.current = next;
+      if (cardSizeFrame.current == null) {
+        cardSizeFrame.current = requestAnimationFrame(() => {
+          cardSizeFrame.current = null;
+          onCardSizeChange(cardSizeRef.current);
+        });
+      }
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      if (cardSizeFrame.current != null) {
+        cancelAnimationFrame(cardSizeFrame.current);
+        cardSizeFrame.current = null;
+      }
+    };
   }, [onCardSizeChange, cardSizeRange]);
 
   // 计算瀑布流布局
@@ -1096,7 +1122,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
         const video = videos.find((item) => item.id === videoId);
         if (video) setContextMenu({ video, x: event.clientX, y: event.clientY });
       }}
-      style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16 }}
+      style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16, overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch', scrollbarGutter: 'stable' }}
     >
       {videos.length === 0 ? (
         <div className="video-grid-empty">
@@ -1128,7 +1154,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 onPlay={handlePlayFromGrid}
                 onToggleFavorite={onToggleFavorite}
                 onRegenerateThumbnail={onRegenerateThumbnail}
-                regenerating={regeneratingThumbnailId === L.video.id}
+                regenerating={regeneratingThumbnailIds.has(L.video.id)}
                 cardRef={(el) => {
                   if (el) cardEls.current.set(L.video.id, el);
                   else cardEls.current.delete(L.video.id);
@@ -1177,16 +1203,17 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                   width: tooltipWidth,
                   boxSizing: 'border-box',
                   padding: '6px 7px',
-                  borderRadius: 8,
-                  background: 'rgba(10,12,18,.96)',
-                  border: '1px solid rgba(255,255,255,.2)',
-                  backdropFilter: 'blur(12px)',
-                  WebkitBackdropFilter: 'blur(12px)',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'color-mix(in srgb, var(--surface-elevated) 94%, transparent)',
+                  border: '1px solid var(--line-default)',
+                  color: 'var(--text-primary)',
+                  backdropFilter: 'blur(24px) saturate(1.25)',
+                  WebkitBackdropFilter: 'blur(24px) saturate(1.25)',
                   overflowX: 'hidden',
                   overflowY: 'auto',
                   maxHeight: `min(240px, calc(100vh - ${viewportPadding * 2}px))`,
                   zIndex: 9999,
-                  boxShadow: '0 10px 24px rgba(0,0,0,.42)',
+                  boxShadow: 'var(--shadow-lg)',
                   pointerEvents: 'auto',
                 }}
                 onMouseEnter={clearCategoryTooltipHideTimer}
@@ -1210,10 +1237,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                     maxWidth: '100%',
                     height: 27,
                     padding: '0 10px',
-                    border: '1px solid rgba(255,255,255,.14)',
-                    borderRadius: 6,
-                    background: targetVideo.organize_category_id == null ? 'var(--accent)' : 'rgba(255,255,255,.12)',
-                    color: '#fff',
+                    border: '1px solid ' + (targetVideo.organize_category_id == null ? 'var(--accent)' : 'var(--line-default)'),
+                    borderRadius: 'var(--radius-sm)',
+                    background: targetVideo.organize_category_id == null ? 'var(--accent)' : 'var(--bg-hover)',
+                    color: targetVideo.organize_category_id == null ? 'var(--accent-contrast)' : 'var(--text-primary)',
                     fontSize: 11,
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
@@ -1244,10 +1271,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      border: '1px solid rgba(255,255,255,.14)',
-                      borderRadius: 6,
-                      background: targetVideo.organize_category_id === category.id ? 'var(--accent)' : 'rgba(255,255,255,.12)',
-                      color: '#fff',
+                      border: '1px solid ' + (targetVideo.organize_category_id === category.id ? 'var(--accent)' : 'var(--line-default)'),
+                      borderRadius: 'var(--radius-sm)',
+                      background: targetVideo.organize_category_id === category.id ? 'var(--accent)' : 'var(--bg-hover)',
+                      color: targetVideo.organize_category_id === category.id ? 'var(--accent-contrast)' : 'var(--text-primary)',
                       fontSize: 11,
                       cursor: 'pointer',
                     }}
@@ -1256,7 +1283,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                   </button>
                 ))}
                 {activeOrganizeCategories.length === 0 && (
-                  <span style={{ color: 'rgba(255,255,255,.72)', fontSize: 11, whiteSpace: 'nowrap', padding: '0 4px' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap', padding: '0 4px' }}>
                     请先在设置中创建或启用分类
                   </span>
                 )}
