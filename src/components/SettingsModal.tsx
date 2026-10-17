@@ -295,6 +295,18 @@ export function SettingsModal(props: SettingsModalProps) {
               <div className="settings-section-description">用分类建立清晰的目标目录，停用分类不会清除已有标记。</div>
             </div>
           </div>
+          <div className="settings-row settings-organize-action">
+            <button
+              className="settings-btn settings-btn-primary"
+              disabled={organizing || organizeCategories.length === 0}
+              onClick={onOrganizeFolder}
+            >
+              {organizing ? <><Loader2 {...ICON} className="spin" /> 整理中...</> : <><FolderKanban {...ICON} /> 整理全部已分类视频</>}
+            </button>
+            <span className="settings-hint">
+              按当前分类记录整理全部视频；未分类视频不会移动
+            </span>
+          </div>
           <div className="settings-subsection-label">整理位置</div>
           <div className="settings-row settings-organize-output">
             <button className="settings-btn" onClick={onSelectOrganizeOutputFolder}>
@@ -381,18 +393,6 @@ export function SettingsModal(props: SettingsModalProps) {
             >
               <Plus {...ICON} /> 新建分类
             </button>
-          </div>
-          <div className="settings-row settings-organize-action">
-            <button
-              className="settings-btn settings-btn-primary"
-              disabled={organizing || organizeCategories.length === 0}
-              onClick={onOrganizeFolder}
-            >
-              {organizing ? <><Loader2 {...ICON} className="spin" /> 整理中...</> : <><FolderKanban {...ICON} /> 整理全部已分类视频</>}
-            </button>
-            <span className="settings-hint">
-              按当前分类记录整理全部视频；未分类视频不会移动
-            </span>
           </div>
         </div>
 

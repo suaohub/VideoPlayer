@@ -853,6 +853,35 @@
   box-shadow: 0 0 14px 3px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+/* Final cleanup: keep the modal body compact and remove the artificial bottom glow. */
+.settings-overlay {
+  padding: 12px;
+}
+
+.settings-drawer {
+  height: min(820px, calc(100vh - 24px)) !important;
+  max-height: calc(100vh - 24px) !important;
+  overflow: hidden !important;
+}
+
+.settings-layout {
+  gap: 10px;
+}
+
+.settings-content {
+  padding-bottom: 10px;
+}
+
+.settings-scroll-edge,
+.settings-scroll-edge.is-visible {
+  display: none !important;
+}
+
+.settings-footer {
+  flex: 0 0 auto;
+  min-height: 52px;
+}
+
 /* Refined iOS-style bottom cue: a quiet fade plus a short centered glow. */
 .settings-scroll-edge {
   height: 20px;

@@ -2711,3 +2711,71 @@ body {
   background: rgba(28, 28, 30, .94) !important;
 }
 
+/* iOS 风格第一阶段：轻表面、柔和选中态、稳定的圆角层级。 */
+.titlebar-row,
+.app-topbar {
+  background: color-mix(in srgb, var(--bg-toolbar) 92%, transparent);
+  backdrop-filter: blur(28px) saturate(1.18);
+  -webkit-backdrop-filter: blur(28px) saturate(1.18);
+}
+
+.primary-toolbar-row,
+.secondary-toolbar-row {
+  padding-right: 16px;
+  padding-left: 16px;
+}
+
+.toolbar-icon-button,
+.sidebar-trigger,
+.toolbar-quiet-button {
+  border-color: transparent;
+}
+
+.toolbar-icon-button:hover,
+.sidebar-trigger:hover,
+.toolbar-quiet-button:hover,
+.toolbar-icon-button.is-active,
+.sidebar-trigger.is-active,
+.toolbar-quiet-button.is-open {
+  border-color: transparent;
+  background: var(--accent-soft);
+}
+
+.import-button {
+  border-radius: 999px;
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.search-field {
+  border-color: color-mix(in srgb, var(--line-default) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 74%, transparent);
+}
+
+.sidebar-nav-item.is-active,
+.sidebar-folder-tab.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.sidebar-nav-item.is-active svg {
+  color: var(--accent);
+}
+
+.video-card,
+.media-card,
+.overview-media-card,
+.content-card {
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--line-default) 72%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
+.video-card:hover,
+.media-card:hover,
+.overview-media-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-default));
+  box-shadow: 0 7px 20px color-mix(in srgb, var(--text-primary) 11%, transparent);
+  filter: none;
+}
+

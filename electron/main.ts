@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, shell, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, shell, globalShortcut, nativeTheme } from 'electron';
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, rmdirSync, statSync } from 'fs';
 import { rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
@@ -50,6 +50,7 @@ function createWindow() {
     frame: true,
     title: 'VideoPlayer — Local Media Library',
     autoHideMenuBar: true,
+    hasShadow: true,
     backgroundColor: '#f4f5f8',
     icon: join(app.getAppPath(), 'assets', 'icon.ico'),
     webPreferences: {
@@ -162,6 +163,7 @@ app.whenReady().then(() => {
     });
   });
   initDatabase(); // Windows-only：启动时直接初始化 SQLite 数据库。
+  nativeTheme.themeSource = getSetting('theme') === 'night' ? 'dark' : 'light';
 
   // 注册缩略图队列事件 → 转发给渲染进程（生成一张就地替换一张卡 + 进度）
   setThumbnailListeners(
@@ -1106,6 +1108,7 @@ ipcMain.handle('get-setting', async (event, key: string) => {
 
 ipcMain.handle('set-setting', async (event, key: string, value: string) => {
   setSetting(key, value);
+  if (key === 'theme') nativeTheme.themeSource = value === 'night' ? 'dark' : 'light';
   return { success: true };
 });
 

@@ -223,16 +223,16 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         left: 0, top: 0,
         width, height,
         transform: `translate(${x}px, ${y}px)`,
-        borderRadius: 10,
+        borderRadius: 14,
         overflow: 'hidden',
         cursor: 'pointer',
         perspective: 1000,
         display: 'flex',
         flexDirection: 'column',
         boxShadow: focused
-          ? '0 0 0 3px var(--focus-ring), var(--shadow)'
+          ? '0 0 0 2px var(--focus-ring)'
           : isSelected
-          ? '0 0 0 3px var(--accent), var(--shadow)'
+          ? '0 0 0 2px var(--accent)'
           : 'var(--shadow-card)',
         transition: animate
           ? 'transform 0.14s cubic-bezier(0.22,0.61,0.36,1), width 0.14s ease-out, height 0.14s ease-out, box-shadow 0.15s ease'
