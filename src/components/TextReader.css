@@ -28,6 +28,27 @@
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-highlight);
 }
+.text-reader.theme-paper .reader-topbar {
+  background: rgba(245, 236, 216, .94);
+  border-bottom-color: rgba(58, 50, 38, .14);
+  box-shadow: 0 1px 0 rgba(255,255,255,.5);
+}
+.text-reader.theme-day .reader-topbar {
+  background: rgba(245, 246, 248, .96);
+  color: #1a1a1a;
+  border-bottom-color: rgba(30, 41, 59, .14);
+  box-shadow: 0 1px 0 rgba(255,255,255,.8);
+}
+.text-reader.theme-night .reader-topbar {
+  background: #1c1d23 !important;
+  color: #e8e8eb !important;
+  border-bottom-color: rgba(255,255,255,.12) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) !important;
+}
+.text-reader.theme-night .reader-icon-btn,
+.text-reader.theme-night .reader-theme-btn,
+.text-reader.theme-night .reader-font-size { color: #e8e8eb !important; }
+.text-reader.theme-night .reader-theme-btn.active { background: #3a3c46 !important; color: #fff !important; }
 .reader-title {
   flex: 1;
   font-size: 14px;

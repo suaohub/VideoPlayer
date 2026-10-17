@@ -223,6 +223,11 @@
 .settings-btn:hover {
   background: var(--bg-hover);
 }
+.settings-btn.is-active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+}
 .settings-btn:disabled {
   opacity: 0.6;
   cursor: default;
@@ -890,6 +895,14 @@
 .settings-title-row { display: flex; align-items: center; gap: 8px; }
 .settings-title { font-size: 20px !important; }
 .settings-subtitle { margin-top: 2px !important; font-size: 11px !important; }
+.settings-version {
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 28%, transparent);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
 .settings-status { font-size: 10px; }
 .settings-head-icon { background: #ff9f0a !important; color: #fff !important; box-shadow: 0 7px 18px rgba(255,159,10,.22) !important; }
 
@@ -1200,6 +1213,35 @@
 /* Final scrollbar reset: keep the body scrollable but hide the native rail. */
 .settings-content { scrollbar-width: none !important; -ms-overflow-style: none !important; }
 .settings-content::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+
+/* 日间主题：覆盖参考稿中的深色固定表面，让设置中心跟随全局主题。 */
+[data-theme='day'] .settings-drawer {
+  background: #f7f8fb !important;
+  color: var(--text-primary) !important;
+  border-color: rgba(30, 41, 59, .12) !important;
+}
+[data-theme='day'] .settings-head { background: #ffffff !important; }
+[data-theme='day'] .settings-nav { background: #e8ebf1 !important; }
+[data-theme='day'] .settings-nav-item.is-active { background: #ffffff !important; }
+[data-theme='day'] .settings-content .settings-action-card,
+[data-theme='day'] .settings-content .settings-category-list {
+  background: #ffffff !important;
+  border-color: rgba(30, 41, 59, .12) !important;
+}
+[data-theme='day'] .settings-content .settings-path-card,
+[data-theme='day'] .settings-content .settings-text-input { background: #f0f2f6 !important; }
+[data-theme='day'] .settings-content .settings-category-item { border-color: rgba(30, 41, 59, .08) !important; }
+[data-theme='day'] .settings-footer { background: rgba(255,255,255,.94) !important; border-color: rgba(30,41,59,.1) !important; }
+
+.settings-help { margin-top: 14px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--bg-card) 68%, transparent); overflow: hidden; }
+.settings-help summary { padding: 11px 13px; color: var(--text-primary); font-size: 12px; font-weight: 650; cursor: pointer; }
+.settings-help summary::marker { color: var(--accent); }
+.settings-help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 16px; padding: 0 13px 13px; }
+.settings-help-grid > div { min-width: 0; }
+.settings-help-grid strong { display: block; margin-bottom: 3px; color: var(--text-primary); font-size: 11px; }
+.settings-help-grid p { margin: 0; color: var(--text-secondary); font-size: 10px; line-height: 1.55; }
+.settings-help kbd { display: inline-block; padding: 1px 4px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--bg-primary) 60%, transparent); color: var(--text-primary); font: inherit; font-size: 9px; }
+@media (max-width: 620px) { .settings-help-grid { grid-template-columns: 1fr; } }
 .settings-scroll-edge { height: 14px; margin-top: -14px; opacity: 0; pointer-events: none; }
 .settings-scroll-edge.is-visible { opacity: 1; }
 

@@ -1222,6 +1222,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 onPointerDown={(event) => event.stopPropagation()}
               >
                 <button
+                  className={`category-tooltip-button${targetVideo.organize_category_id == null ? ' is-selected' : ''}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     void applyCategoryFromTooltip(
@@ -1251,6 +1252,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 {activeOrganizeCategories.map((category) => (
                   <button
                     key={category.id}
+                    className={`category-tooltip-button${targetVideo.organize_category_id === category.id ? ' is-selected' : ''}`}
                     onClick={(event) => {
                       event.stopPropagation();
                       void applyCategoryFromTooltip(

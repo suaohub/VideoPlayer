@@ -75,6 +75,7 @@ export interface Folder {
   parent_id: number | null;
   import_root_id: number | null;
   hidden: number;
+  locked?: number;
 }
 
 // 主题
@@ -89,6 +90,13 @@ export interface ImportProgress {
   total: number;
   file: string;
   folderPath: string;
+}
+
+export interface OperationProgress {
+  kind: 'delete' | 'organize';
+  current: number;
+  total: number;
+  detail?: string;
 }
 
 export interface ImportSourceSelection {
@@ -162,6 +170,7 @@ export interface MediaLibraryHealth {
 export interface ElectronAPI {
   playVideo: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
   openVideoDirectory: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
+  openFolderDirectory: (folderPath: string) => Promise<{ success: boolean; missing?: boolean; error?: string }>;
   stopVideo: () => Promise<{ success: boolean }>;
   togglePause: () => Promise<{ success: boolean }>;
   seek: (seconds: number) => Promise<{ success: boolean }>;
@@ -202,10 +211,11 @@ export interface ElectronAPI {
   getFolderTree: (mediaType?: MediaType) => Promise<Folder[]>;
   getHiddenFolders: () => Promise<Folder[]>;
   setFolderHidden: (folderId: number, hidden: boolean) => Promise<{ success: boolean; hidden?: boolean; error?: string }>;
+  setFolderLocked: (folderId: number, locked: boolean) => Promise<{ success: boolean; locked?: boolean; error?: string }>;
   getVideos: (filter: VideoFilter) => Promise<Video[]>;
   getVideoCount: (mediaType?: MediaType) => Promise<number>;
   getLibraryHealth: () => Promise<MediaLibraryHealth>;
-  generateThumbnails: () => Promise<{ success: boolean }>;
+  generateThumbnails: (boost?: boolean) => Promise<{ success: boolean }>;
   regenerateThumbnail: (videoId: number) => Promise<{ success: boolean; error?: string; timestamp?: number; thumbnail_path?: string }>;
   getSetting: (key: string) => Promise<string | null>;
   setSetting: (key: string, value: string) => Promise<{ success: boolean }>;
@@ -213,6 +223,7 @@ export interface ElectronAPI {
   onImportDone: (cb: () => void) => (() => void) | void;
   onThumbnailReady: (cb: (data: ThumbnailReady) => void) => (() => void) | void;
   onThumbnailProgress: (cb: (data: ThumbnailProgress) => void) => (() => void) | void;
+  onOperationProgress: (cb: (data: OperationProgress) => void) => (() => void) | void;
   clearCache: () => Promise<{ success: boolean; count?: number; error?: string }>;
   deleteFolder: (folderId: number) => Promise<{ success: boolean; videoCount?: number; thumbCount?: number; error?: string }>;
   deleteFoldersFromDisk: (folderIds: number[]) => Promise<{

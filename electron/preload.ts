@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ---------- 播放控制 ----------
   playVideo: (videoPath: string) => ipcRenderer.invoke('play-video', videoPath),
   openVideoDirectory: (videoPath: string) => ipcRenderer.invoke('open-video-directory', videoPath),
+  openFolderDirectory: (folderPath: string) => ipcRenderer.invoke('open-folder-directory', folderPath),
   stopVideo: () => ipcRenderer.invoke('stop-video'),
   togglePause: () => ipcRenderer.invoke('toggle-pause'),
   seek: (seconds: number) => ipcRenderer.invoke('seek', seconds),
@@ -75,6 +76,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getOrganizeCategories: () => ipcRenderer.invoke('get-organize-categories'),
   getHiddenFolders: () => ipcRenderer.invoke('get-hidden-folders'),
   setFolderHidden: (folderId: number, hidden: boolean) => ipcRenderer.invoke('set-folder-hidden', folderId, hidden),
+  setFolderLocked: (folderId: number, locked: boolean) => ipcRenderer.invoke('set-folder-locked', folderId, locked),
   createOrganizeCategory: (name: string) => ipcRenderer.invoke('create-organize-category', name),
   renameOrganizeCategory: (categoryId: number, name: string) => ipcRenderer.invoke('rename-organize-category', categoryId, name),
   deleteOrganizeCategory: (categoryId: number) => ipcRenderer.invoke('delete-organize-category', categoryId),
@@ -95,7 +97,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideos: (filter: VideoFilter) => ipcRenderer.invoke('get-videos', filter),
   getVideoCount: (mediaType?: string) => ipcRenderer.invoke('get-video-count', mediaType),
   getLibraryHealth: () => ipcRenderer.invoke('get-library-health'),
-  generateThumbnails: () => ipcRenderer.invoke('generate-thumbnails'),
+  generateThumbnails: (boost = false) => ipcRenderer.invoke('generate-thumbnails', boost),
   regenerateThumbnail: (videoId: number) => ipcRenderer.invoke('regenerate-thumbnail', videoId),
   getSetting: (key: string) => ipcRenderer.invoke('get-setting', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('set-setting', key, value),
@@ -157,5 +159,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_: Electron.IpcRendererEvent, data: { done: number; total: number }) => callback(data);
     ipcRenderer.on('thumbnail-progress', listener);
     return () => ipcRenderer.removeListener('thumbnail-progress', listener);
+  },
+  onOperationProgress: (callback: (data: { kind: 'delete' | 'organize'; current: number; total: number; detail?: string }) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { kind: 'delete' | 'organize'; current: number; total: number; detail?: string }) => callback(data);
+    ipcRenderer.on('operation-progress', listener);
+    return () => ipcRenderer.removeListener('operation-progress', listener);
   },
 });

@@ -23,6 +23,7 @@ interface LibraryHealthProps {
   generatingThumbnails: boolean;
   onRefresh: () => void;
   onGenerateThumbnails: () => void;
+  onGenerateThumbnailsBoost: () => void;
   onOpenMarkedForDeletion: () => void;
   onOpenOrganizePreview: () => void;
 }
@@ -58,13 +59,15 @@ function MetricCard({ label, value, note, icon, tone = 'neutral' }: {
   );
 }
 
-function IssueCard({ icon, title, description, count, action, onAction, tone = 'warning' }: {
+function IssueCard({ icon, title, description, count, action, onAction, secondaryAction, onSecondaryAction, tone = 'warning' }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   count: string;
   action?: string;
   onAction?: () => void;
+  secondaryAction?: string;
+  onSecondaryAction?: () => void;
   tone?: 'warning' | 'danger' | 'neutral';
 }) {
   return (
@@ -73,6 +76,7 @@ function IssueCard({ icon, title, description, count, action, onAction, tone = '
       <div className="health-issue-copy"><strong>{title}</strong><span>{description}</span></div>
       <div className="health-issue-value">{count}</div>
       {action && onAction && <button type="button" className="health-issue-action" onClick={onAction}>{action}<ChevronRight size={14} /></button>}
+      {secondaryAction && onSecondaryAction && <button type="button" className="health-issue-action health-issue-action-boost" onClick={onSecondaryAction}>{secondaryAction}<ChevronRight size={14} /></button>}
     </div>
   );
 }
@@ -84,6 +88,7 @@ export function LibraryHealth({
   generatingThumbnails,
   onRefresh,
   onGenerateThumbnails,
+  onGenerateThumbnailsBoost,
   onOpenMarkedForDeletion,
   onOpenOrganizePreview,
 }: LibraryHealthProps) {
@@ -132,7 +137,7 @@ export function LibraryHealth({
         <div className="health-section-heading"><div><span className="health-section-kicker">ACTION ITEMS</span><h2>需要留意</h2></div><span className="health-section-note">共 {hasResult ? issueCount.toLocaleString() : '—'} 项</span></div>
         <div className="health-issue-list">
           <IssueCard icon={<AlertTriangle size={17} />} title="文件无法访问" description={offline > 0 ? '包含离线盘符；连接后重新检查。' : '数据库中有记录，但当前路径不可访问。'} count={pendingValue(missing) === '0' ? '0 个' : pendingValue(missing) + ' 个'} action={missing > 0 ? '连接后重检' : undefined} onAction={missing > 0 ? onRefresh : undefined} tone={missing > 0 ? 'danger' : 'neutral'} />
-          <IssueCard icon={<ImageOff size={17} />} title="缺少预览缩略图" description="不影响播放，可以后台重新生成预览。" count={`${pendingValue(health?.missingThumbnails)} 个`} action={health?.missingThumbnails ? (generatingThumbnails ? '生成中…' : '生成预览') : undefined} onAction={health?.missingThumbnails && !generatingThumbnails ? onGenerateThumbnails : undefined} tone={health?.missingThumbnails ? 'warning' : 'neutral'} />
+          <IssueCard icon={<ImageOff size={17} />} title="缺少预览缩略图" description="不影响播放，可以后台重新生成预览。" count={`${pendingValue(health?.missingThumbnails)} 个`} action={health?.missingThumbnails ? (generatingThumbnails ? '生成中…' : '生成预览') : undefined} onAction={health?.missingThumbnails && !generatingThumbnails ? onGenerateThumbnails : undefined} secondaryAction={health?.missingThumbnails && !generatingThumbnails ? '全速生成' : undefined} onSecondaryAction={health?.missingThumbnails && !generatingThumbnails ? onGenerateThumbnailsBoost : undefined} tone={health?.missingThumbnails ? 'warning' : 'neutral'} />
           <IssueCard icon={<Tags size={17} />} title="待整理分类" description="已经标记分类，等待执行整理操作。" count={`${pendingValue(health?.organizePending)} 个`} action={health?.organizePending ? '打开整理预览' : undefined} onAction={health?.organizePending ? onOpenOrganizePreview : undefined} tone={health?.organizePending ? 'warning' : 'neutral'} />
           <IssueCard icon={<Trash2 size={17} />} title="待处理删除" description="已标记删除，确认后可批量恢复或永久删除。" count={`${pendingValue(health?.markedForDeletion)} 个`} action={health?.markedForDeletion ? '打开待处理' : undefined} onAction={health?.markedForDeletion ? onOpenMarkedForDeletion : undefined} tone={health?.markedForDeletion ? 'warning' : 'neutral'} />
           <IssueCard icon={<Sparkles size={17} />} title="目录结构" description="孤立记录或空目录建议刷新媒体库后再处理。" count={`${hasResult ? structureIssues : '—'} 项`} action={structureIssues > 0 ? '重新检查' : undefined} onAction={structureIssues > 0 ? onRefresh : undefined} tone={structureIssues > 0 ? 'warning' : 'neutral'} />

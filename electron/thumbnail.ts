@@ -14,6 +14,7 @@ let _hwaccelPromise: Promise<string | null> | null = null;
 // scale_cuda 是否可用只需要验证一次。某些 ffmpeg 构建虽然声明支持 CUDA，
 // 但实际运行时并没有对应滤镜；不缓存这个结果会让每个视频都多跑一次失败的 ffmpeg。
 let _cudaPipelineSupported: boolean | undefined;
+let _cudaDecodeSupported: boolean | undefined;
 
 function detectHwAccelSync(): string | null {
   if (_hwaccel !== undefined) return _hwaccel;
@@ -286,12 +287,20 @@ export async function generateThumbnailAsync(
     if (_cudaPipelineSupported !== false) {
       if (await run(['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'], 'scale_cuda=480:-1,hwdownload,format=nv12')) {
         _cudaPipelineSupported = true;
+        _cudaDecodeSupported = true;
         return toThumbUrl(outputPath);
       }
       _cudaPipelineSupported = false;
     }
     // ② NVDEC + CPU scale（不支持 scale_cuda 的格式/编解码器）
-    if (await run(['-hwaccel', 'cuda'], 'scale=480:-1')) return toThumbUrl(outputPath);
+    if (_cudaDecodeSupported !== false) {
+      if (await run(['-hwaccel', 'cuda'], 'scale=480:-1')) {
+        _cudaDecodeSupported = true;
+        return toThumbUrl(outputPath);
+      }
+      // 当前驱动/设备无法完成 CUDA 解码，后续视频直接使用 d3d11va。
+      _cudaDecodeSupported = false;
+    }
     console.warn('[thumbnail] CUDA failed, trying d3d11va:', path.basename(videoPath));
     if (await run(['-hwaccel', 'd3d11va'], 'scale=480:-1')) return toThumbUrl(outputPath);
   } else if (hwaccel) {

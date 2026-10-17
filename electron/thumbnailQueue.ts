@@ -36,6 +36,12 @@ export function setThumbnailListeners(ready: ReadyListener, progress: ProgressLi
 // 单个 ffmpeg 任务仍然受控，避免把播放和磁盘 IO 压满；在常见 8 核机器上
 // 从 2 路提高到 4 路，首屏批量出图速度明显更快，低配机器仍保持 2 路。
 const CONCURRENCY = Math.min(4, Math.max(2, Math.floor((os.cpus().length || 4) / 2)));
+let boostMode = false;
+
+export function setThumbnailGenerationBoost(value: boolean) {
+  boostMode = value;
+  if (!value) pump();
+}
 
 // 待处理队列（去重：已在队列或处理中的 id 不重复加入）
 const pending: number[] = [];
@@ -76,12 +82,14 @@ function maybeResetCounters() {
   if (active === 0 && pending.length === 0) {
     doneCount = 0;
     totalCount = 0;
+    boostMode = false;
   }
 }
 
 function pump() {
   if (paused) return;
-  while (!paused && active < CONCURRENCY && pending.length > 0) {
+  const concurrency = boostMode ? Math.max(1, os.cpus().length || CONCURRENCY) : CONCURRENCY;
+  while (!paused && active < concurrency && pending.length > 0) {
     const id = pending.shift()!;
     active++;
     processOne(id).finally(() => {
@@ -177,12 +185,18 @@ async function processOne(id: number) {
 export function enqueueMissingThumbnails(priorityIds: number[] = [], includeBroken = false) {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT id, path, ext FROM videos
+    SELECT id, path, ext, thumbnail_path FROM videos
     WHERE thumbnail_path IS NULL
       OR ${includeBroken ? "(thumbnail_path LIKE 'thumb://%' OR thumbnail_path LIKE 'file:///%')" : '0'}
-  `).all() as { id: number; path: string; ext: string | null }[];
+  `).all() as { id: number; path: string; ext: string | null; thumbnail_path: string | null }[];
+  const missing = rows.filter((row) => {
+    if (!row.thumbnail_path) return true;
+    if (!includeBroken) return false;
+    const file = thumbnailFilePathFromUrl(row.thumbnail_path);
+    return Boolean(file && !fs.existsSync(file));
+  });
   enqueueThumbnails(
-    rows.filter((row) => !isAudioFile(row.path) && !isTextFile(row.path) && !isComicExt(row.ext)).map((r) => r.id),
+    missing.filter((row) => !isAudioFile(row.path) && !isTextFile(row.path) && !isComicExt(row.ext)).map((r) => r.id),
     priorityIds,
   );
 }

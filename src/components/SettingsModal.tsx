@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, SlidersHorizontal, RefreshCw,
+  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, SlidersHorizontal, RefreshCw, Sun, Moon,
 } from 'lucide-react';
-import { Folder, ImportProgress, OrganizeCategory } from '../types';
+import { Folder, ImportProgress, OrganizeCategory, Theme } from '../types';
 import { api } from '../api';
 import './SettingsModal.css';
 import { useAppFeedback } from './AppFeedback';
@@ -19,6 +19,8 @@ interface SettingsModalProps {
   hiddenFolders: Folder[];
   onRestoreHiddenFolder: (folder: Folder) => void;
   // 外观
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
   backgroundImagePath: string | null;
   backgroundOpacity: number;
   onSelectBackground: () => void;
@@ -59,6 +61,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const {
     onClose, onImport, importing, importProgress, onClearCache, onRefreshLibrary, refreshing,
     hiddenFolders, onRestoreHiddenFolder,
+    theme, onThemeChange,
     backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
     onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
     toolbarBlur, onToolbarBlurChange, organizeCategories,
@@ -148,7 +151,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <div className="settings-head-icon"><Settings size={19} strokeWidth={1.8} /></div>
             <div>
               <div className="settings-eyebrow">WORKSPACE SETTINGS</div>
-              <div className="settings-title-row"><h2 className="settings-title" id="settings-title">设置中心</h2><span className="settings-status">● 在线就绪</span></div>
+              <div className="settings-title-row"><h2 className="settings-title" id="settings-title">设置中心</h2><span className="settings-version">v{__APP_VERSION__}</span><span className="settings-status">● 在线就绪</span></div>
               <p className="settings-subtitle">把媒体库整理成更顺手的工作空间</p>
             </div>
           </div>
@@ -403,6 +406,14 @@ export function SettingsModal(props: SettingsModalProps) {
             </div>
           </div>
           <div className="settings-row">
+            <button className={`settings-btn${theme === 'day' ? ' is-active' : ''}`} onClick={() => onThemeChange('day')}>
+              <Sun {...ICON} /> 日间主题
+            </button>
+            <button className={`settings-btn${theme === 'night' ? ' is-active' : ''}`} onClick={() => onThemeChange('night')}>
+              <Moon {...ICON} /> 夜间主题
+            </button>
+          </div>
+          <div className="settings-row">
             <button className="settings-btn" onClick={onSelectBackground}>
               <ImageIcon {...ICON} /> {backgroundImagePath ? '更换壁纸' : '选择壁纸'}
             </button>
@@ -453,6 +464,40 @@ export function SettingsModal(props: SettingsModalProps) {
             />
             <span className="settings-slider-val">{toolbarBlur}px</span>
           </div>
+
+          <details className="settings-help">
+            <summary>使用说明与快捷键</summary>
+            <div className="settings-help-grid">
+              <div>
+                <strong>媒体库</strong>
+                <p>点击“导入媒体”添加文件或文件夹；左侧目录可筛选内容，顶部搜索支持名称和路径。卡片上的心形用于收藏，分类按钮用于标记整理分类。</p>
+              </div>
+              <div>
+                <strong>整理与删除</strong>
+                <p>在“整理预览”中给视频分组后，可在设置中心执行整理。删除标记会先进入“待处理”，确认后才会从磁盘删除。</p>
+              </div>
+              <div>
+                <strong>健康中心</strong>
+                <p>可检查失效媒体、缺少缩略图、离线磁盘和待整理内容；“全速生成”会调用全部逻辑线程生成预览。</p>
+              </div>
+              <div>
+                <strong>外观</strong>
+                <p>日间/夜间主题会自动保存；可设置自定义壁纸、壁纸透明度、操作区透明度和模糊程度。</p>
+              </div>
+              <div>
+                <strong>播放快捷键</strong>
+                <p><kbd>Space</kbd> 播放/暂停　<kbd>←</kbd>/<kbd>→</kbd> 后退/前进 5 秒　<kbd>Enter</kbd> 退出播放器　<kbd>Esc</kbd> 关闭播放界面</p>
+              </div>
+              <div>
+                <strong>画面快捷键</strong>
+                <p><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd> 旋转 90°　<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> 水平镜像　<kbd>B</kbd> 截取当前画面设为壁纸</p>
+              </div>
+              <div>
+                <strong>界面快捷键</strong>
+                <p><kbd>Ctrl</kbd> + <kbd>K</kbd> 聚焦搜索框　<kbd>Esc</kbd> 关闭弹窗或菜单　鼠标滚轮可调整卡片大小。</p>
+              </div>
+            </div>
+          </details>
         </div>
           </div>
           <div className={`settings-scroll-edge${settingsHasMore ? ' is-visible' : ''}`} aria-hidden="true" />

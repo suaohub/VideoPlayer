@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getDb } from './db';
-import { normalizeThumbnailUrl } from './thumbnail';
+import { normalizeThumbnailUrl, thumbnailFilePathFromUrl } from './thumbnail';
 import { enqueueThumbnails, enqueueMissingThumbnails } from './thumbnailQueue';
 import { isSupportedMediaFile, isImageFile, COMIC_EXT, comicImageUrl } from './media';
 
@@ -41,6 +41,19 @@ export function isVideoFile(filePath: string): boolean {
   return isSupportedMediaFile(filePath);
 }
 
+// Windows keeps several system-managed directories at the root of a drive.
+// They are not user media folders and must never be indexed into the library.
+const IGNORED_SYSTEM_DIRECTORIES = new Set([
+  '$recycle.bin',
+  'system volume information',
+  'recovery',
+  'config.msi',
+]);
+
+function isIgnoredDirectory(name: string): boolean {
+  return name.startsWith('.') || IGNORED_SYSTEM_DIRECTORIES.has(name.trim().toLowerCase());
+}
+
 // 递归收集目录下所有视频文件的路径
 function collectVideoFiles(dir: string, results: string[] = []): string[] {
   let entries: fs.Dirent[];
@@ -54,8 +67,7 @@ function collectVideoFiles(dir: string, results: string[] = []): string[] {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      // 跳过隐藏文件夹
-      if (entry.name.startsWith('.')) continue;
+      if (isIgnoredDirectory(entry.name)) continue;
       collectVideoFiles(fullPath, results);
     } else if (entry.isFile()) {
       if (isSupportedMediaFile(fullPath)) {
@@ -92,7 +104,7 @@ function collectComicFolders(dir: string, results: ComicFolder[] = []): ComicFol
   const images: string[] = [];
   for (const entry of entries) {
     if (entry.isFile() && isImageFile(entry.name)) images.push(entry.name);
-    else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+    else if (entry.isDirectory() && !isIgnoredDirectory(entry.name)) {
       collectComicFolders(path.join(dir, entry.name), results);
     }
   }
@@ -179,6 +191,7 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
     WHERE path = ?
   `);
   const getVideoId = db.prepare('SELECT id FROM videos WHERE path = ?');
+  const getExistingVideo = db.prepare('SELECT id, size, mtime, thumbnail_path FROM videos WHERE path = ?');
   const linkTag = db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)');
   const importedVideoIds: number[] = [];
 
@@ -200,6 +213,13 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
 
       const name = path.basename(filePath);
       const ext = path.extname(filePath).toLowerCase();
+      const existing = getExistingVideo.get(filePath) as {
+        id: number;
+        size: number | null;
+        mtime: number | null;
+        thumbnail_path: string | null;
+      } | undefined;
+      const changed = Boolean(existing && (existing.size !== stat.size || existing.mtime !== Math.floor(stat.mtimeMs)));
 
       const result = insertVideo.run(
         filePath, filePath, name, ext, stat.size, folderId, Date.now(), Math.floor(stat.mtimeMs)
@@ -208,9 +228,24 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
       if (result.changes > 0) newVideos++;
       updateVideo.run(filePath, name, ext, stat.size, folderId, Math.floor(stat.mtimeMs), filePath);
 
+      if (changed) {
+        if (existing?.thumbnail_path) {
+          const thumbnailFile = thumbnailFilePathFromUrl(existing.thumbnail_path);
+          if (thumbnailFile && fs.existsSync(thumbnailFile)) {
+            try { fs.unlinkSync(thumbnailFile); } catch { /* 缩略图清理失败不阻断重新生成 */ }
+          }
+        }
+        db.prepare(`
+          UPDATE videos
+          SET thumbnail_path = NULL, duration = NULL, width = NULL, height = NULL, aspect_ratio = NULL
+          WHERE path = ?
+        `).run(filePath);
+      }
+
       // 获取 video id
       const videoRow = getVideoId.get(filePath) as { id: number };
-      importedVideoIds.push(videoRow.id);
+      // 只把新增、文件内容发生变化、或尚未生成缩略图的媒体加入队列。
+      if (!existing || changed || !existing.thumbnail_path) importedVideoIds.push(videoRow.id);
 
       // 扁平化标签：把该文件相对导入根的所有子目录名作为标签
       const relative = path.relative(importRootPath, dir);
@@ -407,6 +442,43 @@ function cleanupStaleRecords(importRootPath: string, validComicPaths: Set<string
   return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
 }
 
+// 整理后文件可能已经移出原导入根目录。对已挂载磁盘上的失效记录也做一次清理；
+// 未挂载磁盘上的记录保留，避免用户只是暂时拔出了移动硬盘就丢失库内信息。
+function cleanupMissingRecordsOnMountedVolumes() {
+  const db = getDb();
+  const rows = db.prepare('SELECT id, path, thumbnail_path FROM videos').all() as Array<{
+    id: number;
+    path: string;
+    thumbnail_path: string | null;
+  }>;
+  const stale = rows.filter((row) => {
+    if (!path.isAbsolute(row.path)) return false;
+    try {
+      if (fs.existsSync(row.path)) return false;
+      const root = path.parse(row.path).root;
+      return Boolean(root && fs.existsSync(root));
+    } catch {
+      return false;
+    }
+  });
+  if (stale.length === 0) return { deletedFiles: 0, deletedThumbnailUrls: [] as string[] };
+
+  const ids = stale.map((row) => row.id);
+  const thumbnailUrls = stale.map((row) => row.thumbnail_path).filter(Boolean) as string[];
+  const tx = db.transaction(() => {
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const batch = ids.slice(offset, offset + 500);
+      const placeholders = batch.map(() => '?').join(',');
+      db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...batch);
+    }
+    db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)').run();
+  });
+  tx();
+  return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
+}
+
 function cleanupEmptyFolders(importRootPaths: Set<string>) {
   const db = getDb();
   const allFolders = db.prepare(`
@@ -503,6 +575,10 @@ export function refreshImportedFolders(onProgress?: ProgressCallback): RefreshRe
     deletedFiles += cleanup.deletedFiles;
     deletedThumbnailUrls.push(...cleanup.deletedThumbnailUrls);
   }
+
+  const movedPathCleanup = cleanupMissingRecordsOnMountedVolumes();
+  deletedFiles += movedPathCleanup.deletedFiles;
+  deletedThumbnailUrls.push(...movedPathCleanup.deletedThumbnailUrls);
 
   cleanupEmptyFolders(rootPaths);
   enqueueMissingThumbnails();

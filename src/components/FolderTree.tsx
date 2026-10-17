@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Folder as FolderIcon, Heart, Trash2, ListPlus, FolderX, HardDrive, EyeOff } from 'lucide-react';
+import { Folder as FolderIcon, Heart, Trash2, FolderX, HardDrive, EyeOff, FolderOpen, Lock, Unlock } from 'lucide-react';
 import { Folder } from '../types';
 
 interface FolderTreeProps {
@@ -10,6 +10,8 @@ interface FolderTreeProps {
   onDeleteFoldersFromDisk: (folderIds: number[]) => void;
   onDeleteUnfavoritedVideos: (folder: Folder) => void;
   onHideFolder: (folder: Folder) => void;
+  onOpenFolder: (folder: Folder) => void;
+  onToggleLocked: (folder: Folder) => void;
   favoritedCount?: number;
   markedForDeletionCount?: number;
   onShowFavorited?: () => void;
@@ -73,7 +75,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
         }}
         onClick={(e) => onRowClick(node.id, e)}
         onContextMenu={(e) => { e.preventDefault(); onOpenMenu({ x: e.clientX, y: e.clientY, node, selected }); }}
-        title="左键单选 · Ctrl+左键 多选 · Shift+左键 连选 · 右键菜单"
+        title={`${node.name}\n\n左键单选 · Ctrl+左键多选 · Shift+左键连选 · 右键菜单`}
       >
         {hasChildren ? (
           <span
@@ -89,6 +91,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </span>
+        {node.locked === 1 && <Lock size={12} style={{ opacity: 0.7, flexShrink: 0 }} />}
       </div>
       {isExpanded && node.children.map((child) => (
         <TreeItem
@@ -106,7 +109,7 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   );
 }
 
-export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion, minimal = false }: FolderTreeProps) {
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, onOpenFolder, onToggleLocked, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion, minimal = false }: FolderTreeProps) {
   const tree = useMemo(() => buildTree(folders), [folders]);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
@@ -173,7 +176,7 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
     };
   }, [menu]);
 
-  const MENU_W = 250, MENU_H = 222;
+  const MENU_W = 270, MENU_H = 310;
   const mx = menu ? Math.min(menu.x, window.innerWidth - MENU_W - 8) : 0;
   const my = menu ? Math.min(menu.y, window.innerHeight - MENU_H - 8) : 0;
 
@@ -304,20 +307,22 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
           onMouseDown={(e) => e.stopPropagation()}
           style={{
             left: mx, top: my, minWidth: MENU_W,
+            maxHeight: 'calc(100vh - 16px)', overflowY: 'auto',
           }}
         >
           <button
             className="app-context-menu-item"
-            onClick={() => {
-              const id = menu.node.id;
-              const has = selectedFolderIds.includes(id);
-              onSelectionChange(has ? selectedFolderIds.filter((x) => x !== id) : [...selectedFolderIds, id]);
-              anchorRef.current = id;
-              setMenu(null);
-            }}
+            onClick={() => { onOpenFolder(menu.node); setMenu(null); }}
           >
-            <ListPlus size={15} />
-            {menu.selected ? '从多选中移除' : '加入多选'}
+            <FolderOpen size={15} />
+            在资源管理器中打开
+          </button>
+          <button
+            className="app-context-menu-item"
+            onClick={() => { onToggleLocked(menu.node); setMenu(null); }}
+          >
+            {menu.node.locked === 1 ? <Unlock size={15} /> : <Lock size={15} />}
+            {menu.node.locked === 1 ? '解锁目录' : '锁定目录'}
           </button>
           <div className="app-context-menu-separator" />
           <button

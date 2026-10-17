@@ -52,6 +52,7 @@ export function initDatabase() {
       parent_id INTEGER,
       import_root_id INTEGER,
       hidden INTEGER DEFAULT 0,
+      locked INTEGER DEFAULT 0,
       FOREIGN KEY (parent_id) REFERENCES folders(id)
     );
   `);
@@ -152,6 +153,10 @@ export function initDatabase() {
   if (!folderColumns.some(c => c.name === 'hidden')) {
     db.exec(`ALTER TABLE folders ADD COLUMN hidden INTEGER DEFAULT 0;`);
     console.log('[db] Migration: added folder hidden column');
+  }
+  if (!folderColumns.some(c => c.name === 'locked')) {
+    db.exec(`ALTER TABLE folders ADD COLUMN locked INTEGER DEFAULT 0;`);
+    console.log('[db] Migration: added folder locked column');
   }
   // 迁移：为整理分类添加启用状态。停用只影响新的分类操作，历史标记仍然保留。
   const organizeCategoryColumns = db.pragma('table_info(organize_categories)') as Array<{ name: string }>;

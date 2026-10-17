@@ -1,6 +1,6 @@
 import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
 import './themes.css';
-import { Video, Folder, Theme, ImportProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
+import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { FolderTree } from './components/FolderTree';
@@ -140,6 +140,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [thumbProgress, setThumbProgress] = useState<{ done: number; total: number } | null>(null);
+  const [operationProgress, setOperationProgress] = useState<OperationProgress | null>(null);
   // 卡片大小（即瀑布流列宽，px）。越大卡片越大、每行越少。
   const [cardSize, setCardSize] = useState(220);
   const [wallpaperPath, setWallpaperPath] = useState<string | null>(null);
@@ -359,13 +360,16 @@ function App() {
   const changeMediaType = useCallback((type: MediaType) => {
     setActivePage('library');
     setMediaType(type);
+    setSortBy((current) => (type === 'video' || current !== 'duration' ? current : 'added'));
     setSelectedFolderIds([]);
   }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    api.setSetting('theme', theme);
-  }, [theme]);
+    if (preferencesLoaded) {
+      void api.setSetting('theme', theme);
+    }
+  }, [theme, preferencesLoaded]);
 
   // 持久化卡片大小
   useEffect(() => {
@@ -511,20 +515,21 @@ function App() {
   // 缩略图后台生成：单张就绪时就地替换该卡，避免整体重刷
   useEffect(() => {
     const offReady = api.onThumbnailReady((data) => {
-      setVideos((prev) => {
-        const idx = prev.findIndex((v) => v.id === data.id);
-        if (idx < 0) return prev;
-        const next = [...prev];
-        next[idx] = {
-          ...next[idx],
-          thumbnail_path: data.thumbnail_path ?? next[idx].thumbnail_path,
-          duration: data.duration ?? next[idx].duration,
-          width: data.width ?? next[idx].width,
-          height: data.height ?? next[idx].height,
-          aspect_ratio: data.aspect_ratio ?? next[idx].aspect_ratio,
-        };
-        return next;
-      });
+      // 缩略图完成属于低优先级后台更新，不能抢占目录切换和筛选等交互。
+      startTransition(() => setVideos((prev) => {
+          const idx = prev.findIndex((v) => v.id === data.id);
+          if (idx < 0) return prev;
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            thumbnail_path: data.thumbnail_path ?? next[idx].thumbnail_path,
+            duration: data.duration ?? next[idx].duration,
+            width: data.width ?? next[idx].width,
+            height: data.height ?? next[idx].height,
+            aspect_ratio: data.aspect_ratio ?? next[idx].aspect_ratio,
+          };
+          return next;
+        }));
     });
     const offProgress = api.onThumbnailProgress((data) => {
       // done === total 视为一轮结束，清掉进度条
@@ -533,6 +538,22 @@ function App() {
     return () => {
       offReady?.();
       offProgress?.();
+    };
+  }, []);
+
+  // 删除和整理由主进程执行，显示逐项进度，避免长操作看起来像卡死。
+  useEffect(() => {
+    let clearTimer: number | undefined;
+    const off = api.onOperationProgress((data) => {
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+      setOperationProgress(data);
+      if (data.total > 0 && data.current >= data.total) {
+        clearTimer = window.setTimeout(() => setOperationProgress(null), 350);
+      }
+    });
+    return () => {
+      off?.();
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer);
     };
   }, []);
 
@@ -772,13 +793,15 @@ function App() {
     }
   };
 
-  const handleGenerateHealthThumbnails = async () => {
+  const handleGenerateHealthThumbnails = async (boost = false) => {
     if (generatingHealthThumbnails) return;
     setGeneratingHealthThumbnails(true);
     try {
-      const result = await api.generateThumbnails();
+      const result = await api.generateThumbnails(boost);
       if (!result.success) {
         notify('缩略图生成任务启动失败。', 'danger');
+      } else if (boost) {
+        notify('全速生成已启动，将调用全部 CPU 线程处理缩略图。', 'info');
       }
     } catch (error) {
       notify(`缩略图生成失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
@@ -804,6 +827,42 @@ function App() {
     } else {
       notify(`删除失败：${result.error}`, 'danger');
     }
+  };
+
+  const handleOpenFolder = async (folder: Folder) => {
+    const result = await api.openFolderDirectory(folder.path);
+    if (result.success) return;
+    if (!result.missing) {
+      notify(`打开目录失败：${result.error ?? '未知错误'}`, 'danger');
+      return;
+    }
+    const shouldDelete = await ask(
+      `目录「${folder.name}」不存在，是否删除目录记录？`,
+      '磁盘上的目录当前无法访问，可能已被移动、删除或所在磁盘未连接。删除后只会清理媒体库记录，不会删除其他文件。',
+      'warning',
+      '删除记录',
+    );
+    if (!shouldDelete) return;
+    const deleted = await api.deleteFolder(folder.id);
+    if (!deleted.success) {
+      notify(`删除目录记录失败：${deleted.error ?? '未知错误'}`, 'danger');
+      return;
+    }
+    setSelectedFolderIds((prev) => prev.filter((id) => id !== folder.id));
+    await refreshVisibleData();
+    await loadOverview();
+    notify(`已删除目录「${folder.name}」的媒体库记录。`, 'success');
+  };
+
+  const handleToggleFolderLocked = async (folder: Folder) => {
+    const locked = folder.locked !== 1;
+    const result = await api.setFolderLocked(folder.id, locked);
+    if (!result.success) {
+      notify(`${locked ? '锁定' : '解锁'}目录失败：${result.error ?? '未知错误'}`, 'danger');
+      return;
+    }
+    await refreshAll();
+    notify(locked ? `目录「${folder.name}」已锁定。` : `目录「${folder.name}」已解锁。`, 'success');
   };
 
   // 隐藏目录及其子目录：只改变显示状态，不删除磁盘文件或库内记录。
@@ -859,6 +918,7 @@ function App() {
     )) return;
 
     const result = await api.deleteFoldersFromDisk(ids);
+    setOperationProgress(null);
     const failedIds = new Set(result.failedFolderIds ?? []);
     setSelectedFolderIds((prev) => prev.filter((id) => failedIds.has(id)));
     await refreshVisibleData();
@@ -1024,6 +1084,7 @@ function App() {
         if (!shouldContinue) return;
         result = await api.organizeFolders([], organizeOutputPath ?? undefined, true);
       }
+      setOperationProgress(null);
       if (!result.success) {
         notify(`整理失败：${result.error ?? '未知错误'}`, 'danger');
         return;
@@ -1079,6 +1140,7 @@ function App() {
     )) return;
 
     const result = await api.deleteUnfavoritedVideosInFolder(folder.id);
+    setOperationProgress(null);
     if (!result.success) {
       notify(`删除未收藏文件失败：${result.error ?? '未知错误'}`, 'danger');
       return;
@@ -1373,6 +1435,7 @@ function App() {
           importing={importing}
           importProgress={importProgress}
           thumbProgress={thumbProgress}
+          operationProgress={operationProgress}
           cardSize={cardSize}
           onCardSizeChange={setCardSize}
           unmountedDrives={unmountedDrives}
@@ -1472,11 +1535,21 @@ function App() {
                     <FolderTree
                       folders={activePage === 'overview' ? overviewFolders : visibleFolders}
                       selectedFolderIds={selectedFolderIds}
-                      onSelectionChange={(ids) => { setActivePage('library'); setMediaType('video'); setShowFavorited(false); setShowFavoritedInList(true); setShowMarkedForDeletion(false); setSelectedFolderIds(ids); }}
+                      onSelectionChange={(ids) => {
+                        // 从概览首次进入媒体库时，先清掉预加载的整库列表，避免先挂载大量未筛选卡片再等待目录查询。
+                        setVideos([]);
+                        setActivePage('library');
+                        setShowFavorited(false);
+                        setShowFavoritedInList(true);
+                        setShowMarkedForDeletion(false);
+                        setSelectedFolderIds(ids);
+                      }}
                       onDeleteFolder={handleDeleteFolder}
                       onDeleteFoldersFromDisk={handleDeleteFoldersFromDisk}
                       onDeleteUnfavoritedVideos={handleDeleteUnfavoritedVideos}
                       onHideFolder={handleHideFolder}
+                      onOpenFolder={handleOpenFolder}
+                      onToggleLocked={handleToggleFolderLocked}
                       favoritedCount={activePage === 'overview' ? overviewFavoriteCount : favoritedCount}
                       markedForDeletionCount={markedForDeletionCount}
                       minimal
@@ -1519,6 +1592,7 @@ function App() {
                 generatingThumbnails={generatingHealthThumbnails}
                 onRefresh={loadLibraryHealth}
                 onGenerateThumbnails={handleGenerateHealthThumbnails}
+                onGenerateThumbnailsBoost={() => { void handleGenerateHealthThumbnails(true); }}
                 onOpenMarkedForDeletion={openHealthMarkedForDeletion}
                 onOpenOrganizePreview={openHealthOrganizePreview}
               />
@@ -1607,6 +1681,7 @@ function App() {
       {readingText && (
         <TextReader
           video={readingText}
+          appTheme={theme}
           onClose={() => setReadingText(null)}
         />
       )}
@@ -1644,6 +1719,8 @@ function App() {
           refreshing={refreshing}
           hiddenFolders={hiddenFolders}
           onRestoreHiddenFolder={handleRestoreHiddenFolder}
+          theme={theme}
+          onThemeChange={setTheme}
           backgroundImagePath={wallpaperPath}
           backgroundOpacity={wallpaperOpacity}
           onSelectBackground={handleSelectBackground}

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { X, List, Minus, Plus, ChevronLeft, ChevronRight, Maximize, Minimize } from 'lucide-react';
-import { Video } from '../types';
+import { Theme, Video } from '../types';
 import { api } from '../api';
 import './TextReader.css';
 
 interface TextReaderProps {
   video: Video;
   onClose: () => void;
+  appTheme: Theme;
 }
 
 type ReaderTheme = 'paper' | 'day' | 'night';
@@ -98,12 +99,12 @@ function buildChunks(paras: Para[]): ChunkRange[] {
   return chunks;
 }
 
-export function TextReader({ video, onClose }: TextReaderProps) {
+export function TextReader({ video, onClose, appTheme }: TextReaderProps) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fontSize, setFontSize] = useState(20);
-  const [theme, setTheme] = useState<ReaderTheme>('paper');
+  const [theme, setTheme] = useState<ReaderTheme>(appTheme === 'night' ? 'night' : 'day');
   const [page, setPage] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [chunkIdx, setChunkIdx] = useState(0);   // 当前渲染的块
@@ -186,6 +187,7 @@ export function TextReader({ video, onClose }: TextReaderProps) {
       if (!active) return;
       if (savedFont) setFontSize(Number(savedFont));
       if (savedTheme) setTheme(savedTheme as ReaderTheme);
+      else setTheme(appTheme === 'night' ? 'night' : 'day');
       if (savedGap && PARA_GAPS.some((g) => g.key === savedGap)) setParaGap(savedGap as ParaGapKey);
       if (savedMode === 'horizontal' || savedMode === 'vertical' || savedMode === 'scroll') setReadMode(savedMode);
       if (savedSpread === '2') setSpread(2);

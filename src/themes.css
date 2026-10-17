@@ -79,6 +79,9 @@
 }
 
 body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
   font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -86,13 +89,18 @@ body {
 }
 
 #root {
+  width: 100%;
   height: 100vh;
+  min-height: 100%;
+  margin: 0;
   display: flex;
   flex-direction: column;
 }
 
 .app-shell {
   position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -475,8 +483,11 @@ button {
    ======================================================================== */
 
 html {
+  width: 100%;
+  height: 100%;
   min-width: 320px;
   min-height: 100%;
+  margin: 0;
   background: var(--bg-primary);
 }
 
@@ -560,6 +571,27 @@ textarea:focus-visible,
 .app-content {
   min-width: 0;
   background: transparent;
+}
+
+/* 无边框窗口的内容必须铺满客户区，避免壳层被浏览器默认布局缩进。 */
+.app-shell,
+.app-content {
+  inset: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  align-self: stretch;
+}
+
+.app-shell {
+  position: absolute;
+  width: auto;
+  height: auto;
+}
+
+.app-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .app-topbar,
@@ -907,6 +939,9 @@ textarea:focus-visible,
   backdrop-filter: blur(18px) saturate(1.1);
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
   animation: app-feedback-menu-in 130ms ease-out;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .app-context-menu-item {
   display: flex;
@@ -1168,11 +1203,7 @@ textarea:focus-visible,
 }
 
 .titlebar-row {
-  display: flex;
-  align-items: center;
-  height: 44px;
-  padding: 0 18px 0 24px;
-  -webkit-app-region: drag;
+  display: none;
 }
 
 .titlebar-spacer {
@@ -1247,21 +1278,20 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 9px;
-  padding: 10px 24px;
+  gap: 8px;
+  padding: 6px 20px;
 }
 
 .primary-toolbar-row {
   position: relative;
   z-index: 1;
-  min-height: 60px;
-  border-top: 1px solid var(--line-subtle);
+  min-height: 50px;
 }
 
 .secondary-toolbar-row {
-  min-height: 48px;
-  padding-top: 6px;
-  padding-bottom: 8px;
+  min-height: 42px;
+  padding-top: 4px;
+  padding-bottom: 6px;
   border-top: 1px solid var(--line-subtle);
 }
 
@@ -1272,7 +1302,7 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 32px;
   border: 1px solid var(--line-default);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -1283,8 +1313,8 @@ textarea:focus-visible,
 
 .sidebar-trigger,
 .toolbar-icon-button {
-  width: 34px;
-  flex: 0 0 34px;
+  width: 32px;
+  flex: 0 0 32px;
   padding: 0;
 }
 
@@ -1320,7 +1350,7 @@ textarea:focus-visible,
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  min-width: 132px;
+  min-width: 116px;
   color: var(--text-secondary);
   font-size: 13px;
   white-space: nowrap;
@@ -1344,9 +1374,9 @@ textarea:focus-visible,
   align-items: center;
   flex: 1 1 280px;
   min-width: 160px;
-  height: 36px;
-  gap: 9px;
-  padding: 0 10px;
+  height: 34px;
+  gap: 8px;
+  padding: 0 9px;
   color: var(--text-tertiary);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   border: 1px solid var(--line-default);
@@ -1406,12 +1436,12 @@ textarea:focus-visible,
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .import-button {
-  gap: 7px;
-  padding: 0 14px;
+  gap: 6px;
+  padding: 0 11px;
   color: var(--accent-contrast);
   font-size: 13px;
   font-weight: 650;
@@ -2296,6 +2326,19 @@ textarea:focus-visible,
   border-color: var(--accent-hover) !important;
 }
 
+/* 卡片分组标签浮层：内联布局样式保留，交互反馈由主题统一提供。 */
+.category-tooltip-button:not(:disabled):hover {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover)) !important;
+  color: var(--accent) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.category-tooltip-button.is-selected:not(:disabled):hover {
+  background: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+
 .batch-action-bar-danger {
   color: #fff !important;
   background: #c13b48 !important;
@@ -2667,3 +2710,4 @@ body {
 [data-theme='night'] .video-card {
   background: rgba(28, 28, 30, .94) !important;
 }
+

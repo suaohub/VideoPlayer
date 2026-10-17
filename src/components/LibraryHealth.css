@@ -44,6 +44,7 @@
 .health-issue-value { color: var(--text-primary); font-size: 13px; font-weight: 620; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .health-issue-action { display: inline-flex; align-items: center; gap: 2px; padding: 5px 2px 5px 8px; color: var(--accent); font-size: 11px; border: 0; background: transparent; cursor: pointer; white-space: nowrap; }
 .health-issue-action:hover { color: var(--accent-hover); }
+.health-issue-action-boost { color: #0a84ff; }
 .health-drive-list { display: grid; gap: 8px; }
 .health-drive-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 54px; padding: 8px 12px; border: 1px solid var(--line-default); border-radius: 10px; background: var(--surface-1); }
 .health-drive-row > svg { color: var(--success); }

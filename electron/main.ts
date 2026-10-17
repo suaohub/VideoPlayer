@@ -1,17 +1,17 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, shell, globalShortcut } from 'electron';
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync, renameSync, copyFileSync, rmSync, rmdirSync, statSync } from 'fs';
 import { rm as rmAsync, unlink as unlinkAsync } from 'fs/promises';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { initDatabase, getDb } from './db';
 import {
   initMpv, playVideo, stopMpv, togglePause, seek, seekRelative, setVolume, setSpeed,
-  syncMpvWindowBounds, hideMpvWindow, writeWallpaperJpeg,
+  syncMpvWindowBounds, hideMpvWindow, writeWallpaperJpeg, rotateVideo, toggleVideoMirror,
 } from './mpv';
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
-import { setThumbnailListeners, setThumbnailGenerationPaused } from './thumbnailQueue';
+import { setThumbnailListeners, setThumbnailGenerationPaused, setThumbnailGenerationBoost } from './thumbnailQueue';
 import { getMediaLibraryHealth } from './health';
-import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setOrganizeCategoryEnabled, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
+import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, setFolderLocked, isFolderLocked, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, setOrganizeCategoryEnabled, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
@@ -39,11 +39,18 @@ let refreshingImportedFolders = false;
 let quittingAfterMpvStop = false;
 let stopBeforeQuitStarted = false;
 
+function sendOperationProgress(kind: 'delete' | 'organize', current: number, total: number, detail?: string) {
+  mainWindow?.webContents.send('operation-progress', { kind, current, total, detail });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
-    frame: false,
+    frame: true,
+    title: 'VideoPlayer — Local Media Library',
+    autoHideMenuBar: true,
+    backgroundColor: '#f4f5f8',
     icon: join(app.getAppPath(), 'assets', 'icon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -51,6 +58,7 @@ function createWindow() {
       contextIsolation: true,
     },
   });
+  mainWindow.center();
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://127.0.0.1:5173');
@@ -76,6 +84,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  globalShortcut.register('CommandOrControl+Alt+R', () => rotateVideo());
+  globalShortcut.register('CommandOrControl+Alt+M', () => toggleVideoMirror());
   protocol.handle('thumb', (request) => {
     const filePath = thumbnailFilePathFromUrl(request.url);
     if (!filePath || !existsSync(filePath)) {
@@ -192,6 +202,18 @@ ipcMain.handle('open-video-directory', async (event, videoPath: string) => {
   // showItemInFolder 会打开文件管理器并选中该文件
   shell.showItemInFolder(videoPath);
   return { success: true };
+});
+
+ipcMain.handle('open-folder-directory', async (event, folderPath: string) => {
+  try {
+    if (!folderPath || !existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+      return { success: false, missing: true, error: '目录不存在或当前磁盘不可用' };
+    }
+    const error = await shell.openPath(folderPath);
+    return error ? { success: false, missing: false, error } : { success: true, missing: false };
+  } catch (error) {
+    return { success: false, missing: !existsSync(folderPath), error: String(error) };
+  }
 });
 
 ipcMain.handle('stop-video', async () => {
@@ -784,7 +806,8 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
     let overwrittenCount = 0;
     let skippedCount = 0;
 
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
+      sendOperationProgress('organize', index, candidates.length, candidate.path);
       if (!candidate.category_id || !candidate.category_name || !isVideoFile(candidate.path)) {
         skippedCount++;
         continue;
@@ -795,6 +818,11 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
       if (!sourceFolder) {
         skippedCount++;
         errors.push(`${candidate.path}: 找不到所属整理目录`);
+        continue;
+      }
+      if (isFolderLocked(sourceFolder.id)) {
+        skippedCount++;
+        errors.push(`${candidate.path}: 所属目录已锁定`);
         continue;
       }
       if (!existsSync(candidate.path)) {
@@ -887,6 +915,7 @@ ipcMain.handle('organize-folders', async (event, folderIds: number[], destinatio
         errors.push(`${candidate.path}: ${error}`);
       }
     }
+    sendOperationProgress('organize', candidates.length, candidates.length);
 
     const deletedSourceFolderPaths: string[] = [];
     const sourceCleanupPaths = Array.from(sourceCleanupPathMap.values())
@@ -977,6 +1006,15 @@ ipcMain.handle('set-folder-hidden', async (event, folderId: number, hidden: bool
   }
 });
 
+ipcMain.handle('set-folder-locked', async (event, folderId: number, locked: boolean) => {
+  try {
+    setFolderLocked(folderId, locked);
+    return { success: true, locked: Boolean(locked) };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
 // 查询视频列表
 ipcMain.handle('get-videos', async (event, filter: VideoFilter = {}) => {
   return getVideos(filter);
@@ -997,8 +1035,9 @@ ipcMain.handle('get-library-health', async () => {
   }
 });
 
-ipcMain.handle('generate-thumbnails', async () => {
+ipcMain.handle('generate-thumbnails', async (event, boost = false) => {
   // 健康中心的“生成预览”同时修复已存在但文件已丢失的 thumb:// 记录。
+  setThumbnailGenerationBoost(Boolean(boost));
   backfillMissingThumbnails(true);
   return { success: true };
 });
@@ -1150,13 +1189,16 @@ ipcMain.handle('clear-cache', async () => {
 // 删除目录（级联删子树 + 视频记录 + 缩略图文件）
 ipcMain.handle('delete-folder', async (event, folderId: number) => {
   try {
+    if (isFolderLocked(folderId)) return { success: false, error: '目录已锁定，请先解锁后再操作' };
     const { thumbnailUrls, videoCount } = deleteFolderCascade(folderId);
+    sendOperationProgress('delete', 0, thumbnailUrls.length, '清理缩略图');
     // 删除对应缩略图文件
-    for (const url of thumbnailUrls) {
+    for (const [index, url] of thumbnailUrls.entries()) {
       const file = thumbnailFilePathFromUrl(url);
       if (file && existsSync(file)) {
         try { unlinkSync(file); } catch { /* 忽略单个文件删除失败 */ }
       }
+      sendOperationProgress('delete', index + 1, thumbnailUrls.length, '清理缩略图');
     }
     return { success: true, videoCount, thumbCount: thumbnailUrls.length };
   } catch (error) {
@@ -1182,13 +1224,17 @@ ipcMain.handle('delete-folders-from-disk', async (event, folderIds: number[]) =>
         return childPath === '' || (!isAbsolute(childPath) && childPath !== '..' && !childPath.startsWith(`..${sep}`));
       })
     ));
+    if (effectiveTargets.some((target) => isFolderLocked(target.id))) {
+      return { success: false, errors: ['所选目录或其上级目录已锁定，请先解锁后再删除。'], failedFolderIds: effectiveTargets.map((target) => target.id) };
+    }
     const errors: string[] = [];
     const failedFolderIds: number[] = [];
     let deletedFolderCount = 0;
     let videoCount = 0;
     let thumbCount = 0;
 
-    for (const target of effectiveTargets) {
+    for (const [index, target] of effectiveTargets.entries()) {
+      sendOperationProgress('delete', index, effectiveTargets.length, target.path);
       const resolvedTargetPath = resolve(target.path);
       // 目录记录不应指向磁盘根目录；禁止误删整块磁盘。
       if (/^[A-Za-z]:\\?$/.test(resolvedTargetPath)) {
@@ -1215,6 +1261,7 @@ ipcMain.handle('delete-folders-from-disk', async (event, folderIds: number[]) =>
         errors.push(`「${target.name}」：${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    sendOperationProgress('delete', effectiveTargets.length, effectiveTargets.length);
 
     return {
       success: errors.length === 0,
@@ -1319,12 +1366,16 @@ ipcMain.handle('batch-unmark-for-deletion', async (event, videoIds: number[]) =>
 ipcMain.handle('batch-delete-videos', async (event, videoIds: number[]) => {
   try {
     const targets = getVideoDeleteTargets(videoIds);
+    if (targets.some((target) => target.folder_id != null && isFolderLocked(target.folder_id))) {
+      return { success: false, error: '所选文件所在目录已锁定，请先解锁后再删除' };
+    }
     let deletedCount = 0;
     const errors: string[] = [];
     const deletedIds: number[] = [];
     const deletedThumbnailUrls: string[] = [];
     const targetsToDelete = [...targets].sort((a, b) => b.path.length - a.path.length);
-    for (const target of targetsToDelete) {
+    for (const [index, target] of targetsToDelete.entries()) {
+      sendOperationProgress('delete', index, targetsToDelete.length, target.path);
       try {
         if (existsSync(target.path)) {
           const info = statSync(target.path);
@@ -1342,6 +1393,7 @@ ipcMain.handle('batch-delete-videos', async (event, videoIds: number[]) => {
         errors.push(`${target.path}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    sendOperationProgress('delete', targetsToDelete.length, targetsToDelete.length);
 
     const { thumbnailUrls } = deleteVideoRecords(deletedIds);
     for (const url of new Set([...deletedThumbnailUrls, ...thumbnailUrls])) {
@@ -1372,13 +1424,15 @@ ipcMain.handle('batch-delete-videos', async (event, videoIds: number[]) => {
 // 删除目录及其子目录内所有未收藏的文件，收藏文件始终跳过。
 ipcMain.handle('delete-unfavorited-videos-in-folder', async (event, folderId: number) => {
   try {
+    if (isFolderLocked(folderId)) return { success: false, error: '目录已锁定，请先解锁后再操作' };
     const candidates = getUnfavoritedFileCandidatesInFolder(folderId)
       .sort((a, b) => b.path.length - a.path.length);
     const deletedIds: number[] = [];
     const errors: string[] = [];
     const thumbnailPaths = new Map<number, string | null>();
 
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
+      sendOperationProgress('delete', index, candidates.length, candidate.path);
       try {
         if (!existsSync(candidate.path)) {
           errors.push(`${candidate.path}: 文件不存在`);
@@ -1396,6 +1450,7 @@ ipcMain.handle('delete-unfavorited-videos-in-folder', async (event, folderId: nu
         errors.push(`${candidate.path}: ${error}`);
       }
     }
+    sendOperationProgress('delete', candidates.length, candidates.length);
 
     const { thumbnailUrls, deletedCount } = deleteVideoRecords(deletedIds);
     const thumbnails = new Set([

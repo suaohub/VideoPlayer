@@ -64,11 +64,11 @@ export function getFolderTree(mediaType?: MediaType) {
   const db = getDb();
   const all = db.prepare(`
     ${HIDDEN_FOLDERS_CTE}
-    SELECT id, path, name, parent_id, import_root_id, hidden
+    SELECT id, path, name, parent_id, import_root_id, hidden, locked
     FROM folders
     WHERE id NOT IN (SELECT id FROM hidden_folders)
     ORDER BY path ASC
-  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null; hidden: number }>;
+  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null; hidden: number; locked: number }>;
 
   const { clause, params } = extClause(mediaType);
   if (!clause) return all;
@@ -281,6 +281,22 @@ export function setFolderHidden(folderId: number, hidden: boolean) {
     }
   });
   tx();
+}
+
+export function setFolderLocked(folderId: number, locked: boolean) {
+  const result = getDb().prepare('UPDATE folders SET locked = ? WHERE id = ?').run(locked ? 1 : 0, folderId);
+  if (result.changes === 0) throw new Error('目录不存在');
+}
+
+export function isFolderLocked(folderId: number): boolean {
+  const folder = getDb().prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
+  if (!folder) return false;
+  const target = folder.path.replace(/[\\/]+$/, '').toLowerCase();
+  const locked = getDb().prepare('SELECT path FROM folders WHERE locked = 1').all() as Array<{ path: string }>;
+  return locked.some((item) => {
+    const root = item.path.replace(/[\\/]+$/, '').toLowerCase();
+    return target === root || target.startsWith(`${root}\\`) || target.startsWith(`${root}/`);
+  });
 }
 
 // 级联删除目录：删除该目录 + 所有子目录 + 其中的视频记录 + video_tags 关联，

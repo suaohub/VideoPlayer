@@ -31,7 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Theme, ImportProgress, ThumbnailProgress, MediaType, SortBy, SortDir } from '../types';
+import { Theme, ImportProgress, ThumbnailProgress, OperationProgress, MediaType, SortBy, SortDir } from '../types';
 
 interface ToolbarProps {
   theme: Theme;
@@ -61,6 +61,7 @@ interface ToolbarProps {
   importing: boolean;
   importProgress: ImportProgress | null;
   thumbProgress: ThumbnailProgress | null;
+  operationProgress: OperationProgress | null;
   cardSize: number;
   onCardSizeChange: (n: number) => void;
   unmountedDrives: string[];
@@ -131,6 +132,7 @@ function Toolbar({
   importing,
   importProgress,
   thumbProgress,
+  operationProgress,
   cardSize,
   onCardSizeChange,
   unmountedDrives,
@@ -183,7 +185,12 @@ function Toolbar({
   }, []);
 
   const currentTheme = THEMES.find((item) => item.value === theme) ?? THEMES[1];
-  const currentSort = SORT_OPTIONS.find((item) => item.value === sortBy) ?? SORT_OPTIONS[0];
+  const sortOptions = SORT_OPTIONS.filter((item) => mediaType === 'video' || item.value !== 'duration').map((item) => (
+    item.value === 'duration' && mediaType === 'video'
+      ? { ...item, label: '视频时长' }
+      : item
+  ));
+  const currentSort = sortOptions.find((item) => item.value === sortBy) ?? sortOptions[0];
   const mediaLabel = pageCurrent ?? MEDIA_TABS.find((item) => item.value === mediaType)?.label ?? '媒体库';
 
   return (
@@ -276,7 +283,7 @@ function Toolbar({
           </button>
           {sortOpen && (
             <div className="toolbar-menu" role="menu">
-              {SORT_OPTIONS.map(({ value, label, Icon }) => (
+              {sortOptions.map(({ value, label, Icon }) => (
                 <button key={value} className={`toolbar-menu-item${sortBy === value ? ' is-active' : ''}`} onClick={() => { onSortByChange(value); setSortOpen(false); }}>
                   <Icon {...ICON} /><span>{label}</span>{sortBy === value && <span className="menu-check">✓</span>}
                 </button>
@@ -323,11 +330,19 @@ function Toolbar({
         </div>
       </div>}
 
-      {(unmountedDrives.length > 0 || (importing && importProgress) || (!importing && thumbProgress)) && (
+      {(unmountedDrives.length > 0 || (importing && importProgress) || (!importing && thumbProgress) || operationProgress) && (
         <div className="status-strip">
           {unmountedDrives.length > 0 && <div className="status-message warning"><TriangleAlert size={14} /><span>未连接的磁盘已隐藏：{unmountedDrives.join('、')}</span></div>}
           {importing && importProgress && <ProgressStatus label="正在扫描媒体" current={importProgress.current} total={importProgress.total} detail={importProgress.file} />}
           {!importing && thumbProgress && thumbProgress.total > 0 && <ProgressStatus label="正在生成预览" current={thumbProgress.done} total={thumbProgress.total} />}
+          {operationProgress && operationProgress.total > 0 && (
+            <ProgressStatus
+              label={operationProgress.kind === 'organize' ? '正在整理文件' : '正在删除文件'}
+              current={operationProgress.current}
+              total={operationProgress.total}
+              detail={operationProgress.detail}
+            />
+          )}
         </div>
       )}
     </header>

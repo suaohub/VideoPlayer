@@ -32,6 +32,8 @@ export function initMpv(getWindow: () => BrowserWindow | null) {
 }
 
 let mpvProcess: ChildProcess | null = null;
+let videoRotation = 0;
+let videoMirrored = false;
 let ipcSocket: net.Socket | null = null;
 let socketPath = '';
 let requestId = 0;
@@ -312,6 +314,8 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
     setThumbnailGenerationPaused(true);
 
     const audioOnly = isAudioFile(videoPath);
+    videoRotation = 0;
+    videoMirrored = false;
     console.log(`[mpv] ${audioOnly ? 'Audio' : 'Video'} path:`, videoPath);
     writeRuntimeLog(`[mpv-start] audioOnly=${audioOnly} elapsedMs=${Date.now() - startedAt} bin=${resolveMpvBin()}`);
 
@@ -328,10 +332,10 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
       '--border=no',
       '--show-in-taskbar=no',
       '--taskbar-progress=no',
-      '--hwdec=auto-safe',
+      '--hwdec=no',
       ...(audioOnly
         ? ['--no-video', '--force-window=no']
-        : ['--force-window=immediate', '--fullscreen']),
+        : ['--force-window=immediate', '--fullscreen', '--vf=@mirror:lavfi=[hflip]']),
       videoPath,
     ];
 
@@ -481,6 +485,8 @@ function waitAndConnectSocket(
         observeProperty('volume', 4);
         observeProperty('speed', 5);
         observeProperty('mute', 6);
+        // 预加载滤镜链但默认关闭镜像；快捷键切换时直接增删同一条链。
+        sendCommand(['vf', 'remove', '@mirror']);
         // 绑定回车键 = 退出 mpv（回到列表）
         sendCommand(['keybind', 'ENTER', 'quit']);
         sendCommand(['keybind', 'KP_ENTER', 'quit']); // 小键盘回车
@@ -604,6 +610,9 @@ function setupIpcListeners(sock: net.Socket, expectedProcess: ChildProcess, expe
 // 分发 mpv 的事件
 function handleMpvMessage(msg: any) {
   const mainWindow = getWin();
+  if (msg.error && msg.request_id != null && msg.error !== 'success') {
+    console.warn('[mpv] command failed:', msg.request_id, msg.error, msg.data ?? '');
+  }
   if (msg.event === 'end-file') {
     if (msg.reason === 'eof' && currentPlaybackPath) {
       try {
@@ -749,6 +758,23 @@ export function setVolume(volume: number) {
 
 export function setSpeed(speed: number) {
   setProperty('speed', speed);
+}
+
+export function rotateVideo() {
+  if (!mpvProcess || !playbackIpcConnected) return;
+  videoRotation = (videoRotation + 90) % 360;
+  setProperty('video-rotate', videoRotation);
+  console.log('[mpv] video rotation:', videoRotation);
+}
+
+export function toggleVideoMirror() {
+  if (!mpvProcess || !playbackIpcConnected) return;
+  videoMirrored = !videoMirrored;
+  // 运行时用 mpv 的 vf 命令增删镜像滤镜，避免 set_property vf 的兼容性问题。
+  sendCommand(videoMirrored
+    ? ['vf', 'add', '@mirror:hflip']
+    : ['vf', 'remove', '@mirror']);
+  console.log('[mpv] video mirror:', videoMirrored ? 'on' : 'off');
 }
 
 // ---------- 壁纸目录与截帧 ----------

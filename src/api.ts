@@ -154,6 +154,10 @@ export const api = {
     if (USE_MOCK) return { success: true, hidden };
     return window.electronAPI.setFolderHidden(folderId, hidden);
   },
+  async setFolderLocked(folderId: number, locked: boolean) {
+    if (USE_MOCK) return { success: true, locked };
+    return window.electronAPI.setFolderLocked(folderId, locked);
+  },
   async getVideoCount(mediaType?: import('./types').MediaType): Promise<number> {
     if (USE_MOCK) return mockGetVideos({ mediaType, markedForDeletion: false }).length;
     return window.electronAPI.getVideoCount(mediaType);
@@ -181,9 +185,9 @@ export const api = {
     }
     return window.electronAPI.getLibraryHealth();
   },
-  async generateThumbnails(): Promise<{ success: boolean }> {
+  async generateThumbnails(boost = false): Promise<{ success: boolean }> {
     if (USE_MOCK) return { success: true };
-    return window.electronAPI.generateThumbnails();
+    return window.electronAPI.generateThumbnails(boost);
   },
   async regenerateThumbnail(videoId: number): Promise<{ success: boolean; error?: string; timestamp?: number; thumbnail_path?: string }> {
     if (USE_MOCK) return { success: true };
@@ -252,6 +256,10 @@ export const api = {
   async getMediaUrl(path: string): Promise<string> {
     if (USE_MOCK) return path;
     return window.electronAPI.getMediaUrl(path);
+  },
+  async openFolderDirectory(folderPath: string): Promise<{ success: boolean; missing?: boolean; error?: string }> {
+    if (USE_MOCK) return { success: false, missing: true, error: '浏览器预览不支持打开本地目录' };
+    return window.electronAPI.openFolderDirectory(folderPath);
   },
   // 应用内 <video> 用的流式 URL（可 seek），供「刷视频」模式使用
   mediaStreamUrl(id: number): string {
@@ -444,6 +452,9 @@ export const api = {
   },
   onThumbnailProgress(cb: (data: import('./types').ThumbnailProgress) => void) {
     if (!USE_MOCK && window.electronAPI) return window.electronAPI.onThumbnailProgress(cb);
+  },
+  onOperationProgress(cb: (data: import('./types').OperationProgress) => void) {
+    if (!USE_MOCK && window.electronAPI) return window.electronAPI.onOperationProgress(cb);
   },
 
   async clearCache(): Promise<{ success: boolean; count?: number; error?: string }> {
