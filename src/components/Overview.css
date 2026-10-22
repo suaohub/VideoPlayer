@@ -2,7 +2,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 30px 32px 44px;
+  padding: 20px 32px 44px;
   scrollbar-gutter: stable;
 }
 
@@ -13,17 +13,15 @@
   align-items: stretch;
   min-height: 250px;
   padding: 28px 30px;
-  border: 1px solid var(--line-default);
-  border-radius: 18px;
-  background:
-    radial-gradient(550px 220px at 12% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 72%),
-    linear-gradient(125deg, color-mix(in srgb, var(--surface-2) 94%, transparent), color-mix(in srgb, var(--surface-1) 92%, transparent));
-  box-shadow: var(--shadow-card);
+  border: 1px solid color-mix(in srgb, var(--line-default) 72%, transparent);
+  border-radius: 16px;
+  background: var(--surface-1);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .overview-hero-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-width: 0; }
 .overview-eyebrow { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .15em; }
-.overview-hero h1 { max-width: 560px; margin: 10px 0 8px; color: var(--text-primary); font-size: clamp(27px, 3.1vw, 42px); line-height: 1.1; letter-spacing: -.045em; font-weight: 650; }
+.overview-hero h1 { max-width: 560px; margin: 10px 0 8px; color: var(--text-primary); font-size: clamp(27px, 3.1vw, 42px); line-height: 1.1; letter-spacing: -.045em; font-weight: var(--weight-page-title); }
 .overview-hero p { max-width: 510px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
 .overview-hero-actions { display: flex; align-items: center; gap: 10px; margin-top: 23px; }
 .overview-primary-action, .overview-secondary-action { display: inline-flex; align-items: center; gap: 8px; min-height: 37px; padding: 0 14px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all .18s ease; }
@@ -58,7 +56,7 @@
 .overview-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
 .overview-section-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .overview-section-icon { display: grid; width: 27px; height: 27px; place-items: center; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 7px; background: var(--accent-soft); }
-.overview-section-title h2 { color: var(--text-primary); font-size: 15px; font-weight: 620; letter-spacing: -.02em; }
+.overview-section-title h2 { color: var(--text-primary); font-size: var(--font-size-section-title); font-weight: var(--weight-section-title); letter-spacing: -.02em; }
 .overview-section-count { color: var(--text-tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
 .overview-section-action { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; color: var(--text-tertiary); font-size: 11px; border: 0; background: transparent; cursor: pointer; }
 .overview-section-action:hover { color: var(--accent); }
@@ -85,8 +83,8 @@
 .overview-progress-track { position: absolute; right: 8px; bottom: 7px; left: 8px; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.26); }
 .overview-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .overview-media-copy { display: flex; flex-direction: column; gap: 4px; padding: 9px 10px 10px; }
-.overview-media-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; }
-.overview-media-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); font-size: 10px; }
+.overview-media-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-body); font-weight: var(--weight-body-emphasis); }
+.overview-media-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); font-size: var(--font-size-meta); }
 .overview-inline-empty { display: flex; align-items: center; gap: 9px; min-height: 58px; padding: 0 14px; color: var(--text-tertiary); font-size: 11px; border: 1px dashed var(--line-default); border-radius: 10px; }
 .overview-inline-empty svg { color: var(--accent); }
 .overview-inline-empty button { margin-left: auto; color: var(--accent); font-size: 11px; border: 0; background: transparent; cursor: pointer; }

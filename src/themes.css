@@ -439,6 +439,15 @@ button {
    ======================================================================== */
 
 :root {
+  /* Shared typography hierarchy: one emphasis scale across the workspace. */
+  --font-size-page-title: 22px;
+  --font-size-section-title: 15px;
+  --font-size-body: 13px;
+  --font-size-meta: 11px;
+  --weight-page-title: 650;
+  --weight-section-title: 620;
+  --weight-body-emphasis: 600;
+  --weight-body: 400;
   color-scheme: dark;
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', sans-serif;
@@ -660,6 +669,18 @@ textarea:focus-visible,
   backdrop-filter: blur(var(--glass-blur)) saturate(1.05);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.05);
 }
+
+/* 无边框窗口的 iOS 风格标题栏：可拖动区域与窗口按钮分离。 */
+.titlebar-row {
+  display: flex !important;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 14px 2px 16px;
+  background: color-mix(in srgb, var(--bg-toolbar) 78%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line-subtle) 72%, transparent);
+}
+.titlebar-row .window-controls { margin-left: auto; }
+.titlebar-row .window-control { -webkit-app-region: no-drag; }
 
 /* 当前 Toolbar 尚未使用类名时，header 仍然获得同一层级的视觉处理。 */
 .app-content > header {
@@ -1310,7 +1331,7 @@ textarea:focus-visible,
   display: flex;
   flex: 0 0 auto;
   height: 38px;
-  margin: 0 -18px 0 12px;
+  margin: 0 -12px 0 12px;
 }
 
 .app-topbar .window-control {
@@ -1320,6 +1341,18 @@ textarea:focus-visible,
   padding: 0;
   border: 0;
   border-radius: 0;
+}
+
+/* Keep the close glyph centered inside the red hit area. */
+.app-topbar .window-control-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-topbar .window-control-close svg {
+  display: block;
+  transform: none;
 }
 
 .primary-toolbar-row,
@@ -1392,6 +1425,15 @@ textarea:focus-visible,
 .import-button:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.app-topbar .window-control:active {
+  background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+.app-topbar .window-control-close:active {
+  color: #fff;
+  background: color-mix(in srgb, #c9434d 82%, #000);
 }
 
 .page-context {
@@ -2616,37 +2658,37 @@ html, body, button, input, textarea, select {
 
 [data-theme='day'] {
   color-scheme: light;
-  --bg-primary: #f2f2f7;
-  --bg-secondary: rgba(255, 255, 255, .72);
-  --bg-toolbar: rgba(249, 249, 251, .78);
-  --bg-card: rgba(255, 255, 255, .88);
-  --bg-hover: rgba(118, 118, 128, .12);
-  --text-primary: #1c1c1e;
-  --text-secondary: #6e6e73;
-  --text-tertiary: #8e8e93;
-  --border: rgba(60, 60, 67, .18);
-  --line-subtle: rgba(60, 60, 67, .12);
-  --line-default: rgba(60, 60, 67, .18);
-  --line-strong: rgba(60, 60, 67, .28);
-  --accent: #007aff;
-  --accent-hover: #006ee6;
-  --accent-soft: rgba(0, 122, 255, .12);
+  --bg-primary: #e9eef5;
+  --bg-secondary: rgba(247, 249, 252, .92);
+  --bg-toolbar: rgba(255, 255, 255, .94);
+  --bg-card: #ffffff;
+  --bg-hover: #dfe8f3;
+  --text-primary: #172033;
+  --text-secondary: #506078;
+  --text-tertiary: #738199;
+  --border: rgba(31, 55, 84, .2);
+  --line-subtle: rgba(31, 55, 84, .13);
+  --line-default: rgba(31, 55, 84, .2);
+  --line-strong: rgba(31, 55, 84, .3);
+  --accent: #1769d1;
+  --accent-hover: #0f56b5;
+  --accent-soft: rgba(23, 105, 209, .14);
   --accent-contrast: #fff;
-  --focus-ring: #007aff;
-  --focus-shadow: 0 0 0 4px rgba(0, 122, 255, .18);
-  --surface-0: #f2f2f7;
-  --surface-1: #fff;
-  --surface-2: rgba(255, 255, 255, .82);
-  --surface-3: #f8f8fa;
+  --focus-ring: #1769d1;
+  --focus-shadow: 0 0 0 4px rgba(23, 105, 209, .2);
+  --surface-0: #e9eef5;
+  --surface-1: #f7f9fc;
+  --surface-2: #ffffff;
+  --surface-3: #eef3f8;
   --surface-elevated: #fff;
-  --glass-bg-light: rgba(255, 255, 255, .56);
-  --glass-bg-medium: rgba(255, 255, 255, .72);
-  --glass-bg: rgba(255, 255, 255, .78);
-  --glass-bg-strong: rgba(249, 249, 251, .92);
-  --glass-border: rgba(60, 60, 67, .14);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .9);
-  --shadow: 0 8px 24px rgba(0, 0, 0, .08);
-  --shadow-card: 0 2px 10px rgba(0, 0, 0, .08);
+  --glass-bg-light: rgba(255, 255, 255, .7);
+  --glass-bg-medium: rgba(255, 255, 255, .86);
+  --glass-bg: rgba(255, 255, 255, .92);
+  --glass-bg-strong: rgba(255, 255, 255, .98);
+  --glass-border: rgba(31, 55, 84, .16);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .98);
+  --shadow: 0 10px 28px rgba(39, 64, 93, .12);
+  --shadow-card: 0 3px 12px rgba(39, 64, 93, .1);
 }
 
 [data-theme='night'] {
@@ -2816,6 +2858,200 @@ body {
   background: var(--accent-soft);
   border-color: transparent;
 }
+
+/* Final window chrome override: keep the custom titlebar visible after legacy theme layers. */
+.app-topbar .titlebar-row {
+  display: flex !important;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 14px 2px 16px;
+  background: color-mix(in srgb, var(--bg-toolbar) 78%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-subtle) 72%, transparent);
+  -webkit-app-region: drag;
+}
+.app-topbar .titlebar-row .window-controls { margin-left: auto; }
+.app-topbar .titlebar-row .window-control { -webkit-app-region: no-drag; }
+
+/* Transparency scope controls from Appearance settings. */
+.app-shell[data-transparency-toolbar='off'] .app-topbar,
+.app-shell[data-transparency-toolbar='off'] .app-topbar .titlebar-row,
+.app-shell[data-transparency-toolbar='off'] .app-topbar .primary-toolbar-row,
+.app-shell[data-transparency-toolbar='off'] .app-topbar .secondary-toolbar-row {
+  background: var(--surface-1) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-shell[data-transparency-toolbar='off'] .app-topbar .search-field,
+.app-shell[data-transparency-toolbar='off'] .app-topbar .media-tabs {
+  background: var(--surface-2) !important;
+}
+
+.app-shell[data-transparency-sidebar='off'] .library-sidebar {
+  background: var(--surface-1) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-shell[data-transparency-content='off'] .library-main,
+.app-shell[data-transparency-content='off'] .video-grid,
+.app-shell[data-transparency-content='off'] .content-heading,
+.app-shell[data-transparency-content='off'] .overview-page {
+  background: var(--surface-1) !important;
+}
+
+.app-shell[data-transparency-content='off'] .video-card,
+.app-shell[data-transparency-content='off'] .media-card,
+.app-shell[data-transparency-content='off'] .overview-media-card,
+.app-shell[data-transparency-content='off'] .content-card,
+.app-shell[data-transparency-content='off'] .overview-stat-card {
+  background: var(--surface-2) !important;
+}
+
+.app-shell[data-transparency-toolbar='off'][data-transparency-sidebar='off'][data-transparency-content='off'] {
+  background: var(--bg-primary) !important;
+}
+
+/* Final typography pass: keep emphasis predictable across the main workspace. */
+.app-topbar .page-context-current,
+.toolbar-count strong {
+  font-size: var(--font-size-body) !important;
+  font-weight: var(--weight-body-emphasis) !important;
+}
+
+.app-topbar .page-context-label,
+.app-topbar .page-context-divider,
+.toolbar-count,
+.toolbar-quiet-button {
+  font-size: var(--font-size-meta) !important;
+}
+
+.content-heading h1,
+.content-header h1,
+.content-header h2,
+.page-header h1,
+.page-header h2,
+.media-header h1,
+.media-header h2 {
+  font-size: var(--font-size-page-title) !important;
+  font-weight: var(--weight-page-title) !important;
+}
+
+.content-heading p,
+.content-header p,
+.page-header p,
+.media-header p {
+  font-size: var(--font-size-meta) !important;
+  color: var(--text-secondary) !important;
+}
+
+.sidebar-nav-item {
+  font-size: var(--font-size-body) !important;
+  font-weight: var(--weight-body) !important;
+}
+
+.sidebar-nav-item.is-active {
+  font-weight: var(--weight-body-emphasis) !important;
+}
+
+.folder-tree-item {
+  color: var(--text-secondary) !important;
+  font-size: var(--font-size-body) !important;
+}
+
+.folder-tree-item.is-selected {
+  color: var(--text-primary) !important;
+  font-weight: var(--weight-body-emphasis);
+}
+
+.video-card-name {
+  color: var(--text-primary);
+  font-size: var(--font-size-body) !important;
+  font-weight: var(--weight-body-emphasis) !important;
+}
+
+.video-card-meta {
+  color: var(--text-tertiary) !important;
+  font-size: var(--font-size-meta) !important;
+}
+
+/* Touch and keyboard interaction pass. Compact window chrome stays compact;
+   content actions use a larger, consistent hit target. */
+.settings-btn,
+.settings-close,
+.app-dialog-button,
+.health-refresh-button,
+.overview-primary-action,
+.overview-secondary-action,
+.organize-filter-notice button,
+.batch-action-button,
+.batch-secondary-button,
+.batch-danger-button,
+.batch-cancel-button,
+.batch-category-select,
+.batch-action-bar button {
+  min-height: 36px;
+}
+
+.settings-close {
+  min-width: 36px;
+}
+
+.settings-mini-btn,
+.sidebar-collapse-button {
+  min-width: 34px;
+  min-height: 34px;
+}
+
+button,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+  box-shadow: var(--focus-shadow) !important;
+}
+
+.settings-btn:not(:disabled):active,
+.settings-close:not(:disabled):active,
+.app-dialog-button:not(:disabled):active,
+.health-refresh-button:not(:disabled):active,
+.overview-primary-action:not(:disabled):active,
+.overview-secondary-action:not(:disabled):active,
+.organize-filter-notice button:not(:disabled):active,
+.batch-action-button:not(:disabled):active,
+.batch-secondary-button:not(:disabled):active,
+.batch-danger-button:not(:disabled):active,
+.batch-cancel-button:not(:disabled):active,
+.batch-action-bar button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
+.toolbar-icon-button:disabled,
+.import-button:disabled,
+.settings-btn:disabled,
+.health-refresh-button:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
+button[aria-busy='true'] {
+  cursor: progress;
+}
+
+
 
 .sidebar-nav-item.is-active svg {
   color: var(--accent);
@@ -3164,3 +3400,136 @@ body {
   }
 }
 
+/* Fullscreen keeps one control row only; the custom titlebar is redundant there. */
+.app-topbar.is-fullscreen .titlebar-row {
+  display: none !important;
+}
+.app-topbar.is-fullscreen {
+  padding-top: 6px !important;
+  padding-bottom: 0 !important;
+}
+.app-topbar.is-fullscreen .primary-toolbar-row {
+  min-height: 42px !important;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+/* Wallpaper mode: let the selected image remain visible through the app surfaces. */
+.app-shell,
+.app-content,
+.library-main,
+.video-grid,
+.content-heading {
+  background: transparent !important;
+}
+.library-sidebar {
+  background: color-mix(in srgb, var(--surface-1) 34%, transparent) !important;
+}
+.video-card,
+.media-card,
+.overview-media-card,
+.content-card {
+  background: color-mix(in srgb, var(--bg-card) 78%, transparent) !important;
+}
+
+/* Final window chrome override: keep the custom titlebar visible after legacy theme layers. */
+.app-topbar .titlebar-row {
+  display: flex !important;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 14px 2px 16px;
+  background: color-mix(in srgb, var(--bg-toolbar) 78%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-subtle) 72%, transparent);
+  -webkit-app-region: drag;
+}
+.app-topbar .titlebar-row .window-controls { margin-left: auto; }
+.app-topbar .titlebar-row .window-control { -webkit-app-region: no-drag; }
+
+
+
+
+/* Keep the expanded titlebar flush with the top edge instead of leaving a blank strip. */
+.app-topbar.is-expanded {
+  padding-top: 0 !important;
+}
+
+/* Compact, single-surface window chrome. All rows stay in the app's flex flow. */
+.app-topbar {
+  min-height: 0 !important;
+  padding: 0 !important;
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent) !important;
+  backdrop-filter: blur(24px) saturate(1.12) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.12) !important;
+}
+
+.app-topbar .titlebar-row {
+  min-height: 32px;
+  padding: 0 12px;
+  background: transparent !important;
+  border-bottom-color: color-mix(in srgb, var(--line-subtle) 70%, transparent);
+}
+
+.app-topbar .titlebar-row .window-controls,
+.app-topbar .titlebar-row .window-control {
+  height: 32px;
+}
+
+.app-topbar .primary-toolbar-row {
+  min-height: 44px !important;
+  padding: 5px 16px !important;
+}
+
+/* Keep the wallpaper in the content area; give toolbar controls a steadier surface. */
+.app-topbar .search-field {
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent) !important;
+}
+
+.app-topbar .media-tabs {
+  background: color-mix(in srgb, var(--surface-3) 92%, transparent) !important;
+}
+
+/* Align primary actions to one 32px control line; the segmented tabs stay inset by 2px. */
+.app-topbar .sidebar-trigger,
+.app-topbar .toolbar-icon-button,
+.app-topbar .toolbar-quiet-button,
+.app-topbar .import-button,
+.app-topbar .search-field {
+  height: 32px;
+  min-height: 32px;
+}
+
+.app-topbar .sidebar-trigger,
+.app-topbar .toolbar-icon-button {
+  width: 32px;
+  flex-basis: 32px;
+}
+
+.app-topbar .media-tabs {
+  height: 32px;
+  padding: 2px;
+}
+
+.app-topbar .media-tab {
+  height: 28px;
+  min-height: 28px;
+}
+
+.app-topbar .import-button:hover {
+  transform: none;
+}
+
+.app-topbar.is-expanded,
+.app-topbar.is-fullscreen {
+  min-height: 0 !important;
+  padding: 0 !important;
+}
+
+.app-topbar.is-expanded .primary-toolbar-row,
+.app-topbar.is-fullscreen .primary-toolbar-row {
+  min-height: 44px !important;
+  padding: 5px 16px !important;
+}
+
+.app-topbar.is-fullscreen .titlebar-row {
+  display: none !important;
+}

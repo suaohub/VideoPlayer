@@ -79,7 +79,6 @@ export function getFolderTree(mediaType?: MediaType) {
     SELECT DISTINCT v.folder_id as id FROM videos v
     WHERE v.folder_id IS NOT NULL
       AND v.folder_id NOT IN (SELECT id FROM hidden_folders)
-      AND v.marked_for_deletion = 0
       AND ${clause}
   `).all(...params) as Array<{ id: number }>;
 

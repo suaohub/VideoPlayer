@@ -341,14 +341,14 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         )}
       </div>
       <div style={{ padding: '6px 10px', flex: 1, minHeight: 0 }}>
-        <div style={{
+        <div className="video-card-name" style={{
           fontSize: 13, fontWeight: 500, lineHeight: 1.3,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           marginBottom: 3,
         }} title={video.name}>
           {video.name}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 8 }}>
+        <div className="video-card-meta" style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 8 }}>
           {comicItem ? (
             <>
               <span>漫画</span>

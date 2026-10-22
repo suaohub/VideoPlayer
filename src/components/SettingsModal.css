@@ -7,8 +7,8 @@
   align-items: stretch;
   justify-content: flex-end;
   background: color-mix(in srgb, #07101f 58%, transparent);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(var(--settings-backdrop-blur, 14px)) saturate(1.15);
+  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur, 14px)) saturate(1.15);
   -webkit-app-region: no-drag;
   animation: settings-scrim-in 160ms ease-out both;
 }
@@ -612,6 +612,60 @@
   flex-shrink: 0;
 }
 
+.settings-transparency-group {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg-card) 64%, transparent);
+}
+
+.settings-transparency-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-transparency-heading small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.settings-transparency-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.settings-transparency-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 9px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-card) 68%, transparent);
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+.settings-transparency-option:has(input:checked) {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+}
+
+.settings-transparency-option input {
+  accent-color: var(--accent);
+}
+
 /* 导入进度 */
 .settings-progress-track {
   height: 4px;
@@ -1145,6 +1199,29 @@
   box-shadow: none !important;
 }
 .settings-scroll-edge::after { display: none !important; }
+
+/* Keep the modal on the same four-step text hierarchy as the workspace. */
+.settings-title {
+  font-size: 20px !important;
+  font-weight: var(--weight-page-title) !important;
+}
+
+.settings-section-title {
+  font-size: var(--font-size-section-title) !important;
+  font-weight: var(--weight-section-title) !important;
+}
+
+.settings-section-description,
+.settings-hint,
+.settings-action-copy span {
+  font-size: var(--font-size-meta) !important;
+}
+
+.settings-action-copy strong,
+.settings-category-name,
+.settings-hidden-folder-name {
+  font-weight: var(--weight-body-emphasis) !important;
+}
 
 /* iOS 设置中心最终覆盖：分段导航与分组表面保持一致。 */
 .settings-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }

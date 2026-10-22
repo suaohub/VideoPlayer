@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Theme, SortBy, SortDir } from '../types';
 import { api } from '../api';
 
-// 用户偏好与持久化：主题、卡片大小、排序、壁纸、界面透明度、整理输出目录。
+// 用户偏好与持久化：主题、卡片大小、排序、壁纸与整理输出目录。
 // 所有 setSetting 持久化副作用集中在此，App 只消费状态与 setter。
 export function usePreferences() {
   const [theme, setTheme] = useState<Theme>('night');
@@ -12,7 +12,6 @@ export function usePreferences() {
   const [wallpaperPath, setWallpaperPath] = useState<string | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
   const [wallpaperOpacity, setWallpaperOpacity] = useState(32);
-  const [toolbarOpacity, setToolbarOpacity] = useState(62);
   const [organizeOutputPath, setOrganizeOutputPath] = useState<string | null>(null);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
@@ -37,10 +36,6 @@ export function usePreferences() {
     if (preferencesLoaded) api.setSetting('wallpaperOpacity', String(wallpaperOpacity));
   }, [wallpaperOpacity, preferencesLoaded]);
 
-  useEffect(() => {
-    if (preferencesLoaded) api.setSetting('toolbarOpacity', String(toolbarOpacity));
-  }, [toolbarOpacity, preferencesLoaded]);
-
 
   // 读取全部持久化偏好并置 preferencesLoaded=true。由 App 初始化流程调用。
   const loadPreferences = useCallback(async () => {
@@ -57,13 +52,6 @@ export function usePreferences() {
       const parsedOpacity = Number(savedOpacity);
       if (Number.isFinite(parsedOpacity)) {
         setWallpaperOpacity(Math.min(100, Math.max(0, parsedOpacity)));
-      }
-    }
-    const savedToolbarOpacity = await api.getSetting('toolbarOpacity');
-    if (savedToolbarOpacity) {
-      const parsedToolbarOpacity = Number(savedToolbarOpacity);
-      if (Number.isFinite(parsedToolbarOpacity)) {
-        setToolbarOpacity(Math.min(100, Math.max(0, parsedToolbarOpacity)));
       }
     }
     const savedWallpaperPath = await api.getSetting('wallpaperPath');
@@ -144,7 +132,6 @@ export function usePreferences() {
     sortDir, setSortDir,
     wallpaperPath, wallpaperUrl,
     wallpaperOpacity, setWallpaperOpacity,
-    toolbarOpacity, setToolbarOpacity,
     organizeOutputPath,
     preferencesLoaded,
     loadPreferences,

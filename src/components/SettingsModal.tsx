@@ -6,6 +6,7 @@ import { Folder, ImportProgress, OrganizeCategory, Theme } from '../types';
 import { api } from '../api';
 import './SettingsModal.css';
 import { useAppFeedback } from './AppFeedback';
+import type { TransparencyAreas } from '../App';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -13,6 +14,7 @@ interface SettingsModalProps {
   onImport: () => void;
   importing: boolean;
   importProgress: ImportProgress | null;
+  thumbnailBusy: boolean;
   onClearCache: () => void;
   onRefreshLibrary: () => void;
   refreshing: boolean;
@@ -26,8 +28,10 @@ interface SettingsModalProps {
   onSelectBackground: () => void;
   onClearBackground: () => void;
   onBackgroundOpacityChange: (value: number) => void;
-  toolbarOpacity: number;
-  onToolbarOpacityChange: (value: number) => void;
+  settingsBackdropBlur: number;
+  onSettingsBackdropBlurChange: (value: number) => void;
+  transparencyAreas: TransparencyAreas;
+  onTransparencyAreasChange: (value: TransparencyAreas) => void;
   organizeCategories: OrganizeCategory[];
   onCreateOrganizeCategory: (name: string) => void;
   onDeleteOrganizeCategory: (categoryId: number) => void;
@@ -58,11 +62,13 @@ function organizeFolderName(outputPath: string | null): string {
 export function SettingsModal(props: SettingsModalProps) {
   const { confirm: confirmDialog } = useAppFeedback();
   const {
-    onClose, onImport, importing, importProgress, onClearCache, onRefreshLibrary, refreshing,
+    onClose, onImport, importing, importProgress, thumbnailBusy, onClearCache, onRefreshLibrary, refreshing,
     hiddenFolders, onRestoreHiddenFolder,
     theme, onThemeChange,
     backgroundImagePath, backgroundOpacity, onSelectBackground, onClearBackground,
-    onBackgroundOpacityChange, toolbarOpacity, onToolbarOpacityChange,
+    onBackgroundOpacityChange,
+    settingsBackdropBlur, onSettingsBackdropBlurChange,
+    transparencyAreas, onTransparencyAreasChange,
     organizeCategories,
     onCreateOrganizeCategory, onDeleteOrganizeCategory, onToggleOrganizeCategory,
     onReorderOrganizeCategories,
@@ -135,6 +141,7 @@ export function SettingsModal(props: SettingsModalProps) {
   return (
     <div
       className="settings-overlay"
+      style={{ '--settings-backdrop-blur': `${importing || refreshing || thumbnailBusy ? 0 : settingsBackdropBlur}px` } as CSSProperties}
       onMouseDown={(e) => {
         // Only clicks on the scrim itself close the drawer; controls inside remain interactive.
         if (e.target === e.currentTarget) onClose();
@@ -488,18 +495,45 @@ export function SettingsModal(props: SettingsModalProps) {
           )}
 
           <div className="settings-slider-row">
-            <span>界面透明度</span>
+            <span>背景模糊</span>
             <input
               className="settings-range app-range"
               type="range"
               min={0}
-              max={100}
-              value={100 - toolbarOpacity}
-              style={{ '--range-progress': `${100 - toolbarOpacity}%` } as CSSProperties}
-              onChange={(e) => onToolbarOpacityChange(100 - Number(e.target.value))}
-              title="统一调整顶栏、侧栏和内容区的透明度；100% 为完全透明"
+              max={30}
+              step={1}
+              value={settingsBackdropBlur}
+              style={{ '--range-progress': `${(settingsBackdropBlur / 30) * 100}%` } as CSSProperties}
+              onChange={(e) => onSettingsBackdropBlurChange(Number(e.target.value))}
+              title="调整设置中心后方遮罩的背景模糊程度"
             />
-            <span className="settings-slider-val">{100 - toolbarOpacity}%</span>
+            <span className="settings-slider-val">{settingsBackdropBlur}px</span>
+          </div>
+
+          <div className="settings-transparency-group">
+            <div className="settings-transparency-heading">
+              <span>透明效果使用范围</span>
+              <small>分别控制壁纸透出的位置</small>
+            </div>
+            <div className="settings-transparency-options">
+              {([
+                ['toolbar', '顶部工具栏'],
+                ['sidebar', '左侧目录'],
+                ['content', '内容卡片'],
+              ] as const).map(([key, label]) => (
+                <label className="settings-transparency-option" key={key}>
+                  <input
+                    type="checkbox"
+                    checked={transparencyAreas[key]}
+                    onChange={(event) => onTransparencyAreasChange({
+                      ...transparencyAreas,
+                      [key]: event.target.checked,
+                    })}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
           </div>
 
           <details className="settings-help">
@@ -519,7 +553,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
               <div>
                 <strong>外观</strong>
-                <p>日间/夜间主题会自动保存；可设置自定义壁纸显示强度和整个界面的统一透明度。</p>
+                <p>日间/夜间主题会自动保存；可设置壁纸显示强度、模糊程度和透明效果使用范围。</p>
               </div>
               <div>
                 <strong>播放快捷键</strong>

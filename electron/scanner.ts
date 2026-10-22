@@ -115,6 +115,72 @@ function collectComicFolders(dir: string, results: ComicFolder[] = []): ComicFol
   return results;
 }
 
+// Refresh runs in Electron's main process, so its directory walk must use async I/O.
+// Yield periodically inside unusually large flat folders as well.
+async function collectMediaFilesForRefresh(root: string): Promise<{ files: string[]; comics: ComicFolder[] }> {
+  const files: string[] = [];
+  const comics: ComicFolder[] = [];
+  const pending = [root];
+  let visited = 0;
+
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      console.warn('[scanner] Cannot read dir:', dir, error);
+      continue;
+    }
+
+    const images: string[] = [];
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!isIgnoredDirectory(entry.name)) pending.push(fullPath);
+      } else if (entry.isFile()) {
+        if (isSupportedMediaFile(fullPath)) files.push(fullPath);
+        if (isImageFile(entry.name)) images.push(entry.name);
+      }
+      if (++visited % 256 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    if (images.length > 0) {
+      images.sort(naturalCompare);
+      comics.push({ dir, firstImage: path.join(dir, images[0]), pageCount: images.length });
+    }
+  }
+
+  return { files, comics };
+}
+
+async function importScannedFolderResponsive(
+  importRootPath: string,
+  files: string[],
+  comics: ComicFolder[],
+  onProgress: ProgressCallback,
+): Promise<number> {
+  let newFiles = 0;
+  const batchSize = 200;
+  for (let offset = 0; offset < files.length; offset += batchSize) {
+    const batch = files.slice(offset, offset + batchSize);
+    const result = importVideoFiles(importRootPath, batch, (current, _total, file) => {
+      onProgress(offset + current, files.length, file);
+    });
+    newFiles += result.newVideos;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
+  // Establish the root even when it contains only comics or no supported files.
+  const db = getDb();
+  const rootId = (db.prepare('SELECT id FROM folders WHERE path = ?').get(importRootPath) as { id: number } | undefined)?.id
+    ?? ensureFolder(importRootPath, importRootPath, null);
+  for (let offset = 0; offset < comics.length; offset += batchSize) {
+    newFiles += importComicFolders(importRootPath, comics.slice(offset, offset + batchSize), rootId);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  return newFiles;
+}
+
 // 列出一个漫画文件夹里的所有图片（自然排序），返回可加载的 comic:// URL 数组
 export function listComicPages(comicDir: string): string[] {
   let entries: fs.Dirent[];
@@ -442,6 +508,41 @@ function cleanupStaleRecords(importRootPath: string, validComicPaths: Set<string
   return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
 }
 
+async function cleanupStaleRecordsResponsive(importRootPath: string, validComicPaths: Set<string>) {
+  const db = getDb();
+  const like = importRootPath + path.sep + '%';
+  const rows = db.prepare(`
+    SELECT id, path, ext, thumbnail_path FROM videos WHERE path = ? OR path LIKE ?
+  `).all(importRootPath, like) as Array<{ id: number; path: string; ext: string | null; thumbnail_path: string | null }>;
+  const stale: typeof rows = [];
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    try {
+      const stat = await fs.promises.stat(row.path);
+      if (row.ext?.toLowerCase() === COMIC_EXT
+        ? (!stat.isDirectory() || !validComicPaths.has(pathKey(row.path)))
+        : !stat.isFile()) stale.push(row);
+    } catch {
+      stale.push(row);
+    }
+    if ((index + 1) % 200 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  const thumbnailUrls = stale.map((row) => row.thumbnail_path).filter(Boolean) as string[];
+  const ids = stale.map((row) => row.id);
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    const batch = ids.slice(offset, offset + 500);
+    const placeholders = batch.map(() => '?').join(',');
+    db.transaction(() => {
+      db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...batch);
+    })();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  if (ids.length > 0) db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)').run();
+  return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
+}
+
 // 整理后文件可能已经移出原导入根目录。对已挂载磁盘上的失效记录也做一次清理；
 // 未挂载磁盘上的记录保留，避免用户只是暂时拔出了移动硬盘就丢失库内信息。
 function cleanupMissingRecordsOnMountedVolumes() {
@@ -479,6 +580,40 @@ function cleanupMissingRecordsOnMountedVolumes() {
   return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
 }
 
+async function cleanupMissingRecordsOnMountedVolumesResponsive() {
+  const db = getDb();
+  const rows = db.prepare('SELECT id, path, thumbnail_path FROM videos').all() as Array<{
+    id: number; path: string; thumbnail_path: string | null;
+  }>;
+  const stale: typeof rows = [];
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (path.isAbsolute(row.path)) {
+      try {
+        if (!await fs.promises.access(row.path).then(() => true, () => false)) {
+          const root = path.parse(row.path).root;
+          if (root && fs.existsSync(root)) stale.push(row);
+        }
+      } catch { /* keep uncertain paths */ }
+    }
+    if ((index + 1) % 200 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  const ids = stale.map((row) => row.id);
+  const thumbnailUrls = stale.map((row) => row.thumbnail_path).filter(Boolean) as string[];
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    const batch = ids.slice(offset, offset + 500);
+    const placeholders = batch.map(() => '?').join(',');
+    db.transaction(() => {
+      db.prepare(`DELETE FROM video_organize_categories WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM video_tags WHERE video_id IN (${placeholders})`).run(...batch);
+      db.prepare(`DELETE FROM videos WHERE id IN (${placeholders})`).run(...batch);
+    })();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  if (ids.length > 0) db.prepare('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM video_tags)').run();
+  return { deletedFiles: stale.length, deletedThumbnailUrls: thumbnailUrls };
+}
+
 function cleanupEmptyFolders(importRootPaths: Set<string>) {
   const db = getDb();
   const allFolders = db.prepare(`
@@ -508,7 +643,7 @@ function cleanupEmptyFolders(importRootPaths: Set<string>) {
 
 // 根据数据库中保存的导入根目录重新扫描硬盘，增量发现新增文件并清理已删除记录。
 // 同路径记录只更新文件元数据，不触碰收藏、删除标记和整理分类。
-export function refreshImportedFolders(onProgress?: ProgressCallback): RefreshResult {
+export async function refreshImportedFolders(onProgress?: ProgressCallback): Promise<RefreshResult> {
   const db = getDb();
   const roots = db.prepare(`
     SELECT id, path
@@ -543,14 +678,14 @@ export function refreshImportedFolders(onProgress?: ProgressCallback): RefreshRe
 
   for (const root of uniqueRoots) {
     try {
-      if (!fs.existsSync(root.path) || !fs.statSync(root.path).isDirectory()) {
+      const rootStat = await fs.promises.stat(root.path).catch(() => null);
+      if (!rootStat?.isDirectory()) {
         missingRoots.push(root.path);
         continue;
       }
       scanPlans.push({
         root,
-        files: collectVideoFiles(root.path),
-        comics: collectComicFolders(root.path),
+        ...await collectMediaFilesForRefresh(root.path),
       });
     } catch {
       missingRoots.push(root.path);
@@ -562,21 +697,21 @@ export function refreshImportedFolders(onProgress?: ProgressCallback): RefreshRe
 
   for (const plan of scanPlans) {
     const { root, files, comics } = plan;
-    const result = importScannedFolder(root.path, files, comics, (current, _total, file) => {
+    const imported = await importScannedFolderResponsive(root.path, files, comics, (current, _total, file) => {
       onProgress?.(progressCurrent + current, progressTotal, file);
     });
     progressCurrent += files.length;
     scannedFiles += files.length + comics.length;
-    newFiles += result.newVideos;
+    newFiles += imported;
     refreshedRoots++;
 
     const validComicPaths = new Set(comics.map((comic) => pathKey(comic.dir)));
-    const cleanup = cleanupStaleRecords(root.path, validComicPaths);
+    const cleanup = await cleanupStaleRecordsResponsive(root.path, validComicPaths);
     deletedFiles += cleanup.deletedFiles;
     deletedThumbnailUrls.push(...cleanup.deletedThumbnailUrls);
   }
 
-  const movedPathCleanup = cleanupMissingRecordsOnMountedVolumes();
+  const movedPathCleanup = await cleanupMissingRecordsOnMountedVolumesResponsive();
   deletedFiles += movedPathCleanup.deletedFiles;
   deletedThumbnailUrls.push(...movedPathCleanup.deletedThumbnailUrls);
 

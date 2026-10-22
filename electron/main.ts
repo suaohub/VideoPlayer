@@ -16,6 +16,12 @@ import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME }
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
 
+// Development preview can run in restricted environments where the default
+// per-user Electron data directory is not writable.
+if (process.env.VIDEOPLAYER_USER_DATA) {
+  app.setPath('userData', process.env.VIDEOPLAYER_USER_DATA);
+}
+
 // 图片扩展名 → MIME，用于 comic:// 协议响应头
 const IMAGE_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
@@ -47,7 +53,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
-    frame: true,
+    frame: false,
     title: 'VideoPlayer — Local Media Library',
     autoHideMenuBar: true,
     hasShadow: true,
@@ -77,8 +83,14 @@ function createWindow() {
   mainWindow.on('unmaximize', syncMpvWindowBounds);
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window-maximized'));
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window-unmaximized'));
-  mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('fullscreen-changed', true));
-  mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('fullscreen-changed', false));
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('fullscreen-changed', true);
+    syncMpvWindowBounds();
+  });
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('fullscreen-changed', false);
+    syncMpvWindowBounds();
+  });
   mainWindow.on('restore', syncMpvWindowBounds);
   mainWindow.on('show', syncMpvWindowBounds);
   mainWindow.on('minimize', hideMpvWindow);
@@ -511,7 +523,7 @@ ipcMain.handle('refresh-imported-folders', async () => {
   refreshingImportedFolders = true;
   try {
     setThumbnailGenerationPaused(true);
-    const result = refreshImportedFolders((current, total, file) => {
+    const result = await refreshImportedFolders((current, total, file) => {
       mainWindow?.webContents.send('import-progress', {
         current,
         total,
@@ -684,7 +696,7 @@ function removeEmptyFolderRecords(folderPaths: string[]): void {
 
 /**
  * 删除视频后，只清理本次成功删除的视频所属目录。
- * 导入根目录和磁盘根目录始终保留，避免删除媒体库入口或整个盘符。
+ * 只要目录实际变为空目录就可以清理；磁盘根目录始终保留，避免误删整个盘符。
  */
 function cleanupEmptyVideoFolders(targets: Array<{
   folder_path: string | null;
@@ -692,7 +704,7 @@ function cleanupEmptyVideoFolders(targets: Array<{
 }>): { deletedFolders: string[]; errors: string[] } {
   const folderCandidates = Array.from(new Map(
     targets
-      .filter((target) => target.folder_path && !target.folder_is_import_root)
+      .filter((target) => Boolean(target.folder_path))
       .map((target) => {
         const folderPath = resolve(target.folder_path as string);
         const key = process.platform === 'win32' ? folderPath.toLowerCase() : folderPath;

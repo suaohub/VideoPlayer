@@ -22,6 +22,18 @@ import { Activity, Eye, FileVideo, FolderOpen, Heart, Home, Info, LayoutGrid, Li
 export const CARD_MIN = 120;
 export const CARD_MAX = 420;
 
+export type TransparencyAreas = {
+  toolbar: boolean;
+  sidebar: boolean;
+  content: boolean;
+};
+
+const DEFAULT_TRANSPARENCY_AREAS: TransparencyAreas = {
+  toolbar: true,
+  sidebar: true,
+  content: true,
+};
+
 function normalizeFsPath(value: string): string {
   return String(value || '').replace(/\//g, '\\').replace(/[\\]+$/, '');
 }
@@ -108,6 +120,9 @@ function App() {
 
   // 数据
   const [videos, setVideos] = useState<Video[]>([]);
+  // 当前目录/筛选范围内是否有被标记删除的视频。常规列表隐藏这些卡片，
+  // 但目录状态仍需告诉用户它们正在“待处理”，避免显示成空目录。
+  const [markedVideosInView, setMarkedVideosInView] = useState(0);
   const [regeneratingThumbnailIds, setRegeneratingThumbnailIds] = useState<Set<number>>(new Set());
   const [folders, setFolders] = useState<Folder[]>([]);
   const [hiddenFolders, setHiddenFolders] = useState<Folder[]>([]);
@@ -136,6 +151,8 @@ function App() {
   // 桌面端媒体库默认保留导航侧栏，用户仍可用顶栏按钮收起。
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpenRef = useRef(false);
+  const pendingThumbnailRefreshRef = useRef(false);
   const [importing, setImporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
@@ -146,7 +163,8 @@ function App() {
   const [wallpaperPath, setWallpaperPath] = useState<string | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
   const [wallpaperOpacity, setWallpaperOpacity] = useState(32);
-  const [toolbarOpacity, setToolbarOpacity] = useState(62);
+  const [settingsBackdropBlur, setSettingsBackdropBlur] = useState(14);
+  const [transparencyAreas, setTransparencyAreas] = useState<TransparencyAreas>(DEFAULT_TRANSPARENCY_AREAS);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -257,11 +275,16 @@ function App() {
       sortDir,
     };
     try {
-      const list = await api.getVideos(filter);
+      const [list, markedList] = await Promise.all([
+        api.getVideos(filter),
+        // 这里只需要判断当前范围是否有待处理文件，不能再把整批记录和缩略图读入渲染进程。
+        api.getVideos({ ...filter, markedForDeletion: true, limit: 1 }),
+      ]);
       if (requestId !== videosRequestId.current) return;
       // 目录选中态属于高优先级交互；大列表数据放进 transition，避免查询返回时卡住侧栏点击反馈。
       startTransition(() => {
         setVideos(list);
+        setMarkedVideosInView(markedList.length > 0 ? 1 : 0);
         setLocallyHiddenVideoIds(new Set());
       });
     } catch (error) {
@@ -272,6 +295,16 @@ function App() {
       }
     }
   }, [notify, selectedFolderIds, search, showFavorited, showFavoritedInList, mediaType, sortBy, sortDir]);
+
+  // 设置中心打开时不让后台缩略图事件反复重排整张媒体网格；关闭后只刷新一次。
+  useEffect(() => {
+    settingsOpenRef.current = settingsOpen;
+    if (!settingsOpen && pendingThumbnailRefreshRef.current) {
+      pendingThumbnailRefreshRef.current = false;
+      setThumbProgress(null);
+      void loadVideos();
+    }
+  }, [settingsOpen, loadVideos]);
 
   // 整理预览使用完整的视频记录，不受当前搜索、收藏和目录筛选影响。
   // 视频移动后 source_path 仍保留，因此预览和再次标记始终基于原始文件记录。
@@ -412,9 +445,15 @@ function App() {
 
   useEffect(() => {
     if (preferencesLoaded) {
-      api.setSetting('toolbarOpacity', String(toolbarOpacity));
+      api.setSetting('settingsBackdropBlur', String(settingsBackdropBlur));
     }
-  }, [toolbarOpacity, preferencesLoaded]);
+  }, [settingsBackdropBlur, preferencesLoaded]);
+
+  useEffect(() => {
+    if (preferencesLoaded) {
+      api.setSetting('transparencyAreas', JSON.stringify(transparencyAreas));
+    }
+  }, [transparencyAreas, preferencesLoaded]);
 
   useEffect(() => {
     if (preferencesLoaded) {
@@ -448,12 +487,23 @@ function App() {
           setWallpaperOpacity(Math.min(100, Math.max(0, parsedOpacity)));
         }
       }
-      const savedToolbarOpacity = await api.getSetting('toolbarOpacity');
-      if (savedToolbarOpacity) {
-        const parsedToolbarOpacity = Number(savedToolbarOpacity);
-        if (Number.isFinite(parsedToolbarOpacity)) {
-          setToolbarOpacity(Math.min(100, Math.max(0, parsedToolbarOpacity)));
+      const savedSettingsBackdropBlur = await api.getSetting('settingsBackdropBlur');
+      if (savedSettingsBackdropBlur) {
+        const parsedBlur = Number(savedSettingsBackdropBlur);
+        if (Number.isFinite(parsedBlur)) {
+          setSettingsBackdropBlur(Math.min(30, Math.max(0, parsedBlur)));
         }
+      }
+      const savedTransparencyAreas = await api.getSetting('transparencyAreas');
+      if (savedTransparencyAreas) {
+        try {
+          const parsed = JSON.parse(savedTransparencyAreas) as Partial<TransparencyAreas>;
+          setTransparencyAreas({
+            toolbar: parsed.toolbar !== false,
+            sidebar: parsed.sidebar !== false,
+            content: parsed.content !== false,
+          });
+        } catch { /* ignore invalid preference */ }
       }
       const savedFixedLayoutMode = await api.getSetting('listFixedMode');
       if (savedFixedLayoutMode === '1' || savedFixedLayoutMode === 'true') {
@@ -514,18 +564,20 @@ function App() {
     const offDone = api.onImportDone(() => {
       setImporting(false);
       setImportProgress(null);
-      loadAllVideos();
-      void loadOverview();
     });
     return () => {
       offProgress?.();
       offDone?.();
     };
-  }, [loadAllVideos]);
+  }, []);
 
   // 缩略图后台生成：单张就绪时就地替换该卡，避免整体重刷
   useEffect(() => {
     const offReady = api.onThumbnailReady((data) => {
+      if (settingsOpenRef.current) {
+        pendingThumbnailRefreshRef.current = true;
+        return;
+      }
       // 缩略图完成属于低优先级后台更新，不能抢占目录切换和筛选等交互。
       startTransition(() => setVideos((prev) => {
           const idx = prev.findIndex((v) => v.id === data.id);
@@ -543,6 +595,7 @@ function App() {
         }));
     });
     const offProgress = api.onThumbnailProgress((data) => {
+      if (settingsOpenRef.current) return;
       // done === total 视为一轮结束，清掉进度条
       setThumbProgress(data.total > 0 && data.done < data.total ? data : null);
     });
@@ -1235,6 +1288,7 @@ function App() {
       );
       // 更新标记删除总数
       setMarkedForDeletionCount((prev) => (result.marked ? prev + 1 : prev - 1));
+      setMarkedVideosInView(result.marked ? 1 : 0);
       // 固定布局模式：只隐藏当前卡片，不让整列重排。
       if (fixedLayoutMode) {
         setLocallyHiddenVideoIds((prev) => {
@@ -1275,7 +1329,14 @@ function App() {
     && !showMarkedForDeletion
     && videos.length > 0
     && categorizedVideoCount === videos.length
+    && markedVideosInView === 0
     && visibleVideos.length === 0;
+  const showMarkedFilesNotice = sidebarFolderTab === 'source'
+    && activePage === 'library'
+    && !showFavorited
+    && !showMarkedForDeletion
+    && selectedFolderIds.length > 0
+    && markedVideosInView > 0;
   const currentViewSize = visibleVideos.reduce((total, video) => {
     const size = Number(video.size);
     return total + (Number.isFinite(size) && size > 0 ? size : 0);
@@ -1412,7 +1473,12 @@ function App() {
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      data-transparency-toolbar={transparencyAreas.toolbar ? 'on' : 'off'}
+      data-transparency-sidebar={transparencyAreas.sidebar ? 'on' : 'off'}
+      data-transparency-content={transparencyAreas.content ? 'on' : 'off'}
+    >
       <div
         className="app-wallpaper"
         aria-hidden="true"
@@ -1472,7 +1538,6 @@ function App() {
           fixedLayoutMode={fixedLayoutMode}
           onFixedLayoutModeChange={handleFixedLayoutModeChange}
           favoritedCount={favoritedCount}
-          toolbarOpacity={toolbarOpacity}
           isMaximized={isMaximized}
           isExpanded={isMaximized || isFullscreen || isViewportFullscreen}
           isFullscreen={isFullscreen || isViewportFullscreen}
@@ -1666,6 +1731,19 @@ function App() {
                       </button>
                     </div>
                   )}
+                  {showMarkedFilesNotice && (
+                    <div className="organize-filter-notice" role="status">
+                      <Trash2 size={16} />
+                      <div className="organize-filter-notice-copy">
+                        <strong>此目录有文件待处理</strong>
+                        <span>
+                          当前目录中有视频已标记删除，已移入“待处理”，所以不会出现在当前列表中。
+                          请在“待处理”中彻底删除；当目录内文件全部处理完后，空目录会一并从电脑中清理。
+                        </span>
+                      </div>
+                      <button type="button" onClick={openMarkedForDeletion}>打开待处理</button>
+                    </div>
+                  )}
                 <VideoGrid
                   videos={layoutVideos}
                   cardSize={cardSize}
@@ -1737,6 +1815,7 @@ function App() {
           onImport={handleImport}
           importing={importing}
           importProgress={importProgress}
+          thumbnailBusy={Boolean(thumbProgress)}
           onClearCache={handleClearCache}
           onRefreshLibrary={handleRefreshImportedFolders}
           refreshing={refreshing}
@@ -1749,8 +1828,10 @@ function App() {
           onSelectBackground={handleSelectBackground}
           onClearBackground={handleClearBackground}
           onBackgroundOpacityChange={setWallpaperOpacity}
-          toolbarOpacity={toolbarOpacity}
-          onToolbarOpacityChange={setToolbarOpacity}
+          settingsBackdropBlur={settingsBackdropBlur}
+          onSettingsBackdropBlurChange={setSettingsBackdropBlur}
+          transparencyAreas={transparencyAreas}
+          onTransparencyAreasChange={setTransparencyAreas}
           organizeCategories={organizeCategories}
           onCreateOrganizeCategory={handleCreateOrganizeCategory}
           onDeleteOrganizeCategory={handleDeleteOrganizeCategory}

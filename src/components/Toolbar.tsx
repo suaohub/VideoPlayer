@@ -72,7 +72,6 @@ interface ToolbarProps {
   fixedLayoutMode: boolean;
   onFixedLayoutModeChange: (enabled: boolean) => void | Promise<void>;
   favoritedCount: number;
-  toolbarOpacity: number;
   isMaximized: boolean;
   isExpanded: boolean;
   isFullscreen: boolean;
@@ -144,7 +143,6 @@ function Toolbar({
   fixedLayoutMode,
   onFixedLayoutModeChange,
   favoritedCount,
-  toolbarOpacity,
   isMaximized,
   isExpanded,
   isFullscreen,
@@ -198,11 +196,8 @@ function Toolbar({
   return (
     <header
       className={`app-topbar${isExpanded ? ' is-expanded' : ''}${isFullscreen ? ' is-fullscreen' : ''}`}
-      style={{
-        '--interface-opacity': `${toolbarOpacity}%`,
-      } as React.CSSProperties}
     >
-      <div className="titlebar-row">
+      <div className="titlebar-row" style={{ WebkitAppRegion: 'drag' }}>
         <div className="brand-lockup" aria-label="VideoPlayer">
           <div className="brand-mark"><PlayGlyph /></div>
           <div className="brand-copy">

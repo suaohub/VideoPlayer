@@ -53,6 +53,12 @@ let playbackIpcConnected = false;
 let playbackRestorePending = false;
 let playbackRestoreTarget: number | null = null;
 let playbackRestoreTimer: NodeJS.Timeout | null = null;
+// 连续按左右键时不要把一长串 seek 同时写入 mpv。密集 seek 会让音频解码器
+// 反复重置，表现为画面已经恢复但声音要过几秒才回来；把这一小段输入合并
+// 成一次相对跳转可以保留快进步长，同时给解码器一个稳定点。
+const RELATIVE_SEEK_DEBOUNCE_MS = 120;
+let pendingRelativeSeek = 0;
+let relativeSeekTimer: NodeJS.Timeout | null = null;
 
 const PLAYBACK_RESTORE_TIMEOUT_MS = 2000;
 
@@ -80,8 +86,17 @@ function clearPlaybackRestoreTimer() {
   }
 }
 
+function clearRelativeSeek() {
+  if (relativeSeekTimer) {
+    clearTimeout(relativeSeekTimer);
+    relativeSeekTimer = null;
+  }
+  pendingRelativeSeek = 0;
+}
+
 function resetCurrentPlayback() {
   clearPlaybackRestoreTimer();
+  clearRelativeSeek();
   currentPlaybackPath = null;
   currentPlaybackPosition = 0;
   currentPlaybackDuration = null;
@@ -145,13 +160,14 @@ function writeRuntimeLog(message: string) {
 function getMpvBounds() {
   const mainWindow = getWin()!;
   const bounds = mainWindow.getContentBounds();
+  const fullscreen = mainWindow.isFullScreen();
   // 嵌入模式：SetParent 后 mpv 是主窗口的子窗口，坐标相对父窗口客户区，
-  // 所以 x 从 0 开始、y 让出顶栏高度；宽高扣掉顶栏+底部控制栏。
+  // 所以 x 从 0 开始、y 让出顶栏高度；原生全屏时顶栏已隐藏，播放器从 y=0 开始。
   return {
     x: 0,
-    y: PLAYER_TOPBAR_HEIGHT,
+    y: fullscreen ? 0 : PLAYER_TOPBAR_HEIGHT,
     width: Math.max(1, bounds.width),
-    height: Math.max(1, bounds.height - RESERVED_VERTICAL),
+    height: Math.max(1, bounds.height - (fullscreen ? PLAYER_BOTTOMBAR_HEIGHT : RESERVED_VERTICAL)),
   };
 }
 
@@ -741,6 +757,7 @@ export function togglePause() {
 }
 
 export function seek(seconds: number) {
+  clearRelativeSeek();
   cancelPlaybackRestore();
   sendCommand(['seek', seconds, 'absolute']);
 }
@@ -748,7 +765,14 @@ export function seek(seconds: number) {
 export function seekRelative(seconds: number) {
   if (!Number.isFinite(seconds) || seconds === 0) return;
   cancelPlaybackRestore();
-  sendCommand(['seek', seconds, 'relative+keyframes']);
+  pendingRelativeSeek += seconds;
+  if (relativeSeekTimer) clearTimeout(relativeSeekTimer);
+  relativeSeekTimer = setTimeout(() => {
+    relativeSeekTimer = null;
+    const delta = pendingRelativeSeek;
+    pendingRelativeSeek = 0;
+    if (delta !== 0) sendCommand(['seek', delta, 'relative+keyframes']);
+  }, RELATIVE_SEEK_DEBOUNCE_MS);
 }
 
 export function setVolume(volume: number) {
