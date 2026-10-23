@@ -112,6 +112,16 @@ function isOrganizedVideo(
   return currentPath === categoryRoot || currentPath.startsWith(`${categoryRoot}\\`);
 }
 
+function needsOrganizingVideo(
+  video: Video,
+  categories: OrganizeCategory[],
+  outputPath: string | null,
+): boolean {
+  if (video.organize_category_id == null) return false;
+  const targetPath = expectedOrganizePath(video, categories, outputPath);
+  return targetPath == null || !sameFsPath(video.path, targetPath);
+}
+
 function App() {
   const { confirm: confirmDialog, choose, notify } = useAppFeedback();
   const ask = useCallback((title: string, message: string, tone: 'info' | 'warning' | 'danger' = 'warning', confirmLabel?: string) => (
@@ -1372,6 +1382,9 @@ function App() {
     ? layoutVideos.filter((video) => !locallyHiddenVideoIds.has(video.id))
     : layoutVideos;
   const categorizedVideoCount = videos.filter((video) => video.organize_category_id != null).length;
+  const pendingOrganizeCount = organizePreviewVideos.filter((video) => (
+    needsOrganizingVideo(video, organizeCategories, organizeOutputPath)
+  )).length;
   const showCategorizedOnlyNotice = sidebarFolderTab === 'source'
     && activePage === 'library'
     && !showFavorited
@@ -1551,6 +1564,9 @@ function App() {
           onClearFilter={clearFilter}
           onOpenSettings={() => setSettingsOpen(true)}
           onRefresh={handleRefreshImportedFolders}
+          onOrganize={handleOrganizeFolder}
+          organizePendingCount={pendingOrganizeCount}
+          organizing={organizing}
           onImport={handleImport}
           refreshing={refreshing}
           sidebarOpen={sidebarOpen}

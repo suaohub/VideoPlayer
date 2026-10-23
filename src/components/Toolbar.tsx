@@ -8,6 +8,7 @@ import {
   Dices,
   Film,
   FilterX,
+  FolderKanban,
   FolderPlus,
   Grid2x2,
   Heart,
@@ -40,6 +41,9 @@ interface ToolbarProps {
   onClearFilter: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  onOrganize: () => void;
+  organizePendingCount: number;
+  organizing: boolean;
   onImport: () => void;
   refreshing: boolean;
   sidebarOpen: boolean;
@@ -111,6 +115,9 @@ function Toolbar({
   onClearFilter,
   onOpenSettings,
   onRefresh,
+  onOrganize = () => {},
+  organizePendingCount = 0,
+  organizing = false,
   onImport,
   refreshing,
   sidebarOpen,
@@ -262,6 +269,20 @@ function Toolbar({
           <button className="toolbar-icon-button" onClick={onOpenSettings} title="设置">
             <Settings {...ICON} />
           </button>
+          <div className={`organize-toolbar-slot${organizePendingCount > 0 ? ' is-visible' : ''}`} aria-hidden={organizePendingCount === 0}>
+            <button
+              className="organize-toolbar-button"
+              onClick={onOrganize}
+              disabled={organizing || refreshing || importing || organizePendingCount === 0}
+              aria-busy={organizing}
+              title={organizing ? '正在整理文件' : `整理未整理的视频（${organizePendingCount}）`}
+              tabIndex={organizePendingCount > 0 ? 0 : -1}
+            >
+              {organizing ? <Loader2 {...ICON} className="spin" /> : <FolderKanban {...ICON} />}
+              <span>{organizing ? '整理中' : '整理文件'}</span>
+              {!organizing && <span className="organize-toolbar-count">{organizePendingCount.toLocaleString()}</span>}
+            </button>
+          </div>
         </div>
       </div>
 
