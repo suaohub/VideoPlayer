@@ -76,6 +76,10 @@ export interface Folder {
   import_root_id: number | null;
   hidden: number;
   locked?: number;
+  /** 目录及其子目录中媒体的最早导入时间。 */
+  imported_at?: number | null;
+  /** 目录及其子目录中媒体文件的总大小（字节）。 */
+  total_size?: number;
 }
 
 // 主题
@@ -128,6 +132,8 @@ export type MediaType = 'all' | 'video' | 'audio' | 'text' | 'comic';
 // 排序字段与方向
 export type SortBy = 'added' | 'name' | 'size' | 'duration' | 'mtime' | 'random';
 export type SortDir = 'asc' | 'desc';
+// 原始目录树的排序字段。名称排序采用接近 Windows 资源管理器的自然排序。
+export type FolderSortBy = 'name' | 'imported' | 'size';
 
 // 视频过滤条件
 export interface VideoFilter {

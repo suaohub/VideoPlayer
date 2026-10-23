@@ -179,6 +179,123 @@ body {
   flex-direction: column;
 }
 
+/* 启动开屏：只覆盖渲染层，初始化任务仍在后台并行执行。 */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-primary) 94%, #111827 6%);
+  opacity: 1;
+  transition: opacity 360ms ease, visibility 360ms ease;
+}
+
+.app-splash.is-exiting {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-splash-card {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 220px;
+  padding: 28px 34px 26px;
+  border: 1px solid color-mix(in srgb, var(--line-default) 74%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, #000 36%, transparent), var(--glass-highlight);
+  backdrop-filter: blur(24px) saturate(1.12);
+  -webkit-backdrop-filter: blur(24px) saturate(1.12);
+  animation: splash-card-in 620ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.app-splash-mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 38%, transparent);
+  animation: splash-mark-pulse 1800ms ease-in-out 620ms infinite;
+}
+
+.app-splash-title {
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.app-splash-subtitle {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.app-splash-progress {
+  width: 136px;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 18%, transparent);
+}
+
+.app-splash-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: splash-progress 1250ms ease-in-out infinite;
+}
+
+.app-splash-orb {
+  position: absolute;
+  width: 38vw;
+  height: 38vw;
+  border-radius: 50%;
+  opacity: .18;
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.app-splash-orb-a {
+  top: -18vw;
+  left: -10vw;
+  background: var(--accent);
+}
+
+.app-splash-orb-b {
+  right: -14vw;
+  bottom: -22vw;
+  background: #8b5cf6;
+}
+
+@keyframes splash-card-in {
+  from { opacity: 0; transform: translateY(12px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes splash-mark-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.045); }
+}
+
+@keyframes splash-progress {
+  0% { transform: translateX(-140%); }
+  55%, 100% { transform: translateX(330%); }
+}
+
 .window-controls {
   position: absolute;
   top: 0;
@@ -1548,6 +1665,12 @@ textarea:focus-visible,
   transform: translateY(-1px);
 }
 
+.import-button.is-busy:disabled {
+  cursor: progress;
+  opacity: .82;
+  filter: saturate(.88);
+}
+
 .media-tabs {
   display: inline-flex;
   align-items: center;
@@ -2095,12 +2218,68 @@ textarea:focus-visible,
 .sidebar-section-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   min-height: 34px;
-  padding: 0 10px;
+  /* 与上方 sidebar-folder-tabs 的 3px 内边距保持同一条水平基线。 */
+  padding: 0 3px;
   color: var(--text-tertiary);
   font-size: 10px;
   font-weight: 650;
+}
+
+.sidebar-section-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.sidebar-section-title .sidebar-section-count {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.folder-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.folder-sort-picker {
+  position: relative;
+}
+
+/* 目录排序菜单向左展开，避免被 220px 侧栏的 overflow 裁掉。 */
+.folder-sort-picker > .toolbar-menu {
+  /* 右侧还包含 26px 的升降序按钮和 2px 间距，菜单与整组控件对齐。 */
+  right: -26px;
+  left: auto;
+  min-width: 188px;
+}
+
+.folder-sort-control .toolbar-quiet-button {
+  width: 170px;
+  min-height: 26px;
+  gap: 4px;
+  padding: 0 6px;
+  border-color: transparent;
+  font-size: 11px;
+  justify-content: flex-start;
+}
+
+.folder-sort-control .toolbar-quiet-button > span {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.folder-sort-control .toolbar-icon-button {
+  width: 26px;
+  min-height: 26px;
+  flex-basis: 26px;
 }
 
 .sidebar-section-count {
@@ -2121,6 +2300,42 @@ textarea:focus-visible,
 
 .sidebar-folder-section > .folder-tree > div > div {
   border-radius: 7px;
+}
+
+/* 目录树连接线：让父子关系在深层目录中保持清晰。 */
+.folder-tree-node {
+  position: relative;
+}
+
+.folder-tree-item {
+  position: relative;
+}
+
+.folder-tree-node.is-nested::before {
+  position: absolute;
+  top: 0;
+  bottom: 12px;
+  left: calc(15px + (var(--folder-depth) - 1) * 14px);
+  width: 1px;
+  content: '';
+  background: color-mix(in srgb, var(--line-default) 72%, transparent);
+  pointer-events: none;
+}
+
+.folder-tree-node.is-nested > .folder-tree-item::before {
+  position: absolute;
+  top: 50%;
+  left: calc(15px + (var(--folder-depth) - 1) * 14px);
+  width: 14px;
+  height: 1px;
+  content: '';
+  background: color-mix(in srgb, var(--line-default) 72%, transparent);
+  pointer-events: none;
+}
+
+.folder-tree-node.is-nested > .folder-tree-item > * {
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-footer {

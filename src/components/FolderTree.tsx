@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react';
 import { Folder as FolderIcon, Heart, Trash2, FolderX, HardDrive, EyeOff, FolderOpen, Lock, Unlock } from 'lucide-react';
-import { Folder } from '../types';
+import { Folder, FolderSortBy, SortDir } from '../types';
 
 interface FolderTreeProps {
   folders: Folder[];
@@ -12,6 +12,8 @@ interface FolderTreeProps {
   onHideFolder: (folder: Folder) => void;
   onOpenFolder: (folder: Folder) => void;
   onToggleLocked: (folder: Folder) => void;
+  folderSortBy: FolderSortBy;
+  folderSortDir: SortDir;
   favoritedCount?: number;
   markedForDeletionCount?: number;
   onShowFavorited?: () => void;
@@ -22,8 +24,31 @@ interface FolderTreeProps {
 
 interface TreeNode extends Folder { children: TreeNode[]; }
 
+// 采用接近 Windows 资源管理器的名称排序：忽略大小写，并按数字的自然顺序比较。
+// 例如 `2` 会排在 `10` 前面。排序在每个父目录内独立进行。
+const windowsNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+function compareFolders(a: Folder, b: Folder, sortBy: FolderSortBy, sortDir: SortDir): number {
+  let result = 0;
+  if (sortBy === 'name') result = windowsNameCollator.compare(a.name, b.name);
+  if (sortBy === 'imported' || sortBy === 'size') {
+    const aValue = sortBy === 'imported' ? a.imported_at : a.total_size;
+    const bValue = sortBy === 'imported' ? b.imported_at : b.total_size;
+    // 没有媒体的空目录没有导入日期，始终放在有值目录之后。
+    if (aValue == null && bValue != null) return 1;
+    if (aValue != null && bValue == null) return -1;
+    result = (aValue ?? 0) - (bValue ?? 0);
+  }
+  if (result === 0 && sortBy !== 'name') result = windowsNameCollator.compare(a.name, b.name);
+  if (result === 0) result = a.id - b.id;
+  return sortDir === 'asc' ? result : -result;
+}
+
 // 把扁平列表组装成树
-function buildTree(folders: Folder[]): TreeNode[] {
+function buildTree(folders: Folder[], sortBy: FolderSortBy, sortDir: SortDir): TreeNode[] {
   const map = new Map<number, TreeNode>();
   const roots: TreeNode[] = [];
   folders.forEach((f) => map.set(f.id, { ...f, children: [] }));
@@ -32,6 +57,12 @@ function buildTree(folders: Folder[]): TreeNode[] {
     if (f.parent_id != null && map.has(f.parent_id)) map.get(f.parent_id)!.children.push(node);
     else roots.push(node);
   });
+  // SQL 返回顺序不参与界面排序，确保启动、刷新和导入后的结果一致。
+  const sortNodes = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => compareFolders(a, b, sortBy, sortDir));
+    nodes.forEach((node) => sortNodes(node.children));
+  };
+  sortNodes(roots);
   return roots;
 }
 
@@ -60,7 +91,10 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
   const selected = selectedFolderIds.includes(node.id);
 
   return (
-    <div>
+    <div
+      className={`folder-tree-node${depth > 0 ? ' is-nested' : ''}`}
+      style={{ '--folder-depth': depth } as CSSProperties}
+    >
       <div
         className={`folder-tree-item${selected ? ' is-selected' : ''}`}
         style={{
@@ -90,24 +124,28 @@ function TreeItem({ node, depth, selectedFolderIds, expanded, onToggleExpand, on
         </span>
         {node.locked === 1 && <Lock size={12} style={{ opacity: 0.7, flexShrink: 0 }} />}
       </div>
-      {isExpanded && node.children.map((child) => (
-        <TreeItem
-          key={child.id}
-          node={child}
-          depth={depth + 1}
-          selectedFolderIds={selectedFolderIds}
-          expanded={expanded}
-          onToggleExpand={onToggleExpand}
-          onRowClick={onRowClick}
-          onOpenMenu={onOpenMenu}
-        />
-      ))}
+      {isExpanded && node.children.length > 0 && (
+        <div className="folder-tree-children" style={{ '--folder-depth': depth } as CSSProperties}>
+          {node.children.map((child) => (
+            <TreeItem
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              selectedFolderIds={selectedFolderIds}
+              expanded={expanded}
+              onToggleExpand={onToggleExpand}
+              onRowClick={onRowClick}
+              onOpenMenu={onOpenMenu}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, onOpenFolder, onToggleLocked, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion, minimal = false }: FolderTreeProps) {
-  const tree = useMemo(() => buildTree(folders), [folders]);
+export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDeleteFolder, onDeleteFoldersFromDisk, onDeleteUnfavoritedVideos, onHideFolder, onOpenFolder, onToggleLocked, folderSortBy, folderSortDir, favoritedCount, markedForDeletionCount, onShowFavorited, onShowMarkedForDeletion, minimal = false }: FolderTreeProps) {
+  const tree = useMemo(() => buildTree(folders, folderSortBy, folderSortDir), [folders, folderSortBy, folderSortDir]);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 展开状态提到顶层：Shift 连选需要按可见顺序算范围
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());

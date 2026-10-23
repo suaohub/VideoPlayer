@@ -242,12 +242,22 @@ function Toolbar({
           {!search && <kbd>Ctrl K</kbd>}
         </label>
         <div className="primary-toolbar-actions">
-          <button className="toolbar-icon-button" onClick={onRefresh} disabled={refreshing || importing} title="刷新媒体库">
+          <button className="toolbar-icon-button" onClick={onRefresh} disabled={refreshing || importing} aria-busy={refreshing} title={refreshing ? '正在刷新媒体库，请稍候' : '刷新媒体库'}>
             <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} />
           </button>
-          <button className="import-button" onClick={onImport} disabled={importing}>
-            {importing ? <Loader2 {...ICON} className="spin" /> : <FolderPlus {...ICON} />}
-            <span>{importing ? '导入中' : '导入媒体'}</span>
+          <button
+            className={`import-button${refreshing ? ' is-busy' : ''}`}
+            onClick={onImport}
+            disabled={importing || refreshing}
+            aria-busy={refreshing || importing}
+            title={refreshing ? '正在刷新媒体库，请稍候' : importing ? '正在导入媒体，请稍候' : '导入媒体'}
+          >
+            {refreshing
+              ? <RefreshCw {...ICON} className="spin" />
+              : importing
+                ? <Loader2 {...ICON} className="spin" />
+                : <FolderPlus {...ICON} />}
+            <span>{refreshing ? '刷新中' : importing ? '导入中' : '导入媒体'}</span>
           </button>
           <button className="toolbar-icon-button" onClick={onOpenSettings} title="设置">
             <Settings {...ICON} />

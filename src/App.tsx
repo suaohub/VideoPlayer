@@ -1,6 +1,6 @@
 import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
 import './themes.css';
-import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, MediaType, SortBy, SortDir, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
+import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, MediaType, SortBy, SortDir, FolderSortBy, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { FolderTree } from './components/FolderTree';
@@ -16,7 +16,7 @@ import { LibraryHealth } from './components/LibraryHealth';
 import { Overview } from './components/Overview';
 import { useAppFeedback } from './components/AppFeedback';
 import { isAudioFile, isTextFile, isComicExt, isPlayableInBrowser } from './media';
-import { Activity, Eye, FileVideo, FolderOpen, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Trash2 } from 'lucide-react';
+import { Activity, ArrowDown, ArrowDownUp, ArrowUp, ChevronDown, Clock3, Eye, FileVideo, FolderOpen, HardDrive, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Search, Trash2 } from 'lucide-react';
 
 // 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
 export const CARD_MIN = 120;
@@ -145,6 +145,8 @@ function App() {
   // 排序
   const [sortBy, setSortBy] = useState<SortBy>('added');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [folderSortBy, setFolderSortBy] = useState<FolderSortBy>('name');
+  const [folderSortDir, setFolderSortDir] = useState<SortDir>('asc');
 
   // UI 状态
   const [theme, setTheme] = useState<Theme>('night');
@@ -198,6 +200,17 @@ function App() {
   const [overviewFolders, setOverviewFolders] = useState<Folder[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [sidebarFolderTab, setSidebarFolderTab] = useState<'source' | 'preview'>('source');
+  const [folderSortMenuOpen, setFolderSortMenuOpen] = useState(false);
+  const folderSortRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!folderSortMenuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (folderSortRef.current && !folderSortRef.current.contains(event.target as Node)) setFolderSortMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [folderSortMenuOpen]);
   const [libraryHealth, setLibraryHealth] = useState<MediaLibraryHealth | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -438,6 +451,14 @@ function App() {
   }, [sortDir, preferencesLoaded]);
 
   useEffect(() => {
+    if (preferencesLoaded) api.setSetting('folderSortBy', folderSortBy);
+  }, [folderSortBy, preferencesLoaded]);
+
+  useEffect(() => {
+    if (preferencesLoaded) api.setSetting('folderSortDir', folderSortDir);
+  }, [folderSortDir, preferencesLoaded]);
+
+  useEffect(() => {
     if (preferencesLoaded) {
       api.setSetting('wallpaperOpacity', String(wallpaperOpacity));
     }
@@ -466,6 +487,23 @@ function App() {
   useEffect(() => {
     if (initializationStarted.current) return;
     initializationStarted.current = true;
+    const splashStartedAt = performance.now();
+    let splashFinished = false;
+    const finishSplash = () => {
+      if (splashFinished) return;
+      splashFinished = true;
+      const remaining = Math.max(0, 720 - (performance.now() - splashStartedAt));
+      window.setTimeout(() => {
+        // 等待 React 提交首屏数据后再显示根节点，避免闪过“无数据”状态。
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            document.getElementById('root')?.classList.add('app-ready');
+            document.getElementById('boot-splash')?.classList.add('is-exiting');
+            window.setTimeout(() => document.getElementById('boot-splash')?.remove(), 420);
+          });
+        });
+      }, remaining);
+    };
     (async () => {
       const savedTheme = await api.getSetting('theme');
       if (savedTheme === 'day' || savedTheme === 'night') setTheme(savedTheme);
@@ -480,6 +518,10 @@ function App() {
       if (savedSortBy) setSortBy(savedSortBy as SortBy);
       const savedSortDir = await api.getSetting('sortDir');
       if (savedSortDir === 'asc' || savedSortDir === 'desc') setSortDir(savedSortDir);
+      const savedFolderSortBy = await api.getSetting('folderSortBy');
+      if (savedFolderSortBy === 'name' || savedFolderSortBy === 'size' || savedFolderSortBy === 'imported') setFolderSortBy(savedFolderSortBy);
+      const savedFolderSortDir = await api.getSetting('folderSortDir');
+      if (savedFolderSortDir === 'asc' || savedFolderSortDir === 'desc') setFolderSortDir(savedFolderSortDir);
       const savedOpacity = await api.getSetting('wallpaperOpacity');
       if (savedOpacity) {
         const parsedOpacity = Number(savedOpacity);
@@ -524,11 +566,18 @@ function App() {
         setOrganizeOutputPath(savedOrganizeOutputPath);
       }
       setPreferencesLoaded(true);
-      await refreshOrganizeCategories();
-      await refreshAll();
-      await loadVideos();
-      await loadOrganizePreview();
-    })();
+      // 首屏所需请求全部完成后再退出开屏；单个模块失败也不能提前露出空壳界面。
+      await Promise.allSettled([
+        refreshOrganizeCategories(),
+        refreshAll(),
+        loadVideos(),
+        loadOrganizePreview(),
+      ]);
+      finishSplash();
+    })().catch((error) => {
+      console.error('[startup] initialization failed', error);
+      finishSplash();
+    });
   }, [refreshAll, loadVideos, loadOverview, refreshOrganizeCategories, loadOrganizePreview]);
 
   useEffect(() => {
@@ -1617,8 +1666,43 @@ function App() {
                 {sidebarFolderTab === 'source' ? (
                   <>
                     <div className="sidebar-section-heading">
-                      <span>原始目录树</span>
-                      <span className="sidebar-section-count">{(activePage === 'overview' ? overviewFolderCount : visibleFolders.length).toLocaleString()}</span>
+                      <div className="folder-sort-control" ref={folderSortRef}>
+                        <div className="folder-sort-picker">
+                          <button
+                            type="button"
+                            className="toolbar-quiet-button"
+                            title={`目录排序：${folderSortBy === 'name' ? '名称（Windows 风格自然排序）' : folderSortBy === 'size' ? '目录大小' : '导入日期'}，${folderSortDir === 'asc' ? '升序' : '降序'}`}
+                            aria-label={`目录排序：${folderSortBy === 'name' ? '名称' : folderSortBy === 'size' ? '目录大小' : '导入日期'}，${folderSortDir === 'asc' ? '升序' : '降序'}`}
+                            onClick={() => setFolderSortMenuOpen((open) => !open)}
+                          >
+                            <ArrowDownUp size={14} />
+                            <span>{folderSortBy === 'name' ? '名称·自然' : folderSortBy === 'size' ? '目录大小' : '导入日期'}</span>
+                            <ChevronDown size={13} className={folderSortMenuOpen ? 'rotate-180' : undefined} />
+                          </button>
+                          {folderSortMenuOpen && (
+                            <div className="toolbar-menu" role="menu">
+                              {([
+                                ['name', '名称（Windows 风格）', Search],
+                                ['imported', '导入日期', Clock3],
+                                ['size', '目录大小', HardDrive],
+                              ] as const).map(([value, label, Icon]) => (
+                                <button key={value} type="button" className={`toolbar-menu-item${folderSortBy === value ? ' is-active' : ''}`} onClick={() => { setFolderSortBy(value); setFolderSortMenuOpen(false); }}>
+                                  <Icon size={15} /><span>{label}</span>{folderSortBy === value && <span className="menu-check">✓</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="toolbar-icon-button quiet"
+                          title={folderSortDir === 'asc' ? '升序' : '降序'}
+                          aria-label={folderSortDir === 'asc' ? '升序' : '降序'}
+                          onClick={() => setFolderSortDir((dir) => dir === 'asc' ? 'desc' : 'asc')}
+                        >
+                          {folderSortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+                        </button>
+                      </div>
                     </div>
                     <FolderTree
                       folders={activePage === 'overview' ? overviewFolders : visibleFolders}
@@ -1638,6 +1722,8 @@ function App() {
                       onHideFolder={handleHideFolder}
                       onOpenFolder={handleOpenFolder}
                       onToggleLocked={handleToggleFolderLocked}
+                      folderSortBy={folderSortBy}
+                      folderSortDir={folderSortDir}
                       favoritedCount={activePage === 'overview' ? overviewFavoriteCount : favoritedCount}
                       markedForDeletionCount={markedForDeletionCount}
                       minimal

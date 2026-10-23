@@ -68,9 +68,40 @@ export function getFolderTree(mediaType?: MediaType) {
     FROM folders
     WHERE id NOT IN (SELECT id FROM hidden_folders)
     ORDER BY path ASC
-  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null; hidden: number; locked: number }>;
+  `).all() as Array<{ id: number; path: string; name: string; parent_id: number | null; import_root_id: number | null; hidden: number; locked: number; imported_at?: number | null; total_size?: number }>;
 
   const { clause, params } = extClause(mediaType);
+  // 目录排序需要两个聚合字段：目录及子目录媒体的最早导入时间、总大小。
+  // 先按直接归属目录聚合，再沿 parent_id 向上累加，避免为每个目录重复扫描视频表。
+  const directStats = db.prepare(`
+    ${HIDDEN_FOLDERS_CTE}
+    SELECT v.folder_id as id,
+      MIN(v.added_at) as imported_at,
+      COALESCE(SUM(v.size), 0) as total_size
+    FROM videos v
+    WHERE v.folder_id IS NOT NULL
+      AND v.folder_id NOT IN (SELECT id FROM hidden_folders)
+      ${clause ? `AND ${clause}` : ''}
+    GROUP BY v.folder_id
+  `).all(...params) as Array<{ id: number; imported_at: number | null; total_size: number | null }>;
+  const byId = new Map(all.map((f) => [f.id, f]));
+  for (const folder of all) {
+    folder.imported_at = null;
+    folder.total_size = 0;
+  }
+  for (const stat of directStats) {
+    let current: number | null = stat.id;
+    while (current != null) {
+      const folder = byId.get(current);
+      if (!folder) break;
+      folder.total_size = (folder.total_size ?? 0) + (stat.total_size ?? 0);
+      if (stat.imported_at != null && (folder.imported_at == null || stat.imported_at < folder.imported_at)) {
+        folder.imported_at = stat.imported_at;
+      }
+      current = folder.parent_id;
+    }
+  }
+
   if (!clause) return all;
 
   // 找出直接含该类型文件的文件夹 id
@@ -83,7 +114,6 @@ export function getFolderTree(mediaType?: MediaType) {
   `).all(...params) as Array<{ id: number }>;
 
   const keep = new Set<number>();
-  const byId = new Map(all.map((f) => [f.id, f]));
   // 沿 parent_id 向上把祖先也纳入
   for (const { id } of withType) {
     let cur: number | null = id;
