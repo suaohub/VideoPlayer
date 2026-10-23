@@ -2018,6 +2018,7 @@ textarea:focus-visible,
 }
 
 .library-sidebar {
+  position: relative;
   display: flex;
   flex: 0 0 220px;
   flex-direction: column;
@@ -2031,6 +2032,41 @@ textarea:focus-visible,
 .library-workspace > .library-sidebar {
   width: 220px;
   flex: 0 0 220px;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 4;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize-handle::after {
+  position: absolute;
+  top: 12px;
+  right: 3px;
+  bottom: 12px;
+  width: 2px;
+  content: '';
+  border-radius: 2px;
+  background: transparent;
+  transition: background var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+.sidebar-resize-handle:hover::after,
+.library-sidebar.is-resizing .sidebar-resize-handle::after {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  transform: scaleX(1.5);
+}
+
+.library-sidebar.is-resizing,
+.library-sidebar.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .sidebar-nav {
@@ -2321,12 +2357,15 @@ textarea:focus-visible,
 .folder-sort-control {
   display: inline-flex;
   align-items: center;
+  width: 100%;
   gap: 2px;
   min-width: 0;
 }
 
 .folder-sort-picker {
   position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* 目录排序菜单向左展开，避免被 220px 侧栏的 overflow 裁掉。 */
@@ -2338,7 +2377,8 @@ textarea:focus-visible,
 }
 
 .folder-sort-control .toolbar-quiet-button {
-  width: 170px;
+  width: 100%;
+  min-width: 0;
   min-height: 26px;
   gap: 4px;
   padding: 0 6px;
@@ -2878,6 +2918,10 @@ textarea:focus-visible,
     min-width: auto;
   }
 
+  .sidebar-resize-handle {
+    display: none;
+  }
+
   .search-field {
     order: 3;
     flex-basis: 100%;
@@ -2931,6 +2975,11 @@ textarea:focus-visible,
 }
 
 @media (max-width: 560px) {
+  .library-workspace > .library-sidebar {
+    width: min(82vw, 280px) !important;
+    flex-basis: auto !important;
+  }
+
   .library-sidebar {
     position: absolute;
     inset: 0 auto 0 0;
@@ -3396,6 +3445,150 @@ button[aria-busy='true'] {
   filter: none;
 }
 
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 760px;
+  padding-bottom: 16px;
+}
+
+.video-list-row {
+  display: grid;
+  grid-template-columns: 112px minmax(240px, 1fr) 58px 86px 92px minmax(90px, 130px) 34px;
+  align-items: center;
+  gap: 12px;
+  min-height: 78px;
+  padding: 6px 10px 6px 6px;
+  color: var(--text-primary);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease,
+    transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+
+.video-list-row:hover,
+.video-list-row:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-default));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--bg-card));
+  box-shadow: var(--shadow-card);
+  outline: none;
+  transform: translateX(2px);
+}
+
+.video-list-row.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line-default));
+  background: var(--accent-soft);
+}
+
+.video-list-thumb {
+  width: 112px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--bg-hover);
+}
+
+.video-list-thumb > div {
+  height: 64px !important;
+}
+
+.video-list-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.video-list-name,
+.video-list-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-list-name {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.video-list-path {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.video-list-type,
+.video-list-size,
+.video-list-date,
+.video-list-category {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-list-category {
+  color: var(--accent);
+}
+
+.video-list-favorite {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  color: var(--text-tertiary);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--motion-fast) ease, background var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+.video-list-favorite:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  transform: scale(1.08);
+}
+
+.video-list-favorite.is-active {
+  color: #ff375f;
+}
+
+.video-list-check {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  margin-left: -2px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--line-default);
+  border-radius: 6px;
+}
+
+.video-list-check.is-selected {
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .video-list-row {
+    grid-template-columns: 96px minmax(220px, 1fr) 58px 80px 34px;
+  }
+
+  .video-list-date,
+  .video-list-category {
+    display: none;
+  }
+
+  .video-list-thumb {
+    width: 96px;
+  }
+}
+
 /* iOS 风格第二阶段：收紧顶栏节奏，让搜索、分段切换和操作按钮形成一条稳定的控制带。 */
 .app-topbar,
 .toolbar,
@@ -3722,6 +3915,151 @@ button[aria-busy='true'] {
   }
 }
 
+/* 轻量动效层：只强调进入、反馈和状态变化，不让媒体库像展示动画一样干扰浏览。 */
+@keyframes library-surface-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes library-card-in {
+  from { opacity: 0; filter: brightness(.96); }
+  to { opacity: 1; filter: none; }
+}
+
+@keyframes library-status-in {
+  from { opacity: 0; max-height: 0; transform: translateY(-5px); }
+  to { opacity: 1; max-height: 120px; transform: none; }
+}
+
+@keyframes marked-deletion-page-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes marked-deletion-bar-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.marked-deletion-page {
+  animation: marked-deletion-page-in 260ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.marked-deletion-header {
+  animation: marked-deletion-bar-in 240ms cubic-bezier(.22, 1, .36, 1) 35ms both;
+}
+
+.marked-deletion-actions {
+  animation: marked-deletion-bar-in 240ms cubic-bezier(.22, 1, .36, 1) 75ms both;
+}
+
+.marked-deletion-content {
+  animation: library-surface-in 300ms cubic-bezier(.22, 1, .36, 1) 110ms both;
+}
+
+.marked-deletion-state {
+  animation: library-surface-in 260ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.library-sidebar,
+.library-main {
+  animation: library-surface-in 300ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.content-heading {
+  animation: library-surface-in 260ms cubic-bezier(.22, 1, .36, 1) 45ms both;
+}
+
+.status-strip {
+  animation: library-status-in 240ms cubic-bezier(.22, 1, .36, 1) both;
+  transform-origin: top center;
+}
+
+.video-grid > .video-card {
+  animation: library-card-in 360ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.video-grid > .video-card:nth-child(2) { animation-delay: 24ms; }
+.video-grid > .video-card:nth-child(3) { animation-delay: 48ms; }
+.video-grid > .video-card:nth-child(4) { animation-delay: 72ms; }
+.video-grid > .video-card:nth-child(5) { animation-delay: 96ms; }
+.video-grid > .video-card:nth-child(6) { animation-delay: 120ms; }
+.video-grid > .video-card:nth-child(7) { animation-delay: 144ms; }
+.video-grid > .video-card:nth-child(8) { animation-delay: 168ms; }
+
+.folder-tree-item,
+.organize-preview-category,
+.organize-preview-root {
+  transition: color var(--motion-fast) ease, background var(--motion-fast) ease,
+    transform var(--motion-fast) cubic-bezier(.22, 1, .36, 1);
+}
+
+.folder-tree-item:hover,
+.organize-preview-category:hover,
+.organize-preview-root:hover {
+  transform: translateX(2px);
+}
+
+.toolbar-icon-button svg,
+.toolbar-quiet-button svg,
+.sidebar-trigger svg,
+.media-tab svg {
+  transition: transform var(--motion-fast) cubic-bezier(.22, 1, .36, 1),
+    color var(--motion-fast) ease;
+}
+
+.toolbar-icon-button:hover svg,
+.toolbar-quiet-button:hover svg,
+.sidebar-trigger:hover svg,
+.media-tab:hover svg {
+  transform: scale(1.08);
+}
+
+.primary-toolbar-actions > .toolbar-icon-button:first-child:hover svg {
+  transform: rotate(18deg) scale(1.08);
+}
+
+.organize-toolbar-button svg,
+.import-button svg {
+  transition: transform var(--motion-fast) cubic-bezier(.22, 1, .36, 1);
+}
+
+.organize-toolbar-button:hover:not(:disabled) svg,
+.import-button:hover:not(:disabled) svg {
+  transform: translateY(-1px) scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-sidebar,
+  .library-main,
+  .content-heading,
+  .status-strip,
+  .video-grid > .video-card {
+    animation: none;
+  }
+
+  .marked-deletion-page,
+  .marked-deletion-header,
+  .marked-deletion-actions,
+  .marked-deletion-content,
+  .marked-deletion-state {
+    animation: none;
+  }
+
+  .folder-tree-item:hover,
+  .organize-preview-category:hover,
+  .organize-preview-root:hover,
+  .toolbar-icon-button:hover svg,
+  .toolbar-quiet-button:hover svg,
+  .sidebar-trigger:hover svg,
+  .media-tab:hover svg,
+  .primary-toolbar-actions > .toolbar-icon-button:first-child:hover svg,
+  .organize-toolbar-button:hover:not(:disabled) svg,
+  .import-button:hover:not(:disabled) svg {
+    transform: none;
+  }
+}
+
 /* Fullscreen keeps one control row only; the custom titlebar is redundant there. */
 .app-topbar.is-fullscreen .titlebar-row {
   display: none !important;
@@ -3854,4 +4192,145 @@ button[aria-busy='true'] {
 
 .app-topbar.is-fullscreen .titlebar-row {
   display: none !important;
+}
+/* Button system: keep one visual language while preserving primary, quiet and danger semantics. */
+:root {
+  --button-height: 34px;
+  --button-radius: 10px;
+  --button-gap: 7px;
+}
+
+.import-button,
+.organize-toolbar-button,
+.settings-btn-primary,
+.overview-primary-action,
+.batch-action-button {
+  min-height: var(--button-height);
+  border-radius: 999px;
+  gap: var(--button-gap);
+  font-weight: 650;
+}
+
+.import-button,
+.organize-toolbar-button,
+.settings-btn-primary,
+.overview-primary-action,
+.batch-action-button {
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 17%, transparent);
+}
+
+.import-button:hover:not(:disabled),
+.organize-toolbar-button:hover:not(:disabled),
+.settings-btn-primary:hover:not(:disabled),
+.overview-primary-action:hover:not(:disabled),
+.batch-action-button:hover:not(:disabled) {
+  color: var(--accent-contrast);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.settings-btn,
+.app-dialog-button,
+.health-refresh-button,
+.overview-secondary-action,
+.organize-filter-notice button,
+.batch-secondary-button,
+.batch-cancel-button,
+.batch-category-select {
+  min-height: var(--button-height);
+  border-radius: 999px;
+  gap: var(--button-gap);
+}
+
+.settings-btn:not(.settings-btn-primary):not(.settings-btn-danger),
+.app-dialog-button:not(.app-dialog-button-primary),
+.health-refresh-button,
+.overview-secondary-action,
+.organize-filter-notice button,
+.batch-secondary-button,
+.batch-cancel-button,
+.batch-category-select {
+  color: var(--text-primary);
+  border: 1px solid var(--line-default);
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+}
+
+.settings-btn:not(:disabled):hover,
+.app-dialog-button:not(:disabled):hover,
+.health-refresh-button:not(:disabled):hover,
+.overview-secondary-action:not(:disabled):hover,
+.organize-filter-notice button:not(:disabled):hover,
+.batch-secondary-button:not(:disabled):hover,
+.batch-cancel-button:not(:disabled):hover,
+.batch-category-select:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-default));
+  background: var(--bg-hover);
+}
+
+.toolbar-icon-button,
+.sidebar-trigger,
+.sidebar-collapse-button,
+.settings-close,
+.settings-mini-btn {
+  border-radius: var(--button-radius);
+}
+
+.toolbar-quiet-button {
+  min-height: var(--button-height);
+  border-radius: var(--button-radius);
+}
+
+.category-tooltip-button,
+.batch-action-bar-menu-item {
+  border-radius: 999px !important;
+}
+
+.app-topbar .import-button,
+.app-topbar .organize-toolbar-button {
+  height: 32px;
+  min-height: 32px;
+}
+
+/* The More menu uses stacked controls, so separators must be horizontal and compact. */
+.toolbar-menu.toolbar-menu-right {
+  gap: 0;
+  padding: 5px;
+}
+
+.toolbar-menu.toolbar-menu-right > .toolbar-menu-item,
+.toolbar-menu.toolbar-menu-right > .toolbar-menu-toggle,
+.toolbar-menu.toolbar-menu-right > .toolbar-menu-label {
+  min-height: 30px;
+}
+
+.toolbar-menu.toolbar-menu-right > .toolbar-menu-separator {
+  width: 100%;
+  height: 1px;
+  margin: 4px 0;
+}
+
+.toolbar-menu.toolbar-menu-right > .card-size-range {
+  margin-top: 1px;
+  margin-bottom: 3px;
+}
+
+@media (max-width: 760px) {
+  .import-button,
+  .organize-toolbar-button,
+  .settings-btn-primary,
+  .overview-primary-action,
+  .batch-action-button,
+  .settings-btn,
+  .app-dialog-button,
+  .health-refresh-button,
+  .overview-secondary-action,
+  .organize-filter-notice button,
+  .batch-secondary-button,
+  .batch-cancel-button,
+  .batch-category-select {
+    min-height: 36px;
+  }
 }

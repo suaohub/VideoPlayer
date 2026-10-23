@@ -1,6 +1,6 @@
 import { startTransition, useState, useEffect, useCallback, useRef } from 'react';
 import './themes.css';
-import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, MediaType, SortBy, SortDir, FolderSortBy, OrganizeCategory, RecentPlayback, MediaLibraryHealth } from './types';
+import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, MediaType, SortBy, SortDir, FolderSortBy, OrganizeCategory, RecentPlayback, MediaLibraryHealth, LibraryViewMode } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { FolderTree } from './components/FolderTree';
@@ -146,6 +146,7 @@ function App() {
   const [search, setSearch] = useState('');
   const [showFavorited, setShowFavorited] = useState(false);
   const [showFavoritedInList, setShowFavoritedInList] = useState(true);
+  const [categoryTooltipEnabled, setCategoryTooltipEnabled] = useState(true);
   const [favoritedCount, setFavoritedCount] = useState(0);
   const [showMarkedForDeletion, setShowMarkedForDeletion] = useState(false);
   const [markedForDeletionCount, setMarkedForDeletionCount] = useState(0);
@@ -155,6 +156,7 @@ function App() {
   // 排序
   const [sortBy, setSortBy] = useState<SortBy>('added');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [viewMode, setViewMode] = useState<LibraryViewMode>('grid');
   const [folderSortBy, setFolderSortBy] = useState<FolderSortBy>('name');
   const [folderSortDir, setFolderSortDir] = useState<SortDir>('asc');
 
@@ -162,6 +164,9 @@ function App() {
   const [theme, setTheme] = useState<Theme>('night');
   // 桌面端媒体库默认保留导航侧栏，用户仍可用顶栏按钮收起。
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+  const sidebarResizeRef = useRef<{ startX: number; startWidth: number; currentWidth: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsOpenRef = useRef(false);
   const pendingThumbnailRefreshRef = useRef(false);
@@ -461,6 +466,10 @@ function App() {
   }, [sortDir, preferencesLoaded]);
 
   useEffect(() => {
+    if (preferencesLoaded) api.setSetting('libraryViewMode', viewMode);
+  }, [viewMode, preferencesLoaded]);
+
+  useEffect(() => {
     if (preferencesLoaded) api.setSetting('folderSortBy', folderSortBy);
   }, [folderSortBy, preferencesLoaded]);
 
@@ -524,10 +533,23 @@ function App() {
           setCardSize(Math.min(CARD_MAX, Math.max(CARD_MIN, parsedSize)));
         }
       }
+      const savedSidebarWidth = await api.getSetting('sidebarWidth');
+      if (savedSidebarWidth) {
+        const parsedWidth = Number(savedSidebarWidth);
+        if (Number.isFinite(parsedWidth)) {
+          setSidebarWidth(Math.min(360, Math.max(180, parsedWidth)));
+        }
+      }
+      const savedCategoryTooltip = await api.getSetting('categoryTooltipEnabled');
+      if (savedCategoryTooltip === '0' || savedCategoryTooltip === 'false') {
+        setCategoryTooltipEnabled(false);
+      }
       const savedSortBy = await api.getSetting('sortBy');
       if (savedSortBy) setSortBy(savedSortBy as SortBy);
       const savedSortDir = await api.getSetting('sortDir');
       if (savedSortDir === 'asc' || savedSortDir === 'desc') setSortDir(savedSortDir);
+      const savedViewMode = await api.getSetting('libraryViewMode');
+      if (savedViewMode === 'grid' || savedViewMode === 'list') setViewMode(savedViewMode);
       const savedFolderSortBy = await api.getSetting('folderSortBy');
       if (savedFolderSortBy === 'name' || savedFolderSortBy === 'size' || savedFolderSortBy === 'imported') setFolderSortBy(savedFolderSortBy);
       const savedFolderSortDir = await api.getSetting('folderSortDir');
@@ -591,10 +613,37 @@ function App() {
   }, [refreshAll, loadVideos, loadOverview, refreshOrganizeCategories, loadOrganizePreview]);
 
   useEffect(() => {
+    if (!sidebarResizing) return;
+    const handlePointerMove = (event: PointerEvent) => {
+      const resize = sidebarResizeRef.current;
+      if (!resize) return;
+      const nextWidth = Math.min(360, Math.max(180, resize.startWidth + event.clientX - resize.startX));
+      resize.currentWidth = nextWidth;
+      setSidebarWidth(nextWidth);
+    };
+    const handlePointerUp = () => {
+      const resize = sidebarResizeRef.current;
+      sidebarResizeRef.current = null;
+      setSidebarResizing(false);
+      if (resize) void api.setSetting('sidebarWidth', String(Math.round(resize.currentWidth)));
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [sidebarResizing]);
+
+  useEffect(() => {
     if (preferencesLoaded && activePage === 'overview') {
       void loadOverview();
     }
   }, [activePage, loadOverview, preferencesLoaded, unmountedDrives]);
+
+  useEffect(() => {
+    if (preferencesLoaded) void api.setSetting('categoryTooltipEnabled', categoryTooltipEnabled ? '1' : '0');
+  }, [categoryTooltipEnabled, preferencesLoaded]);
 
   useEffect(() => {
     if (preferencesLoaded && activePage === 'health') {
@@ -1583,6 +1632,8 @@ function App() {
           onSortByChange={setSortBy}
           sortDir={sortDir}
           onSortDirChange={setSortDir}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
           onOpenFeed={handleOpenFeed}
           search={search}
           onSearchChange={(value) => { if (value) setActivePage('library'); setSearch(value); }}
@@ -1616,7 +1667,10 @@ function App() {
 
         <div className="library-workspace">
           {sidebarOpen && (
-            <aside className="library-sidebar">
+            <aside
+              className={`library-sidebar${sidebarResizing ? ' is-resizing' : ''}`}
+              style={{ width: sidebarWidth, flexBasis: sidebarWidth }}
+            >
               <nav className="sidebar-nav" aria-label="媒体库导航">
                 <div className="sidebar-nav-heading">
                   <span className="sidebar-eyebrow">工作区</span>
@@ -1759,6 +1813,22 @@ function App() {
                 )}
               </div>
               <div className="sidebar-footer"><span>本地媒体库</span><span className="sidebar-footer-dot" /> <span>Windows</span></div>
+              <div
+                className="sidebar-resize-handle"
+                role="separator"
+                aria-label="调整侧边栏宽度"
+                aria-orientation="vertical"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  sidebarResizeRef.current = {
+                    startX: event.clientX,
+                    startWidth: sidebarWidth,
+                    currentWidth: sidebarWidth,
+                  };
+                  setSidebarResizing(true);
+                }}
+              />
             </aside>
           )}
 
@@ -1870,6 +1940,8 @@ function App() {
                   onSelectionModeChange={setBatchSelectionMode}
                   onSelectedIdsChange={setBatchSelectedIds}
                   hiddenVideoIds={fixedLayoutMode ? locallyHiddenVideoIds : undefined}
+                  categoryTooltipEnabled={categoryTooltipEnabled}
+                  viewMode={viewMode}
                 />
               </>
             )}
@@ -1947,6 +2019,8 @@ function App() {
           onClearOrganizeOutputFolder={handleClearOrganizeOutputFolder}
           onOrganizeFolder={handleOrganizeFolder}
           organizing={organizing}
+          categoryTooltipEnabled={categoryTooltipEnabled}
+          onCategoryTooltipEnabledChange={setCategoryTooltipEnabled}
         />
       )}
     </div>

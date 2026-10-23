@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Film, Music2, BookOpen, RefreshCw, FolderOpen } from 'lucide-react';
-import { OrganizeCategory, Video } from '../types';
+import { Film, Music2, BookOpen, RefreshCw, FolderOpen, Heart } from 'lucide-react';
+import { OrganizeCategory, Video, LibraryViewMode } from '../types';
 import { api } from '../api';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
@@ -29,6 +29,8 @@ interface VideoGridProps {
   organizeCategories?: OrganizeCategory[];
   onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void | Promise<boolean | void>;
   onBatchSetOrganizeCategory?: (videoIds: number[], categoryId: number | null) => boolean | Promise<boolean>;
+  categoryTooltipEnabled?: boolean;
+  viewMode?: LibraryViewMode;
 }
 
 const GAP = 12;
@@ -367,7 +369,66 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory }: VideoGridProps) {
+function VideoListRow({
+  video,
+  organizeCategories,
+  selectionMode,
+  selected,
+  onPlay,
+  onToggleFavorite,
+  onToggleSelect,
+  cardRef,
+}: {
+  video: Video;
+  organizeCategories: OrganizeCategory[];
+  selectionMode: boolean;
+  selected: boolean;
+  onPlay: (video: Video) => void;
+  onToggleFavorite: (videoId: number) => void;
+  onToggleSelect: (videoId: number) => void;
+  cardRef: (el: HTMLDivElement | null) => void;
+}) {
+  const category = organizeCategories.find((item) => item.id === video.organize_category_id);
+  const modified = video.mtime ? new Date(video.mtime).toLocaleDateString() : '—';
+  return (
+    <div
+      ref={cardRef}
+      className={`video-list-row${selected ? ' is-selected' : ''}`}
+      data-video-id={video.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => selectionMode ? onToggleSelect(video.id) : onPlay(video)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectionMode ? onToggleSelect(video.id) : onPlay(video);
+        }
+      }}
+    >
+      {selectionMode && <span className={`video-list-check${selected ? ' is-selected' : ''}`}>{selected ? '✓' : ''}</span>}
+      <div className="video-list-thumb"><Thumb video={video} height={64} /></div>
+      <div className="video-list-main">
+        <strong className="video-list-name" title={video.name}>{video.name}</strong>
+        <span className="video-list-path" title={video.path}>{video.path}</span>
+      </div>
+      <span className="video-list-type">{video.ext.replace('.', '').toUpperCase()}</span>
+      <span className="video-list-size">{formatSize(video.size)}</span>
+      <span className="video-list-date">{modified}</span>
+      {category && <span className="video-list-category">{category.name}</span>}
+      <button
+        type="button"
+        className={`video-list-favorite${video.favorited ? ' is-active' : ''}`}
+        onClick={(event) => { event.stopPropagation(); onToggleFavorite(video.id); }}
+        aria-label={video.favorited ? '取消收藏' : '收藏'}
+        title={video.favorited ? '取消收藏' : '收藏'}
+      >
+        <Heart size={16} fill={video.favorited ? 'currentColor' : 'none'} />
+      </button>
+    </div>
+  );
+}
+
+export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory, categoryTooltipEnabled = true, viewMode = 'grid' }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -662,6 +723,14 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     clearCategoryTooltipHideTimer();
     stopCategoryTooltipSync();
   }, [clearCategoryTooltipHideTimer, stopCategoryTooltipSync]);
+
+  useEffect(() => {
+    if (!categoryTooltipEnabled) {
+      clearCategoryTooltipHideTimer();
+      stopCategoryTooltipSync();
+      setCategoryTooltipTarget(null);
+    }
+  }, [categoryTooltipEnabled, clearCategoryTooltipHideTimer, stopCategoryTooltipSync]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1141,6 +1210,25 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           <div className="empty-state-title">这里还没有媒体</div>
           <div className="empty-state-hint">从顶部导入文件夹或媒体文件，建立你的本地收藏。</div>
         </div>
+      ) : viewMode === 'list' ? (
+        <div className="video-list" role="list" aria-label="媒体列表">
+          {videos.map((video) => (
+            <VideoListRow
+              key={video.id}
+              video={video}
+              organizeCategories={organizeCategories}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(video.id)}
+              onPlay={handlePlayFromGrid}
+              onToggleFavorite={onToggleFavorite}
+              onToggleSelect={handleToggleSelect}
+              cardRef={(el) => {
+                if (el) cardEls.current.set(video.id, el);
+                else cardEls.current.delete(video.id);
+              }}
+            />
+          ))}
+        </div>
       ) : (
         <div style={{ position: 'relative', height: totalHeight }}>
           {renderedLayouts.map(({ layout: L, index: i }) => {
@@ -1171,8 +1259,8 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                 isSelected={selectedIds.has(L.video.id)}
                 onToggleSelect={handleToggleSelect}
                 organizeCategories={organizeCategories}
-                onCategoryTooltipEnter={!selectionMode ? showCategoryTooltip : undefined}
-                onCategoryTooltipLeave={!selectionMode ? scheduleCategoryTooltipHide : undefined}
+                onCategoryTooltipEnter={!selectionMode && categoryTooltipEnabled ? showCategoryTooltip : undefined}
+                onCategoryTooltipLeave={!selectionMode && categoryTooltipEnabled ? scheduleCategoryTooltipHide : undefined}
                 onContextMenu={(video, event) => {
                   setContextMenu({ video, x: event.clientX, y: event.clientY });
                 }}
@@ -1181,7 +1269,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
               />
             );
           })}
-          {categoryTooltipTarget && (() => {
+          {categoryTooltipEnabled && categoryTooltipTarget && (() => {
             const targetVideo = videos.find((video) => video.id === categoryTooltipTarget.videoId) ?? categoryTooltipTarget.video;
             const viewportPadding = 8;
             // Tooltip 与目标卡片保持同宽，分类按钮在内部自动换行。

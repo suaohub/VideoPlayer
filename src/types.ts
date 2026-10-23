@@ -22,6 +22,8 @@ export interface Video {
   organize_category_id?: number | null;
 }
 
+export type LibraryViewMode = 'grid' | 'list';
+
 // 播放断点（按文件路径持久化，视频记录被重新扫描后仍可恢复）
 export interface PlaybackProgress {
   path: string;

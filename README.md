@@ -1,123 +1,166 @@
 # VideoPlayer
 
-基于 **Electron + React + mpv** 的本地媒体库，目标平台 **Windows**。以 mpv 为播放内核，具备强大解码能力，并在视频之外扩展为一站式本地媒体中心：**视频 / 音频 / 小说 / 漫画** 统一导入、智能分类、瀑布流浏览与键盘导航。
+一个面向 Windows 的本地媒体库管理器与播放器。
 
-> 详细文档见 [`docs/PRODUCT.md`](docs/PRODUCT.md)（产品说明）与 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（开发方案 + 当前进度 + 环境搭建）。
+VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中到一个本地库中，提供目录浏览、缩略图、搜索、收藏、分类整理和播放能力。数据保存在本机 SQLite 中，不需要账号，也不会把媒体文件上传到云端。
 
-## 核心功能
+![VideoPlayer 主界面](preview-current.png)
 
-- **多媒体类型**：顶部一键切换 全部 / 视频 / 音频 / 小说 / 漫画，各类型独立的目录树与计数。
-- **视频播放**：所有视频统一走 mpv（内置 FFmpeg，高码率 / HEVC / 10-bit / MKV 等 Chromium 播不了的格式都能直接播），mpv 原生窗口嵌入应用内容区，底部为自绘 React 控制栏（播放 / 进度 / 音量 / 倍速）。
-- **刷视频（Shorts）**：竖屏短视频流式浏览，上下滑动切换，浏览器可解码格式（mp4/webm/mov 等）走 HTML5 `<video>`。
-- **音乐播放器**：音频文件（mp3/flac/wav/m4a/opus 等）进入专属播放页。
-- **小说阅读器**：`.txt` 文本阅读，支持翻页 / 滚动两种模式、字号与行距调节、阅读进度记忆。**大部头小说采用分块（chunk）虚拟化渲染**，仅渲染当前块的段落，按块边界切换，避免整本书一次性进入 DOM 导致的加载慢与卡顿。
-- **漫画阅读器**：图片文件夹作为一本漫画（库内 ext 记为 `.comic`），逐页浏览。
-- **智能分类与检索**：按目录树多选过滤、搜索、收藏、按 添加时间 / 名称 / 大小 / 时长 / 修改时间 / 随机 排序。
-- **标记删除与批量清理**：浏览或播放/阅读时按 `Delete` 将当前媒体标记为待删除，标记后从常规列表隐藏、进入专属「标记删除」管理页。管理页支持多选、全选、批量恢复、导出待删文件名列表（`.txt`），以及从磁盘彻底删除（含数据库记录、缩略图与孤儿标签清理，二次确认防误删）。目录树侧栏提供「收藏夹 / 标记删除」快捷入口并显示计数。
-- **缩略图**：FFmpeg 抽帧生成，后台队列异步处理。
-- **壁纸捕获**：播放中按 `Ctrl+Shift+B` 抓取当前 mpv 画面作为应用背景图（可调不透明度）。
-- **主题**：8 套主题（白天 / 夜间 / 浪漫 / 海洋 / 森林 / 日落 / 石板 / 赛博朋克）。
-- **可移动磁盘检测**：定期检测外接盘挂载状态，未挂载的来源目录会标记提示。
+## 为什么做 VideoPlayer
+
+当本地媒体数量变多之后，资源管理器适合“找文件”，但不适合持续浏览、筛选和管理媒体。VideoPlayer 试图把这些操作放在一个更适合媒体的界面里：
+
+- 导入一次，后续增量刷新
+- 通过目录树、搜索、收藏和媒体类型快速缩小范围
+- 用缩略图瀑布流或紧凑列表浏览大量内容
+- 用 mpv 播放浏览器难以处理的高码率、HEVC、10-bit 和 MKV 文件
+- 将已分类的视频按规则整理到目标目录
+
+## 功能
+
+### 媒体库
+
+- 支持视频、音频、小说和漫画目录
+- 递归导入文件夹，增量发现新增、修改和删除的文件
+- 保留原始目录树，并支持多目录筛选
+- 目录支持名称（Windows 自然排序）、导入日期和目录大小排序
+- 支持搜索、收藏、媒体类型筛选和待处理列表
+- 支持网格视图与紧凑列表视图，视图选择会自动保存
+- 侧边栏宽度可拖动调整，并会记住上次宽度
+
+### 播放与阅读
+
+- 视频使用 mpv 播放内核，支持播放、暂停、进度、音量和倍速控制
+- mpv 窗口嵌入 VideoPlayer，底部控制栏由 React 绘制
+- 记录播放进度，重新打开后可继续观看
+- 音频使用独立音乐播放界面
+- TXT 小说支持阅读进度、字号和行距调整
+- 漫画目录按页浏览
+- 提供竖屏刷视频模式，适合快速浏览可由浏览器解码的短视频
+
+### 分类与整理
+
+- 创建、重命名、排序和停用整理分类
+- 媒体卡片支持悬浮快捷分类，设置中心可以关闭
+- 支持批量分类
+- 有待整理文件时，顶部会显示常驻的“整理文件”入口
+- 按分类创建目标目录并移动文件
+- 整理前显示确认信息，整理中显示进度，完成后刷新库状态
+- 支持集中整理目录；跨盘文件会按来源盘符处理，避免不必要的跨盘复制
+
+### 健康与清理
+
+- 健康中心检查失效媒体、缺少缩略图、离线磁盘、空目录和待整理内容
+- 媒体可以先标记为待处理，避免误删
+- 待处理页面支持多选、恢复、导出文件名列表和永久删除
+- 删除操作会同步清理数据库记录、缩略图和相关空目录
+
+### 外观与体验
+
+- 日间和夜间主题
+- 支持壁纸、设置中心背景模糊和透明效果使用范围
+- 缩略图后台生成，不阻塞主界面浏览
+- 支持键盘导航、焦点卡片和常用快捷键
+- 适配高分辨率窗口、最大化和全屏状态
+
+## 安装
+
+从 [Releases](https://github.com/suaohub/VideoPlayer/releases) 下载 Windows x64 安装包，运行安装程序即可。安装程序默认创建桌面和开始菜单快捷方式，也允许选择安装目录。
+
+VideoPlayer 使用外部 mpv 和 FFmpeg：
+
+- **mpv**：负责视频和音频播放
+- **FFmpeg / ffprobe**：负责缩略图和媒体元数据
+
+程序会按以下顺序查找 mpv：
+
+1. `MPV_BIN` 环境变量
+2. `C:\\Program Files\\MPV Player\\mpv.exe`
+3. 系统 `PATH` 中的 `mpv`
+
+FFmpeg 可以通过 `FFMPEG_BIN` 和 `FFPROBE_BIN` 指定路径。安装后如果无法播放或生成缩略图，优先检查这两个依赖是否可用。
 
 ## 快捷键
 
-| 按键 | 作用 |
-|---|---|
-| `Ctrl+Shift+B` | 播放视频时，抓取当前 mpv 画面设为应用背景壁纸（全局快捷键） |
-| `B` | 「刷视频」浮层内抓取当前视频帧（仅在浮层内生效，不影响其他输入） |
-| `Delete` | 将当前媒体标记为待删除。列表中焦点卡片、刷视频浮层、音乐播放器、小说 / 漫画阅读器内均可用 |
+| 快捷键 | 作用 |
+| --- | --- |
+| `Ctrl + K` | 聚焦搜索框 |
+| `Delete` | 将当前焦点媒体标记为待处理 |
+| `Enter` | 在播放器或阅读器中返回媒体库 |
+| `Ctrl + Shift + B` | 播放视频时截取当前画面并设为应用壁纸 |
+| `B` | 在刷视频模式中截取当前视频帧 |
+| `Space` | 播放或暂停 |
+| `←` / `→` | 后退或前进 |
 
-> 早期版本曾把壁纸捕获注册为单键 `B` 的全局快捷键，会在系统范围内劫持 `b` 的输入导致无法打字，现已改为组合键 `Ctrl+Shift+B`。
+## 数据位置
 
-## 技术栈
+默认数据保存在：
 
-| 层 | 选型 |
-|---|---|
-| 应用框架 | Electron |
-| 前端 | React + TypeScript + Vite |
-| 播放内核 | mpv（libmpv/FFmpeg，通过 IPC 控制） |
-| 本地数据库 | SQLite（better-sqlite3） |
-| 主进程构建 | esbuild |
+```text
+C:\\Users\\<用户名>\\AppData\\Roaming\\videoplayer\\
+```
 
-## 前置依赖
+其中包含 SQLite 数据库、应用设置和缩略图缓存。媒体原文件不会被复制进数据库目录。
 
-- Node.js 18+
-- **mpv 播放器**
-  - Windows：下载 mpv，记下 `mpv.exe` 路径
-- **mpv 路径**：`electron/main.ts` 的 `resolveMpvBin()` 会优先读环境变量 `MPV_BIN`，再回退到默认安装路径 `C:\Program Files\MPV Player\mpv.exe`，都找不到再回退到 PATH 里的 `mpv`。装在别处时设 `MPV_BIN` 环境变量即可，无需改代码。
-- **FFmpeg**：缩略图/元数据依赖 ffmpeg/ffprobe，可用 `FFMPEG_BIN` / `FFPROBE_BIN` 环境变量指定路径。
+## 从源码运行
 
-## 快速开始
+### 环境要求
+
+- Windows 10 或 Windows 11
+- Node.js 18 或更高版本
+- mpv
+- FFmpeg 与 ffprobe
+
+### 开发启动
 
 ```bash
-# 1. 安装依赖
 npm install
-
-# 2. 针对 Electron ABI 重新编译 better-sqlite3（原生模块，必做）
-#    见 docs/DEVELOPMENT.md「native 模块编译」一节
 npm run rebuild:electron
-
-# 3. 启动开发环境（Vite + esbuild watch + Electron）
 npm run dev
 ```
 
-## 项目结构
+开发环境会同时启动 Vite、Electron 主进程和 Electron 渲染窗口。应用使用本地 SQLite 数据库，不需要额外启动数据库服务。
 
-```
-VideoPlayer/
-├── docs/
-│   ├── PRODUCT.md         # 产品说明书
-│   └── DEVELOPMENT.md     # 开发方案 / 进度 / 环境搭建
-├── electron/              # Electron 主进程（TypeScript，esbuild 打包为 .cjs）
-│   ├── main.ts            # 主进程入口：窗口、mpv 进程与 IPC、全局快捷键、各类 IPC handler
-│   ├── preload.ts         # 预加载脚本，contextBridge 暴露安全 API
-│   ├── db.ts              # SQLite 初始化与表结构
-│   ├── scanner.ts         # 文件夹递归扫描、目录树与媒体入库
-│   ├── queries.ts         # 媒体/目录树查询、设置读写
-│   ├── media.ts           # 媒体类型判定（视频/音频/文本/漫画）
-│   ├── thumbnail.ts       # FFmpeg 抽帧缩略图
-│   ├── thumbnailQueue.ts  # 缩略图后台生成队列
-│   └── build.mjs          # esbuild 构建脚本（main/preload）
-├── src/                   # React 渲染进程
-│   ├── App.tsx            # 主界面（工具栏 + 目录树 + 媒体列表 + 各阅读/播放页路由）
-│   ├── components/
-│   │   ├── Toolbar.tsx       # 顶部工具栏（导入、媒体类型、排序、主题、搜索）
-│   │   ├── FolderTree.tsx    # 目录树（按目录过滤）
-│   │   ├── VideoGrid.tsx     # 瀑布流媒体列表
-│   │   ├── SettingsModal.tsx # 设置面板（背景、透明度、缓存等）
-│   │   ├── MusicPlayer.tsx   # 音乐播放页
-│   │   ├── TextReader.tsx    # 小说阅读器（分块虚拟化渲染）
-│   │   ├── ComicReader.tsx   # 漫画阅读器
-│   │   ├── ShortsFeed.tsx    # 刷视频（竖屏短视频流）
-│   │   └── MarkedForDeletionManager.tsx  # 标记删除管理页（多选恢复 / 导出 / 彻底删除）
-│   ├── media.ts           # 前端媒体类型判定
-│   ├── themes.css         # 8 套主题
-│   ├── types.ts           # 共享类型定义
-│   ├── api.ts             # 渲染进程 API 封装（含 mock）
-│   ├── main.tsx           # React 入口
-│   └── index.html         # HTML 模板
-├── vite.config.ts
-└── package.json
-```
-
-## 当前进度
-
-- ✅ **M0** mpv 集成：IPC 控制（播放/暂停/进度/音量/倍速）+ 回车关闭返回列表
-- ✅ **M1** 文件导入与分类：数据层、扫描、IPC、UI（Windows 上 SQLite 已跑通）
-- ✅ **M2** 缩略图（FFmpeg 抽帧）与瀑布流布局
-- ✅ **M3** 播放器：mpv 原生窗口嵌入 + 底部 React 控制栏
-- ✅ **M4** 键盘空间导航（对角组合键）+ 随机打乱
-- ✅ **M5** 多媒体扩展：音乐播放器、小说阅读器（分块虚拟化）、漫画阅读器、刷视频、壁纸捕获、多主题
-- ✅ **M6** 标记删除工作流：`Delete` 标记、专属管理页、批量恢复 / 导出 / 磁盘彻底删除，侧栏收藏与标记快捷入口
-- 🚧 **M7** 打磨与打包
-
-## 构建生产版本
+### 构建与打包
 
 ```bash
-# 编译前端 + 主进程
 npm run build
 npm start
-
-# 打包 Windows 安装包（NSIS，x64）→ 输出到 release/
 npm run dist
 ```
+
+安装包会输出到 `release/v版本号/`，不同版本使用不同目录，不会覆盖旧版本的打包产物。
+
+## 项目结构
+
+```text
+VideoPlayer/
+├── electron/              # Electron 主进程、SQLite、扫描、mpv 和 IPC
+├── src/                   # React 界面和媒体库组件
+├── assets/                # 应用图标
+├── docs/                  # 产品和开发文档
+├── release/               # 各版本打包产物
+├── package.json
+└── vite.config.ts
+```
+
+主要模块：
+
+- `electron/scanner.ts`：扫描目录、识别媒体、生成目录树
+- `electron/queries.ts`：SQLite 查询、过滤、排序和设置
+- `electron/mpv.ts`：mpv 进程、JSON IPC 和窗口嵌入
+- `electron/thumbnailQueue.ts`：后台缩略图队列
+- `src/App.tsx`：应用状态和页面组织
+- `src/components/VideoGrid.tsx`：媒体网格、列表和批量操作
+- `src/components/SettingsModal.tsx`：设置中心
+- `src/themes.css`：主题、布局和交互状态
+
+## 项目状态
+
+VideoPlayer 目前处于持续打磨阶段。核心的导入、浏览、播放、分类整理和本地数据管理已经可用，界面和大媒体库性能仍在持续优化。
+
+欢迎提交 Issue、功能建议和改进代码。提交问题时，最好附上 Windows 版本、VideoPlayer 版本、复现步骤和相关日志。
+
+## 许可证
+
+本项目使用 ISC License，详见 `package.json`。

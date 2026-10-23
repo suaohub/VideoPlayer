@@ -14,6 +14,7 @@ import {
   Heart,
   Images,
   LayoutGrid,
+  List,
   Loader2,
   Maximize2,
   Menu,
@@ -32,7 +33,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Theme, ImportProgress, ThumbnailProgress, OperationProgress, MediaType, SortBy, SortDir } from '../types';
+import { Theme, ImportProgress, ThumbnailProgress, OperationProgress, MediaType, SortBy, SortDir, LibraryViewMode } from '../types';
 
 interface ToolbarProps {
   theme: Theme;
@@ -58,6 +59,8 @@ interface ToolbarProps {
   onSortByChange: (s: SortBy) => void;
   sortDir: SortDir;
   onSortDirChange: (d: SortDir) => void;
+  viewMode: LibraryViewMode;
+  onViewModeChange: (mode: LibraryViewMode) => void;
   onOpenFeed: () => void;
   search: string;
   onSearchChange: (s: string) => void;
@@ -133,6 +136,8 @@ function Toolbar({
   onSortByChange,
   sortDir,
   onSortDirChange,
+  viewMode,
+  onViewModeChange,
   onOpenFeed,
   search,
   onSearchChange,
@@ -328,6 +333,15 @@ function Toolbar({
         )}
         <button className={`toolbar-icon-button quiet${showFavorited ? ' is-active' : ''}`} onClick={() => onShowFavoritedChange(!showFavorited)} title={showFavorited ? '显示全部媒体' : `只看收藏${favoritedCount ? `（${favoritedCount}）` : ''}`}>
           <Heart {...ICON} fill={showFavorited ? 'currentColor' : 'none'} />
+        </button>
+        <button
+          className="toolbar-icon-button quiet"
+          onClick={() => onViewModeChange(viewMode === 'grid' ? 'list' : 'grid')}
+          title={viewMode === 'grid' ? '切换为列表视图' : '切换为网格视图'}
+          aria-label={viewMode === 'grid' ? '切换为列表视图' : '切换为网格视图'}
+          aria-pressed={viewMode === 'list'}
+        >
+          {viewMode === 'grid' ? <List {...ICON} /> : <Grid2x2 {...ICON} />}
         </button>
         <div className="more-control" ref={moreRef}>
           <button className={`toolbar-quiet-button${moreOpen ? ' is-open' : ''}`} onClick={() => setMoreOpen((open) => !open)}>

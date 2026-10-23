@@ -105,7 +105,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
   };
 
   return (
-    <div style={{
+    <div className="marked-deletion-page" style={{
       position: 'fixed',
       top: 0, left: 0, right: 0, bottom: 0,
       zIndex: 1000,
@@ -114,7 +114,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
       flexDirection: 'column',
     }}>
       {/* 顶部工具栏 */}
-      <div style={{
+      <div className="marked-deletion-header" style={{
         height: 60,
         borderBottom: '1px solid var(--glass-border)',
         display: 'flex',
@@ -161,7 +161,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
       </div>
 
       {/* 操作栏 */}
-      <div style={{
+      <div className="marked-deletion-actions" style={{
         padding: '12px 20px',
         borderBottom: '1px solid var(--glass-border)',
         display: 'flex',
@@ -278,9 +278,9 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
       </div>
 
       {/* 文件列表 */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div className="marked-deletion-content" style={{ flex: 1, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{
+          <div className="marked-deletion-state" style={{
             height: '100%',
             display: 'flex',
             alignItems: 'center',
@@ -290,7 +290,7 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
             加载中...
           </div>
         ) : videos.length === 0 ? (
-          <div style={{
+          <div className="marked-deletion-state marked-deletion-empty" style={{
             height: '100%',
             display: 'flex',
             flexDirection: 'column',

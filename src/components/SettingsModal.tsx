@@ -42,6 +42,8 @@ interface SettingsModalProps {
   onClearOrganizeOutputFolder: () => void;
   onOrganizeFolder: () => void;
   organizing: boolean;
+  categoryTooltipEnabled: boolean;
+  onCategoryTooltipEnabledChange: (enabled: boolean) => void;
 }
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -73,7 +75,7 @@ export function SettingsModal(props: SettingsModalProps) {
     onCreateOrganizeCategory, onDeleteOrganizeCategory, onToggleOrganizeCategory,
     onReorderOrganizeCategories,
     organizeOutputPath, onSelectOrganizeOutputFolder, onClearOrganizeOutputFolder,
-    onOrganizeFolder, organizing,
+    onOrganizeFolder, organizing, categoryTooltipEnabled, onCategoryTooltipEnabledChange,
   } = props;
   const [newCategoryName, setNewCategoryName] = useState('');
   const [activeSection, setActiveSection] = useState<SettingsSection>('all');
@@ -292,6 +294,23 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
               <button className="settings-btn" onClick={onRefreshLibrary} disabled={refreshing || importing}>
                 <RefreshCw {...ICON} className={refreshing ? 'spin' : undefined} /> {refreshing ? '检查中…' : '开始检查'}
+              </button>
+            </div>
+            <div className="settings-action-card">
+              <div className="settings-action-copy">
+                <strong>悬浮快捷分类</strong>
+                <span>鼠标悬停媒体卡片时显示快速分类浮层</span>
+              </div>
+              <button
+                type="button"
+                className={`settings-switch${categoryTooltipEnabled ? ' is-on' : ''}`}
+                onClick={() => onCategoryTooltipEnabledChange(!categoryTooltipEnabled)}
+                role="switch"
+                aria-checked={categoryTooltipEnabled}
+                aria-label="悬浮快捷分类"
+                title={categoryTooltipEnabled ? '关闭悬浮快捷分类' : '开启悬浮快捷分类'}
+              >
+                <span className="settings-switch-thumb" />
               </button>
             </div>
           </div>
