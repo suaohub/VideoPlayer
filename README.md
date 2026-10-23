@@ -4,7 +4,7 @@
 
 VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中到一个本地库中，提供目录浏览、缩略图、搜索、收藏、分类整理和播放能力。数据保存在本机 SQLite 中，不需要账号，也不会把媒体文件上传到云端。
 
-![VideoPlayer 主界面](preview-current.png)
+![VideoPlayer 空数据预览](preview-empty.png)
 
 ## 为什么做 VideoPlayer
 
