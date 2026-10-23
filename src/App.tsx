@@ -119,7 +119,7 @@ function needsOrganizingVideo(
 ): boolean {
   if (video.organize_category_id == null) return false;
   const targetPath = expectedOrganizePath(video, categories, outputPath);
-  return targetPath == null || !sameFsPath(video.path, targetPath);
+  return targetPath != null && !sameFsPath(video.path, targetPath);
 }
 
 function App() {
@@ -1192,14 +1192,16 @@ function App() {
   };
 
   const handleOrganizeFolder = async () => {
-    const categorizedCount = organizePreviewVideos.filter((video) => video.organize_category_id != null).length;
-    if (categorizedCount === 0) {
-      notify('还没有已标记分类的视频。请先在媒体卡片上完成分类。', 'info');
+    const pendingCount = organizePreviewVideos.filter((video) => (
+      needsOrganizingVideo(video, organizeCategories, organizeOutputPath)
+    )).length;
+    if (pendingCount === 0) {
+      notify('当前没有需要整理的视频。', 'info');
       return;
     }
     if (!await ask(
-      '整理全部已标记分类的视频？',
-      `当前共有 ${categorizedCount} 个视频已完成分类。程序会按分类创建子文件夹并移动这些视频；同名目标文件会直接覆盖，跨盘文件会按盘符分开整理，未分类视频不会移动。`,
+      `整理 ${pendingCount} 个待处理视频？`,
+      `程序会按分类创建子文件夹并移动这 ${pendingCount} 个视频；同名目标文件会直接覆盖，跨盘文件会按盘符分开整理，未分类视频不会移动。`,
       'warning',
     )) return;
 
@@ -1567,6 +1569,7 @@ function App() {
           onOrganize={handleOrganizeFolder}
           organizePendingCount={pendingOrganizeCount}
           organizing={organizing}
+          organizeSyncing={refreshing || importing || organizePreviewLoading}
           onImport={handleImport}
           refreshing={refreshing}
           sidebarOpen={sidebarOpen}

@@ -44,6 +44,7 @@ interface ToolbarProps {
   onOrganize: () => void;
   organizePendingCount: number;
   organizing: boolean;
+  organizeSyncing: boolean;
   onImport: () => void;
   refreshing: boolean;
   sidebarOpen: boolean;
@@ -118,6 +119,7 @@ function Toolbar({
   onOrganize = () => {},
   organizePendingCount = 0,
   organizing = false,
+  organizeSyncing = false,
   onImport,
   refreshing,
   sidebarOpen,
@@ -273,14 +275,15 @@ function Toolbar({
             <button
               className="organize-toolbar-button"
               onClick={onOrganize}
-              disabled={organizing || refreshing || importing || organizePendingCount === 0}
-              aria-busy={organizing}
-              title={organizing ? '正在整理文件' : `整理未整理的视频（${organizePendingCount}）`}
+              disabled={organizing || organizeSyncing || organizePendingCount === 0}
+              aria-busy={organizing || organizeSyncing}
+              aria-label={organizing ? '正在整理文件' : organizeSyncing ? '正在同步整理状态' : `整理 ${organizePendingCount} 个待处理视频`}
+              title={organizing ? '正在整理文件' : organizeSyncing ? '正在同步整理状态，请稍候' : `整理 ${organizePendingCount} 个待处理视频`}
               tabIndex={organizePendingCount > 0 ? 0 : -1}
             >
-              {organizing ? <Loader2 {...ICON} className="spin" /> : <FolderKanban {...ICON} />}
-              <span>{organizing ? '整理中' : '整理文件'}</span>
-              {!organizing && <span className="organize-toolbar-count">{organizePendingCount.toLocaleString()}</span>}
+              {organizing || organizeSyncing ? <Loader2 {...ICON} className="spin" /> : <FolderKanban {...ICON} />}
+              <span>{organizing ? '整理中' : organizeSyncing ? '同步中' : '整理文件'}</span>
+              {!organizing && !organizeSyncing && <span className="organize-toolbar-count">{organizePendingCount.toLocaleString()}</span>}
             </button>
           </div>
         </div>
