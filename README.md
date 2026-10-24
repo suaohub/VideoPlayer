@@ -1,10 +1,40 @@
 # VideoPlayer
 
-一个面向 Windows 的本地媒体库管理器与播放器。
+一个面向 Windows 的本地媒体库管理器与播放器，统一管理视频、音频、小说和漫画。
 
-VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中到一个本地库中，提供目录浏览、缩略图、搜索、收藏、分类整理和播放能力。数据保存在本机 SQLite 中，不需要账号，也不会把媒体文件上传到云端。
+VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中到一个本地库中，提供目录浏览、缩略图、搜索、收藏、分类整理、播放和阅读能力。数据保存在本机 SQLite 中，不需要账号，也不会把媒体文件上传到云端。
 
-![VideoPlayer 空数据预览](preview-empty.png)
+## 界面预览
+
+下面的截图使用应用内置的虚构示例数据，统一采用日间主题，不包含任何真实媒体路径、文件名或缩略图。
+
+| 工作台 | 视频媒体库（网格） |
+| --- | --- |
+| ![工作台](screenshots/overview-day.png) | ![视频网格](screenshots/library-video-day.png) |
+
+| 视频媒体库（列表） | 音频媒体库 |
+| --- | --- |
+| ![视频列表](screenshots/library-list-day.png) | ![音频媒体库](screenshots/library-audio-day.png) |
+
+| 小说媒体库 | 漫画媒体库 |
+| --- | --- |
+| ![小说媒体库](screenshots/library-books-day.png) | ![漫画媒体库](screenshots/library-comics-day.png) |
+
+| 收藏 | 健康中心 |
+| --- | --- |
+| ![收藏](screenshots/favorites-day.png) | ![健康中心](screenshots/health-day.png) |
+
+| 待处理 | 整理预览 |
+| --- | --- |
+| ![待处理](screenshots/pending-day.png) | ![整理预览](screenshots/organize-preview-day.png) |
+
+| 设置中心 | 外观设置 |
+| --- | --- |
+| ![设置中心](screenshots/settings-day.png) | ![外观设置](screenshots/settings-appearance-day.png) |
+
+| 文本阅读器 | 漫画阅读器 |
+| --- | --- |
+| ![文本阅读器](screenshots/text-reader-day.png) | ![漫画阅读器](screenshots/comic-reader-day.png) |
 
 ## 为什么做 VideoPlayer
 

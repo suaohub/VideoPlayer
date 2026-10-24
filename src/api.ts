@@ -111,7 +111,12 @@ export const api = {
     return window.electronAPI.getTags(mediaType);
   },
   async getOrganizeCategories(): Promise<import('./types').OrganizeCategory[]> {
-    if (USE_MOCK) return [];
+    if (USE_MOCK) {
+      return [
+        { id: 1, name: '待看电影', sort_order: 0, enabled: 1, count: dataset.videos.filter((video) => video.organize_category_id === 1).length },
+        { id: 2, name: '纪录与教程', sort_order: 1, enabled: 1, count: dataset.videos.filter((video) => video.organize_category_id === 2).length },
+      ];
+    }
     return window.electronAPI.getOrganizeCategories();
   },
   async createOrganizeCategory(name: string) {
@@ -280,10 +285,25 @@ export const api = {
     return window.electronAPI.onWallpaperCaptured?.(callback) ?? undefined;
   },
   async readTextFile(path: string): Promise<{ success: boolean; content?: string; encoding?: string; error?: string }> {
+    if (USE_MOCK) {
+      return {
+        success: true,
+        encoding: 'utf-8',
+        content: `远行手记\n\n这是用于界面预览的示例文本，不对应任何真实文件。\n\n第一章 走出城市\n清晨的光线穿过窗帘，地图上的路线终于有了起点。我们把相机、笔记本和一杯热咖啡装进行囊，沿着海岸线向北出发。\n\n第二章 风从海上来\n每一次停留都值得被记录：潮汐、树影、路边的小店，还有同行者分享的故事。\n\n第三章 回到书桌前\n旅行结束后，照片和文字会在这里重新组成一段可以随时回看的记忆。`,
+      };
+    }
     if (window.electronAPI?.readTextFile) return window.electronAPI.readTextFile(path);
     return { success: false, error: 'no electronAPI' };
   },
   async listComicPages(comicDir: string): Promise<{ success: boolean; pages: string[]; error?: string }> {
+    if (USE_MOCK) {
+      const colors = ['#f6c9c9', '#c8d8ff', '#c8efd9', '#ffe0a8'];
+      const pages = colors.map((color, index) => {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200"><rect width="900" height="1200" fill="${color}"/><rect x="64" y="64" width="772" height="1072" rx="28" fill="white" fill-opacity=".82"/><text x="110" y="180" font-size="44" font-family="Microsoft YaHei, sans-serif" fill="#1e293b">城市日记</text><text x="110" y="260" font-size="28" font-family="Microsoft YaHei, sans-serif" fill="#475569">示例漫画 · 第 ${index + 1} 页</text><circle cx="450" cy="560" r="170" fill="#2563eb" fill-opacity=".12"/><path d="M320 700 C390 570 510 570 580 700" fill="none" stroke="#2563eb" stroke-width="18" stroke-linecap="round"/><text x="110" y="1010" font-size="26" font-family="Microsoft YaHei, sans-serif" fill="#64748b">用于展示阅读器布局的虚构页面</text></svg>`;
+        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      });
+      return { success: true, pages };
+    }
     if (window.electronAPI?.listComicPages) return window.electronAPI.listComicPages(comicDir);
     return { success: false, pages: [], error: 'no electronAPI' };
   },
@@ -299,9 +319,7 @@ export const api = {
     if (window.electronAPI?.onFullscreenChanged) return window.electronAPI.onFullscreenChanged(cb);
   },
   async playVideo(path: string, options?: { alertOnError?: boolean }): Promise<{ success: boolean; error?: string }> {
-    if (USE_MOCK && path.startsWith('/Movies/mock/')) {
-      return { success: false, error: 'mock placeholder' };
-    }
+    if (USE_MOCK) return { success: true };
     // 真实视频即便在 mock 模式也走 IPC 真播放
     if (window.electronAPI?.playVideo) {
       const result = await window.electronAPI.playVideo(path);
@@ -506,7 +524,7 @@ export const api = {
     return window.electronAPI.toggleMarkedForDeletion(videoId);
   },
   async getMarkedForDeletionCount(): Promise<number> {
-    if (USE_MOCK) return 0;
+    if (USE_MOCK) return dataset.videos.filter((video) => video.marked_for_deletion === 1).length;
     return window.electronAPI.getMarkedForDeletionCount();
   },
   async batchUnmarkForDeletion(videoIds: number[]): Promise<{ success: boolean; error?: string }> {
