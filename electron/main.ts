@@ -4,7 +4,7 @@ import { readFile as readFileAsync, rm as rmAsync, unlink as unlinkAsync } from 
 import { isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { initDatabase, getDb } from './db';
 import {
-  initMpv, playVideo, stopMpv, togglePause, seek, seekRelative, setVolume, setSpeed,
+  initMpv, playVideo, stopMpv, togglePause, seek, seekRelative, setVolume, setSpeed, setMute, captureCurrentMpvFrame,
   syncMpvWindowBounds, hideMpvWindow, writeWallpaperJpeg, rotateVideo, toggleVideoMirror,
 } from './mpv';
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
@@ -12,9 +12,7 @@ import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, prob
 import { setThumbnailListeners, setThumbnailGenerationPaused, setThumbnailGenerationBoost } from './thumbnailQueue';
 import { getMediaLibraryHealth } from './health';
 import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, setFolderLocked, isFolderLocked, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, reorderOrganizeCategories, setOrganizeCategoryEnabled, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
-import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
-import { createReadStream } from 'fs';
-import { Readable } from 'stream';
+import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl } from './media';
 
 // Keep the historical data directory so the MediaNest rename preserves existing libraries.
 app.setPath('userData', join(app.getPath('appData'), 'videoplayer'));
@@ -31,15 +29,6 @@ const IMAGE_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif',
 };
-
-// 注册 media:// 为特权 scheme：支持 fetch/流式/Range，供「刷视频」应用内 <video> 播放并可 seek。
-// 必须在 app ready 之前、模块顶层调用。
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'media',
-    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true },
-  },
-]);
 
 // CJS 模式下 __dirname 原生可用
 declare const __dirname: string;
@@ -131,59 +120,6 @@ app.whenReady().then(() => {
     });
   });
 
-  // 视频流：media://stream/<videoId> → 按 Range 分块返回本地视频文件，支持 seek
-  protocol.handle('media', (request) => {
-    const m = /^media:\/\/stream\/(\d+)/.exec(request.url);
-    if (!m) return new Response(null, { status: 400 });
-    const id = Number(m[1]);
-    let filePath: string | undefined;
-    try {
-      const row = getDb().prepare('SELECT path FROM videos WHERE id = ?').get(id) as { path?: string } | undefined;
-      filePath = row?.path;
-    } catch {
-      return new Response(null, { status: 500 });
-    }
-    if (!filePath || !existsSync(filePath)) return new Response(null, { status: 404 });
-
-    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-    const mime = VIDEO_MIME[ext] ?? 'application/octet-stream';
-    const total = statSync(filePath).size;
-    const range = request.headers.get('Range') || request.headers.get('range');
-
-    if (range) {
-      const rm = /bytes=(\d*)-(\d*)/.exec(range);
-      let start = rm && rm[1] ? parseInt(rm[1], 10) : 0;
-      let end = rm && rm[2] ? parseInt(rm[2], 10) : total - 1;
-      if (isNaN(start) || start < 0) start = 0;
-      if (isNaN(end) || end >= total) end = total - 1;
-      if (start > end || start >= total) {
-        return new Response(null, {
-          status: 416,
-          headers: { 'Content-Range': `bytes */${total}`, 'Accept-Ranges': 'bytes' },
-        });
-      }
-      const stream = createReadStream(filePath, { start, end });
-      return new Response(Readable.toWeb(stream) as ReadableStream, {
-        status: 206,
-        headers: {
-          'Content-Type': mime,
-          'Content-Length': String(end - start + 1),
-          'Content-Range': `bytes ${start}-${end}/${total}`,
-          'Accept-Ranges': 'bytes',
-        },
-      });
-    }
-
-    const stream = createReadStream(filePath);
-    return new Response(Readable.toWeb(stream) as ReadableStream, {
-      status: 200,
-      headers: {
-        'Content-Type': mime,
-        'Content-Length': String(total),
-        'Accept-Ranges': 'bytes',
-      },
-    });
-  });
   initDatabase(); // Windows-only：启动时直接初始化 SQLite 数据库。
   nativeTheme.themeSource = getSetting('theme') === 'day' ? 'light' : 'dark';
 
@@ -218,8 +154,8 @@ app.on('before-quit', (event) => {
 
 // ---------- mpv 播放控制 IPC handlers（实现见 ./mpv.ts） ----------
 
-ipcMain.handle('play-video', async (event, videoPath: string) => {
-  return playVideo(videoPath);
+ipcMain.handle('play-video', async (event, videoPath: string, options?: { layout?: 'standard' | 'shorts' }) => {
+  return playVideo(videoPath, options);
 });
 
 ipcMain.handle('open-video-directory', async (event, videoPath: string) => {
@@ -411,6 +347,13 @@ ipcMain.handle('save-wallpaper-frame', async (event, dataUrl: string) => {
     return { success: false, error: String(error) };
   }
 });
+
+ipcMain.handle('set-mute', async (event, muted: boolean) => {
+  setMute(Boolean(muted));
+  return { success: true };
+});
+
+ipcMain.handle('capture-mpv-frame', async () => captureCurrentMpvFrame());
 
 // 读取文本文件内容，自动识别编码（UTF-8 / GB18030）。
 // 中文小说 txt 大多是 GBK/GB18030 编码，UTF-8 严格解码会失败，此时回退。

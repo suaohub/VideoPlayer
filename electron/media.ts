@@ -5,21 +5,6 @@ export const VIDEO_EXTS = new Set([
   '.ts', '.webm', '.m4v', '.mpg', '.mpeg', '.rmvb', '.3gp',
 ]);
 
-// 浏览器 <video> 能直接解码的容器（保守取值），用于「刷视频」应用内播放
-export const PLAYABLE_VIDEO_EXTS = new Set([
-  '.mp4', '.m4v', '.webm', '.mov', '.ogv',
-]);
-
-// 视频扩展名 → <video> 用的 MIME 类型
-export const VIDEO_MIME: Record<string, string> = {
-  '.mp4': 'video/mp4', '.m4v': 'video/x-m4v', '.webm': 'video/webm',
-  '.mov': 'video/quicktime', '.ogv': 'video/ogg',
-};
-
-export function isPlayableInBrowser(filePath: string): boolean {
-  return PLAYABLE_VIDEO_EXTS.has(path.extname(filePath).toLowerCase());
-}
-
 export const AUDIO_EXTS = new Set([
   '.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wma',
 ]);

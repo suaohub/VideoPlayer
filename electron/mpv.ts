@@ -14,9 +14,9 @@ declare const __dirname: string;
 const DEFAULT_WINDOWS_MPV = 'C:\\Program Files\\MPV Player\\mpv.exe';
 const PLAYER_TOPBAR_HEIGHT = 48;
 // 底部 React 控制栏高度：mpv 原生窗口需为它让出这块区域，避免遮挡（airspace）
-const PLAYER_BOTTOMBAR_HEIGHT = 64;
+const PLAYER_BOTTOMBAR_HEIGHT = 92;
+const SHORTS_BOTTOMBAR_HEIGHT = 124;
 // mpv 视频区 = 顶栏之下、底部控制栏之上的中间区域
-const RESERVED_VERTICAL = PLAYER_TOPBAR_HEIGHT + PLAYER_BOTTOMBAR_HEIGHT;
 const MPV_DEBUG_LOG = join(app.getPath('temp'), 'mpv-place-debug.log');
 // 唯一 ASCII 标题：用于按标题定位 mpv 窗口（避免编码/PID 问题）
 const MPV_WINDOW_TITLE = 'MediaNestMpvEmbedWindow';
@@ -41,6 +41,7 @@ let mpvPlacementTimer: NodeJS.Timeout | null = null;
 let mpvScreenshotBusy = false;
 let playbackOperation: Promise<unknown> = Promise.resolve();
 let currentMpvWindowTitle = MPV_WINDOW_TITLE;
+let currentPlayerLayout: 'standard' | 'shorts' = 'standard';
 
 // 当前 mpv 播放项的断点缓存。time-pos 事件频率较高，写库按时间节流，
 // 在切换/退出时再强制落盘，避免频繁同步 SQLite 影响播放流畅度。
@@ -100,7 +101,10 @@ function issuePlaybackRestore(expectedProcess: ChildProcess) {
   currentPlaybackPosition = target;
   playbackRestoreIssued = true;
   writeRuntimeLog(`[mpv-resume-seek] target=${target.toFixed(2)} duration=${currentPlaybackDuration ?? 'unknown'}`);
-  playbackRestoreRequestId = sendCommand(['seek', target, 'absolute+exact']);
+  // 恢复断点优先保证首帧速度。absolute+exact 会在长 GOP/高码率视频上
+  // 从上一个关键帧精确重解码到目标位置，期间窗口看起来像黑屏；关键帧定位
+  // 会先快速显示画面，误差通常只在一个 GOP 内。
+  playbackRestoreRequestId = sendCommand(['seek', target, 'absolute+keyframes']);
 
   clearPlaybackRestoreTimer();
   playbackRestoreTimer = setTimeout(() => {
@@ -194,13 +198,14 @@ function getMpvBounds() {
   const mainWindow = getWin()!;
   const bounds = mainWindow.getContentBounds();
   const fullscreen = mainWindow.isFullScreen();
-  // 嵌入模式：SetParent 后 mpv 是主窗口的子窗口，坐标相对父窗口客户区，
-  // 所以 x 从 0 开始、y 让出顶栏高度；原生全屏时顶栏已隐藏，播放器从 y=0 开始。
+  // 嵌入模式：mpv 通过 --wid 直接创建在主窗口下；坐标相对父窗口客户区，
+  // 所以 x 从 0 开始、y 让出顶栏高度；应用全屏时播放器从 y=0 开始。
+  const bottomBarHeight = currentPlayerLayout === 'shorts' ? SHORTS_BOTTOMBAR_HEIGHT : PLAYER_BOTTOMBAR_HEIGHT;
   return {
     x: 0,
     y: fullscreen ? 0 : PLAYER_TOPBAR_HEIGHT,
     width: Math.max(1, bounds.width),
-    height: Math.max(1, bounds.height - (fullscreen ? PLAYER_BOTTOMBAR_HEIGHT : RESERVED_VERTICAL)),
+    height: Math.max(1, bounds.height - (fullscreen ? bottomBarHeight : PLAYER_TOPBAR_HEIGHT + bottomBarHeight)),
   };
 }
 
@@ -218,7 +223,7 @@ function getMainWindowHandle() {
 
 export function syncMpvWindowBounds() {
   const mainWindow = getWin();
-  if (!mpvProcess || !mainWindow || mainWindow.isMinimized()) return;
+  if (currentPlayerLayout !== 'shorts' || !mpvProcess || !mainWindow || mainWindow.isMinimized()) return;
   scheduleMpvWindowPlacement();
 }
 
@@ -286,7 +291,11 @@ public static class WinApi {
 Add-Type -TypeDefinition $signature -ErrorAction SilentlyContinue
 $log = "${MPV_DEBUG_LOG}"
 $parentHandle = [IntPtr]::new(${getMainWindowHandle()})
-$handle = [WinApi]::FindWindowByTitle('${currentMpvWindowTitle}', $parentHandle)
+$handle = [IntPtr]::Zero
+for ($attempt = 0; $attempt -lt 50 -and $handle -eq [IntPtr]::Zero; $attempt++) {
+  $handle = [WinApi]::FindWindowByTitle('${currentMpvWindowTitle}', $parentHandle)
+  if ($handle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100 }
+}
 Add-Content -Path $log -Value ("[place show=${show}] mpvPid=${mpvProcess.pid} found=" + $handle + " parent=" + $parentHandle)
 if ($handle -ne [IntPtr]::Zero) {
   if (${show ? '$true' : '$false'}) {
@@ -325,6 +334,7 @@ if ($handle -ne [IntPtr]::Zero) {
 }
 
 export function hideMpvWindow() {
+  if (currentPlayerLayout !== 'shorts') return;
   placeMpvWindow(false);
 }
 function enqueuePlaybackOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -333,11 +343,11 @@ function enqueuePlaybackOperation<T>(operation: () => Promise<T>): Promise<T> {
   return run;
 }
 
-export function playVideo(videoPath: string): Promise<{ success: boolean; error?: string }> {
-  return enqueuePlaybackOperation(() => playVideoInternal(videoPath));
+export function playVideo(videoPath: string, options?: { layout?: 'standard' | 'shorts' }): Promise<{ success: boolean; error?: string }> {
+  return enqueuePlaybackOperation(() => playVideoInternal(videoPath, options?.layout ?? 'standard'));
 }
 
-async function playVideoInternal(videoPath: string): Promise<{ success: boolean; error?: string }> {
+async function playVideoInternal(videoPath: string, layout: 'standard' | 'shorts'): Promise<{ success: boolean; error?: string }> {
   if (!getWin()) return { success: false, error: 'no window' };
   const startedAt = Date.now();
   writeRuntimeLog(`[play-request] ${videoPath}`);
@@ -353,6 +363,7 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
   try {
     // 先快速结束旧进程，避免旧 mpv 的退出事件干扰新进程。
     await stopMpvInternal();
+    currentPlayerLayout = layout;
     // 停止旧进程时会把最新位置强制落盘，因此必须在 stop 之后再读取断点。
     let previousProgress: ReturnType<typeof getPlaybackProgress> = null;
     try {
@@ -371,20 +382,30 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
     socketPath = `\\\\.\\pipe\\mpv-${process.pid}-${Date.now()}`;
     currentMpvWindowTitle = `${MPV_WINDOW_TITLE}-${Date.now()}`;
 
+    const embedded = layout === 'shorts';
     const args = [
       '--no-terminal',
       '--keep-open=yes',
       '--no-config',
-      '--osd-level=1',
+      // 普通播放保留 mpv 原生 OSC 和默认键盘操作；刷视频页由应用控件接管。
+      `--osd-level=${embedded ? '0' : '1'}`,
+      ...(embedded ? ['--no-osc', '--input-default-bindings=no'] : []),
       `--input-ipc-server=${socketPath}`,
       `--title=${currentMpvWindowTitle}`,
+      ...(embedded && !audioOnly ? [`--wid=${getMainWindowHandle()}`] : []),
       '--border=no',
       '--show-in-taskbar=no',
       '--taskbar-progress=no',
-      '--hwdec=no',
+      // 普通播放沿用此前稳定的 mpv 解码配置；刷视频页允许安全硬解。
+      embedded ? '--hwdec=auto-safe' : '--hwdec=no',
+      ...(layout === 'shorts' ? ['--loop-file=inf'] : []),
       ...(audioOnly
         ? ['--no-video', '--force-window=no']
-        : ['--force-window=immediate', '--fullscreen', '--vf=@mirror:lavfi=[hflip]']),
+        : [
+            '--force-window=immediate',
+            ...(!embedded ? ['--fullscreen'] : []),
+            '--vf=@mirror:lavfi=[hflip]',
+          ]),
       videoPath,
     ];
 
@@ -393,6 +414,11 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
       windowsHide: false,
     });
     mpvProcess = currentProcess;
+    currentProcess.once('spawn', () => {
+      if (mpvProcess === currentProcess) getWin()?.webContents.send('mpv-started');
+    });
+    // 仅刷视频页将 mpv 嵌入应用舞台；普通播放保持独立原生窗口。
+    if (embedded && !audioOnly) scheduleMpvWindowPlacement(0);
     const previousDuration = previousProgress?.duration ?? null;
     const previousPosition = previousProgress?.position ?? 0;
     const canResume = previousProgress && !previousProgress.completed && previousPosition > 5
@@ -541,9 +567,17 @@ function waitAndConnectSocket(
         // 绑定回车键 = 退出 mpv（回到列表）
         sendCommand(['keybind', 'ENTER', 'quit']);
         sendCommand(['keybind', 'KP_ENTER', 'quit']); // 小键盘回车
+        sendCommand(['keybind', 'ESC', 'quit']);
+        sendCommand(['keybind', 'SPACE', 'cycle', 'pause']);
         // 左右方向键使用相对跳转 + 关键帧模式，避免长 GOP 视频精确追帧卡顿。
-        sendCommand(['keybind', 'LEFT', 'seek', '-5', 'relative+keyframes']);
-        sendCommand(['keybind', 'RIGHT', 'seek', '5', 'relative+keyframes']);
+        // keybind 的 seek 模式使用最兼容的 relative；React 控件仍通过 IPC 使用
+        // relative+keyframes，避免不同 mpv 发行版对 keybind 参数解析不一致。
+        sendCommand(['keybind', 'LEFT', 'seek', '-5', 'relative']);
+        sendCommand(['keybind', 'RIGHT', 'seek', '5', 'relative']);
+        sendCommand(['keybind', 'UP', 'add', 'volume', '5']);
+        sendCommand(['keybind', 'DOWN', 'add', 'volume', '-5']);
+        sendCommand(['keybind', 'HOME', 'seek', '0', 'absolute']);
+        sendCommand(['keybind', 'END', 'seek', '100', 'absolute-percent']);
         void Promise.all([
           getSetting('playerVolume'),
           getSetting('playerSpeed'),
@@ -831,6 +865,15 @@ export function setSpeed(speed: number) {
   setProperty('speed', speed);
 }
 
+export function setMute(muted: boolean) {
+  setProperty('mute', muted ? 'yes' : 'no');
+}
+
+export function captureCurrentMpvFrame() {
+  void captureMpvFrameToWallpaper();
+  return { success: Boolean(mpvProcess && playbackIpcConnected) };
+}
+
 export function rotateVideo() {
   if (!mpvProcess || !playbackIpcConnected) return;
   videoRotation = (videoRotation + 90) % 360;
@@ -946,6 +989,7 @@ async function stopMpvInternal() {
     await terminateProcessTree(processToStop);
   }
   setThumbnailGenerationPaused(false);
+  currentPlayerLayout = 'standard';
 }
 
 export function stopMpv(): Promise<void> {

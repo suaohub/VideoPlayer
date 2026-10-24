@@ -46,7 +46,7 @@ Electron 主进程 (Node/CJS)
 
 **现在统一走 mpv**（内置 FFmpeg，格式全）：
 - `InternalPlayer.tsx` 挂载即调 `play-video`，mpv 原生窗口嵌入应用内容区
-- 布局为「顶栏（DOM 48px）+ mpv 视频区 + 底部控制栏（DOM 64px）」三段，mpv 窗口几何避开上下两条 DOM 栏，规避 airspace 遮挡
+- 布局为「顶栏（DOM 48px）+ mpv 视频区 + 底部控制栏（DOM 92px）」三段，mpv 窗口几何避开上下两条 DOM 栏，规避 airspace 遮挡
 - 底部控制栏是纯 React/CSS（吃主题变量），复用上面的 IPC 通道
 
 ### mpv 窗口嵌入（Windows）

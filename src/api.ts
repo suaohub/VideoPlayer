@@ -270,10 +270,6 @@ export const api = {
     if (USE_MOCK) return { success: false, missing: true, error: '浏览器预览不支持打开本地目录' };
     return window.electronAPI.openFolderDirectory(folderPath);
   },
-  // 应用内 <video> 用的流式 URL（可 seek），供「刷视频」模式使用
-  mediaStreamUrl(id: number): string {
-    return `media://stream/${id}`;
-  },
   // 保存一帧截图（dataURL）为壁纸文件，返回文件路径
   async saveWallpaperFrame(dataUrl: string): Promise<{ success: boolean; path?: string; error?: string }> {
     if (USE_MOCK) return { success: false, error: 'mock' };
@@ -318,11 +314,11 @@ export const api = {
   onFullscreenChanged(cb: (on: boolean) => void): (() => void) | void {
     if (window.electronAPI?.onFullscreenChanged) return window.electronAPI.onFullscreenChanged(cb);
   },
-  async playVideo(path: string, options?: { alertOnError?: boolean }): Promise<{ success: boolean; error?: string }> {
+  async playVideo(path: string, options?: { alertOnError?: boolean; layout?: 'standard' | 'shorts' }): Promise<{ success: boolean; error?: string }> {
     if (USE_MOCK) return { success: true };
     // 真实视频即便在 mock 模式也走 IPC 真播放
     if (window.electronAPI?.playVideo) {
-      const result = await window.electronAPI.playVideo(path);
+      const result = await window.electronAPI.playVideo(path, { layout: options?.layout });
       if (!result.success && options?.alertOnError !== false) {
         console.warn(`播放失败：${result.error ?? '未知错误'}`);
       }
@@ -353,6 +349,14 @@ export const api = {
   async setSpeed(speed: number): Promise<{ success: boolean }> {
     if (window.electronAPI?.setSpeed) return window.electronAPI.setSpeed(speed);
     return { success: true };
+  },
+  async setMute(muted: boolean): Promise<{ success: boolean }> {
+    if (window.electronAPI?.setMute) return window.electronAPI.setMute(muted);
+    return { success: true };
+  },
+  async captureMpvFrame(): Promise<{ success: boolean }> {
+    if (window.electronAPI?.captureMpvFrame) return window.electronAPI.captureMpvFrame();
+    return { success: false };
   },
 
   // 最近播放与断点（真实模式落 SQLite；mock 模式使用 localStorage 便于 UI 预览）
@@ -457,6 +461,9 @@ export const api = {
   },
   onSpeed(cb: (speed: number) => void) {
     return window.electronAPI?.onSpeed?.(cb);
+  },
+  onMpvStarted(cb: () => void) {
+    return window.electronAPI?.onMpvStarted?.(cb);
   },
   onStopped(cb: () => void) {
     return window.electronAPI?.onStopped?.(cb);

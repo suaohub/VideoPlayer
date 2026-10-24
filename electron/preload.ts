@@ -3,7 +3,7 @@ import type { VideoFilter } from '../src/types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ---------- 播放控制 ----------
-  playVideo: (videoPath: string) => ipcRenderer.invoke('play-video', videoPath),
+  playVideo: (videoPath: string, options?: { layout?: 'standard' | 'shorts' }) => ipcRenderer.invoke('play-video', videoPath, options),
   openVideoDirectory: (videoPath: string) => ipcRenderer.invoke('open-video-directory', videoPath),
   openFolderDirectory: (folderPath: string) => ipcRenderer.invoke('open-folder-directory', folderPath),
   stopVideo: () => ipcRenderer.invoke('stop-video'),
@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   seekRelative: (seconds: number) => ipcRenderer.invoke('seek-relative', seconds),
   setVolume: (volume: number) => ipcRenderer.invoke('set-volume', volume),
   setSpeed: (speed: number) => ipcRenderer.invoke('set-speed', speed),
+  setMute: (muted: boolean) => ipcRenderer.invoke('set-mute', muted),
+  captureMpvFrame: () => ipcRenderer.invoke('capture-mpv-frame'),
   getPlaybackProgress: (videoIdOrPath: number | string) => ipcRenderer.invoke('get-playback-progress', videoIdOrPath),
   savePlaybackProgress: (
     videoIdOrPath: number | string,
@@ -55,6 +57,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_: Electron.IpcRendererEvent, speed: number) => callback(speed);
     ipcRenderer.on('mpv-speed', listener);
     return () => ipcRenderer.removeListener('mpv-speed', listener);
+  },
+  onMpvStarted: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('mpv-started', listener);
+    return () => ipcRenderer.removeListener('mpv-started', listener);
   },
   onStopped: (callback: () => void) => {
     const listener = () => callback();

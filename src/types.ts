@@ -176,7 +176,7 @@ export interface MediaLibraryHealth {
 
 // Electron API 类型
 export interface ElectronAPI {
-  playVideo: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
+  playVideo: (videoPath: string, options?: { layout?: 'standard' | 'shorts' }) => Promise<{ success: boolean; error?: string }>;
   openVideoDirectory: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
   openFolderDirectory: (folderPath: string) => Promise<{ success: boolean; missing?: boolean; error?: string }>;
   stopVideo: () => Promise<{ success: boolean }>;
@@ -185,6 +185,8 @@ export interface ElectronAPI {
   seekRelative: (seconds: number) => Promise<{ success: boolean }>;
   setVolume: (volume: number) => Promise<{ success: boolean }>;
   setSpeed: (speed: number) => Promise<{ success: boolean }>;
+  setMute: (muted: boolean) => Promise<{ success: boolean }>;
+  captureMpvFrame: () => Promise<{ success: boolean }>;
   getPlaybackProgress: (videoIdOrPath: number | string) => Promise<PlaybackProgress | null>;
   savePlaybackProgress: (
     videoIdOrPath: number | string,
@@ -204,6 +206,7 @@ export interface ElectronAPI {
   onPaused: (cb: (paused: boolean) => void) => (() => void) | void;
   onVolume: (cb: (volume: number) => void) => (() => void) | void;
   onSpeed: (cb: (speed: number) => void) => (() => void) | void;
+  onMpvStarted: (cb: () => void) => (() => void) | void;
   onStopped: (cb: () => void) => (() => void) | void;
 
   selectImportSource: () => Promise<ImportSourceSelection>;

@@ -15,7 +15,7 @@ import { MarkedForDeletionManager } from './components/MarkedForDeletionManager'
 import { LibraryHealth } from './components/LibraryHealth';
 import { Overview } from './components/Overview';
 import { useAppFeedback } from './components/AppFeedback';
-import { isAudioFile, isTextFile, isComicExt, isPlayableInBrowser } from './media';
+import { isAudioFile, isTextFile, isComicExt } from './media';
 import { Activity, ArrowDown, ArrowDownUp, ArrowUp, ChevronDown, Clock3, Eye, FileVideo, FolderOpen, HardDrive, Heart, Home, Info, LayoutGrid, ListChecks, PanelLeftClose, Search, Trash2 } from 'lucide-react';
 
 // 卡片大小（列宽 px）范围，滑块与滚轮缩放共用
@@ -390,7 +390,7 @@ function App() {
     setOrganizeCategories(await api.getOrganizeCategories());
   }, []);
 
-  // 打开刷视频模式：按当前过滤取视频，再筛出浏览器可解码的格式
+  // 打开刷视频模式：mpv 支持媒体库中的全部视频编码
   const handleOpenFeed = useCallback(async () => {
     const filter: VideoFilter = {
       folderIds: selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
@@ -403,8 +403,7 @@ function App() {
       sortDir,
     };
     const list = await api.getVideos(filter);
-    const playable = list.filter((v) => isPlayableInBrowser(v.path));
-    setFeedVideos(playable);
+    setFeedVideos(list);
   }, [selectedFolderIds, search, showFavorited, showFavoritedInList, sortBy, sortDir]);
 
   const loadAllVideos = useCallback(async () => {
@@ -803,14 +802,6 @@ function App() {
     await api.setSetting('wallpaperPath', path);
   }, []);
 
-  // ShortsFeed 传来 dataURL 截帧 → 保存为文件并设为背景
-  const handleCaptureWallpaper = useCallback(async (dataUrl: string) => {
-    const result = await api.saveWallpaperFrame(dataUrl);
-    if (result.success && result.path) {
-      await applyWallpaper(result.path, dataUrl);
-    }
-  }, [applyWallpaper]);
-
   // mpv 全屏时按全局快捷键 B 截帧 → 主进程推送已存好的 path + dataURL
   useEffect(() => {
     const off = api.onWallpaperCaptured(({ path, dataUrl }) => {
@@ -924,7 +915,7 @@ function App() {
     });
   };
 
-  // 播放：文本走阅读器，音频走音乐播放页，视频走全屏 mpv
+  // 播放：文本走阅读器，音频走音乐播放页，视频走独立 mpv 全屏窗口。
   const handlePlay = async (video: Video) => {
     if (isComicExt(video.ext)) {
       setReadingComic(video);
@@ -1991,7 +1982,6 @@ function App() {
         <ShortsFeed
           videos={feedVideos}
           onClose={() => setFeedVideos(null)}
-          onCaptureWallpaper={handleCaptureWallpaper}
         />
       )}
 
