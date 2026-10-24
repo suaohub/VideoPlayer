@@ -529,7 +529,8 @@ export function getPlaybackProgressForVideo(videoId: number): PlaybackProgress |
 /** 获取最近播放记录，按最近更新时间倒序。 */
 export function getRecentPlayback(limit = 20): RecentPlayback[] {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 20;
-  const videoExts = extsForType('video');
+  const resumableExts = [...extsForType('video'), ...extsForType('audio'), ...extsForType('text'), ...extsForType('comic')];
+  const timedMediaExts = [...extsForType('video'), ...extsForType('audio')];
   const rows = getDb().prepare(`
     ${HIDDEN_FOLDERS_CTE}
     SELECT
@@ -558,13 +559,16 @@ export function getRecentPlayback(limit = 20): RecentPlayback[] {
     JOIN videos v ON v.path = p.path COLLATE NOCASE
     LEFT JOIN video_organize_categories voc ON voc.video_id = v.id
     WHERE p.completed = 0
-      AND p.position > 5
       AND ${VISIBLE_VIDEO_CONDITION}
       AND v.marked_for_deletion = 0
-      AND LOWER(v.ext) IN (${videoExts.map(() => '?').join(',')})
+      AND LOWER(v.ext) IN (${resumableExts.map(() => '?').join(',')})
+      AND (
+        (LOWER(v.ext) IN (${timedMediaExts.map(() => '?').join(',')}) AND p.position > 5)
+        OR (LOWER(v.ext) IN (${[...extsForType('text'), ...extsForType('comic')].map(() => '?').join(',')}) AND p.position > 0)
+      )
     ORDER BY p.last_played_at DESC
     LIMIT ?
-  `).all(...videoExts, safeLimit) as RecentPlayback[];
+  `).all(...resumableExts, ...timedMediaExts, ...extsForType('text'), ...extsForType('comic'), safeLimit) as RecentPlayback[];
   return rows.map((row) => ({
     ...row,
     thumbnail_path: row.thumbnail_path ? normalizeThumbnailUrl(row.thumbnail_path) : null,

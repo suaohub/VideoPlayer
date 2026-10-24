@@ -1,5 +1,41 @@
 /* ============ 主题系统 ============ */
 
+/* 手动切换主题时使用系统级快照过渡，避免整页颜色瞬间跳变。 */
+::view-transition-group(root),
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(.22, .61, .36, 1);
+}
+
+::view-transition-old(root) {
+  animation-name: theme-view-old;
+}
+
+::view-transition-new(root) {
+  animation-name: theme-view-new;
+}
+
+@keyframes theme-view-old {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes theme-view-new {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 旧版 Chromium 不支持 View Transition 时的轻量回退。 */
+html.theme-transitioning body {
+  animation: theme-fallback-wash 320ms cubic-bezier(.22, .61, .36, 1);
+}
+
+@keyframes theme-fallback-wash {
+  from { opacity: .86; }
+  to { opacity: 1; }
+}
+
 /* 全局进度控件：统一成细轨道、主题色填充和轻量圆形滑块。 */
 input.app-range {
   --range-progress: 0%;
@@ -177,123 +213,6 @@ body {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-}
-
-/* 启动开屏：只覆盖渲染层，初始化任务仍在后台并行执行。 */
-.app-splash {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: grid;
-  overflow: hidden;
-  place-items: center;
-  background: color-mix(in srgb, var(--bg-primary) 94%, #111827 6%);
-  opacity: 1;
-  transition: opacity 360ms ease, visibility 360ms ease;
-}
-
-.app-splash.is-exiting {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.app-splash-card {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 220px;
-  padding: 28px 34px 26px;
-  border: 1px solid color-mix(in srgb, var(--line-default) 74%, transparent);
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
-  box-shadow: 0 24px 70px color-mix(in srgb, #000 36%, transparent), var(--glass-highlight);
-  backdrop-filter: blur(24px) saturate(1.12);
-  -webkit-backdrop-filter: blur(24px) saturate(1.12);
-  animation: splash-card-in 620ms cubic-bezier(.2,.8,.2,1) both;
-}
-
-.app-splash-mark {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  place-items: center;
-  color: var(--accent-contrast);
-  background: var(--accent);
-  border-radius: 16px;
-  box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 38%, transparent);
-  animation: splash-mark-pulse 1800ms ease-in-out 620ms infinite;
-}
-
-.app-splash-title {
-  margin-top: 3px;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: .01em;
-}
-
-.app-splash-subtitle {
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
-.app-splash-progress {
-  width: 136px;
-  height: 3px;
-  margin-top: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-tertiary) 18%, transparent);
-}
-
-.app-splash-progress span {
-  display: block;
-  width: 42%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  animation: splash-progress 1250ms ease-in-out infinite;
-}
-
-.app-splash-orb {
-  position: absolute;
-  width: 38vw;
-  height: 38vw;
-  border-radius: 50%;
-  opacity: .18;
-  filter: blur(12px);
-  pointer-events: none;
-}
-
-.app-splash-orb-a {
-  top: -18vw;
-  left: -10vw;
-  background: var(--accent);
-}
-
-.app-splash-orb-b {
-  right: -14vw;
-  bottom: -22vw;
-  background: #8b5cf6;
-}
-
-@keyframes splash-card-in {
-  from { opacity: 0; transform: translateY(12px) scale(.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes splash-mark-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.045); }
-}
-
-@keyframes splash-progress {
-  0% { transform: translateX(-140%); }
-  55%, 100% { transform: translateX(330%); }
 }
 
 .window-controls {
@@ -1417,6 +1336,13 @@ textarea:focus-visible,
   box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
 .brand-mark svg {
   width: 13px;
   height: 13px;
@@ -1828,8 +1754,7 @@ textarea:focus-visible,
 }
 
 .sort-control,
-.more-control,
-.theme-picker {
+.more-control {
   position: relative;
 }
 
@@ -1923,18 +1848,6 @@ textarea:focus-visible,
   width: calc(100% - 18px);
   margin: 3px 9px 5px;
   accent-color: var(--accent);
-}
-
-.theme-menu {
-  position: absolute;
-  right: calc(100% + 6px);
-  bottom: -6px;
-  min-width: 150px;
-  padding: 6px;
-  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
-  border: 1px solid var(--line-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
 }
 
 .status-strip {

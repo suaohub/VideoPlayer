@@ -54,6 +54,7 @@ function sendOperationProgress(kind: 'delete' | 'organize', current: number, tot
 }
 
 function createWindow() {
+  const bootTheme = getSetting('theme') === 'day' ? 'day' : 'night';
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -72,10 +73,10 @@ function createWindow() {
   mainWindow.center();
 
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://127.0.0.1:5173');
+    mainWindow.loadURL(`http://127.0.0.1:5173/?theme=${bootTheme}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { theme: bootTheme } });
   }
 
   mainWindow.on('closed', () => {
@@ -184,7 +185,7 @@ app.whenReady().then(() => {
     });
   });
   initDatabase(); // Windows-only：启动时直接初始化 SQLite 数据库。
-  nativeTheme.themeSource = getSetting('theme') === 'night' ? 'dark' : 'light';
+  nativeTheme.themeSource = getSetting('theme') === 'day' ? 'light' : 'dark';
 
   // 注册缩略图队列事件 → 转发给渲染进程（生成一张就地替换一张卡 + 进度）
   setThumbnailListeners(

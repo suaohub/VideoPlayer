@@ -46,6 +46,14 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
+function mediaKind(item: Pick<RecentPlayback, 'ext'>): string {
+  const ext = (item.ext ?? '').toLowerCase();
+  if (ext === '.comic') return '漫画';
+  if (ext === '.txt') return '小说';
+  if (['.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wma'].includes(ext)) return '音频';
+  return '视频';
+}
+
 function toVideo(item: RecentPlayback): Video | null {
   if (item.id == null || !item.name) return null;
   return {
@@ -112,6 +120,7 @@ function MediaCard({
     <button className="overview-media-card" onClick={() => onPlay(video)} title={`播放 ${video.name}`}>
       <div className="overview-media-art">
         <Thumbnail video={video} compact />
+        {progress != null && <span className="overview-media-kind">{mediaKind(video)}</span>}
         <span className="overview-card-play"><Play size={15} fill="currentColor" /></span>
         {progress != null && progressValue > 0 && (
           <span className="overview-progress-track"><span style={{ width: `${progressValue * 100}%` }} /></span>
@@ -171,8 +180,8 @@ export function Overview({
       <div className="overview-hero">
         <div className="overview-hero-copy">
           <span className="overview-eyebrow">YOUR MEDIA SPACE</span>
-          <h1>{hero ? '继续你的观看旅程' : '把想看的内容，放在手边'}</h1>
-          <p>{hero ? '从上次离开的地方继续播放，保持专注，不必重新寻找。' : '一个专注、沉浸、快速的本地视频库。导入媒体后，这里会成为你的播放起点。'}</p>
+          <h1>{hero ? '继续你的媒体旅程' : '把想看的内容，放在手边'}</h1>
+          <p>{hero ? '从上次离开的地方继续，不必重新寻找。' : '一个专注、沉浸、快速的本地媒体库。导入媒体后，这里会成为你的播放起点。'}</p>
           <div className="overview-hero-actions">
             {hero ? (
               <button className="overview-primary-action" onClick={() => onPlay(hero.video)}><Play size={16} fill="currentColor" />继续观看</button>
@@ -187,7 +196,7 @@ export function Overview({
             <Thumbnail video={hero.video} />
             <div className="overview-hero-feature-overlay" />
             <div className="overview-hero-feature-copy">
-              <span className="overview-hero-feature-label">继续观看</span>
+              <span className="overview-hero-feature-label">继续{mediaKind(hero.item)} · {Math.round(Math.min(1, (hero.item.position || 0) / (hero.item.duration || hero.video.duration || 1)) * 100)}%</span>
               <strong>{hero.video.name}</strong>
               <span>{Math.round(Math.min(1, (hero.item.position || 0) / (hero.item.duration || hero.video.duration || 1)) * 100)}% · {formatRelativeTime(hero.item.last_played_at)}</span>
             </div>
@@ -208,11 +217,11 @@ export function Overview({
 
       {validContinue.length > 0 && (
         <section className="overview-section">
-          <SectionHeading icon={<Clock3 size={16} />} title="继续观看" />
+          <SectionHeading icon={<Clock3 size={16} />} title="继续播放" />
           <div className="overview-card-row">
             {validContinue.map(({ item, video }) => {
               const progress = item.duration && item.duration > 0 ? item.position / item.duration : 0;
-              return <MediaCard key={`${item.path}-${item.last_played_at}`} video={video} progress={progress} meta={`${Math.round(Math.min(1, progress) * 100)}% · ${formatRelativeTime(item.last_played_at)}`} onPlay={onPlay} />;
+              return <MediaCard key={`${item.path}-${item.last_played_at}`} video={video} progress={progress} meta={`${mediaKind(item)} · ${Math.round(Math.min(1, progress) * 100)}% · ${formatRelativeTime(item.last_played_at)}`} onPlay={onPlay} />;
             })}
           </div>
         </section>

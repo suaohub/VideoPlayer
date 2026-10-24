@@ -411,8 +411,8 @@ export const api = {
             ? dataset.videos.find((item) => item.id === numericId)
             : dataset.videos.find((item) => item.path === identifier);
           if (!video) continue;
-          if (progress.completed === 1 || progress.position <= 5 || video.marked_for_deletion === 1) continue;
-          if (isAudioFile(video.path) || isTextFile(video.path) || isComicExt(video.ext)) continue;
+          const isPagedMedia = isTextFile(video.path) || isComicExt(video.ext);
+          if (progress.completed === 1 || progress.position <= (isPagedMedia ? 0 : 5) || video.marked_for_deletion === 1) continue;
           rows.push({
             ...progress,
             duration: progress.duration ?? video.duration,

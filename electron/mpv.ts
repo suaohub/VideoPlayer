@@ -47,11 +47,14 @@ let currentMpvWindowTitle = MPV_WINDOW_TITLE;
 const PLAYBACK_PERSIST_INTERVAL_MS = 2000;
 let currentPlaybackPath: string | null = null;
 let currentPlaybackPosition = 0;
+let playbackLatestObservedPosition = 0;
 let currentPlaybackDuration: number | null = null;
 let lastPlaybackPersistAt = 0;
 let playbackIpcConnected = false;
 let playbackRestorePending = false;
 let playbackRestoreTarget: number | null = null;
+let playbackRestoreIssued = false;
+let playbackRestoreRequestId: number | null = null;
 let playbackRestoreTimer: NodeJS.Timeout | null = null;
 // 连续按左右键时不要把一长串 seek 同时写入 mpv。密集 seek 会让音频解码器
 // 反复重置，表现为画面已经恢复但声音要过几秒才回来；把这一小段输入合并
@@ -60,7 +63,7 @@ const RELATIVE_SEEK_DEBOUNCE_MS = 120;
 let pendingRelativeSeek = 0;
 let relativeSeekTimer: NodeJS.Timeout | null = null;
 
-const PLAYBACK_RESTORE_TIMEOUT_MS = 2000;
+const PLAYBACK_RESTORE_TIMEOUT_MS = 10000;
 
 function persistCurrentPlayback(force = false) {
   if (!currentPlaybackPath || !playbackIpcConnected || playbackRestorePending) return;
@@ -86,6 +89,33 @@ function clearPlaybackRestoreTimer() {
   }
 }
 
+function issuePlaybackRestore(expectedProcess: ChildProcess) {
+  if (!playbackRestorePending || playbackRestoreTarget == null || playbackRestoreIssued) return;
+  if (mpvProcess !== expectedProcess || !playbackIpcConnected) return;
+
+  const target = currentPlaybackDuration != null && currentPlaybackDuration > 0
+    ? Math.min(playbackRestoreTarget, Math.max(0, currentPlaybackDuration - 0.5))
+    : playbackRestoreTarget;
+  playbackRestoreTarget = target;
+  currentPlaybackPosition = target;
+  playbackRestoreIssued = true;
+  writeRuntimeLog(`[mpv-resume-seek] target=${target.toFixed(2)} duration=${currentPlaybackDuration ?? 'unknown'}`);
+  playbackRestoreRequestId = sendCommand(['seek', target, 'absolute+exact']);
+
+  clearPlaybackRestoreTimer();
+  playbackRestoreTimer = setTimeout(() => {
+    if (mpvProcess !== expectedProcess || !playbackIpcConnected || !playbackRestorePending) return;
+    currentPlaybackPosition = playbackLatestObservedPosition;
+    writeRuntimeLog(`[mpv-resume-timeout] target=${playbackRestoreTarget ?? 'none'} position=${currentPlaybackPosition}`);
+    playbackRestorePending = false;
+    playbackRestoreTarget = null;
+    playbackRestoreIssued = false;
+    playbackRestoreRequestId = null;
+    playbackRestoreTimer = null;
+    persistCurrentPlayback(true);
+  }, PLAYBACK_RESTORE_TIMEOUT_MS);
+}
+
 function clearRelativeSeek() {
   if (relativeSeekTimer) {
     clearTimeout(relativeSeekTimer);
@@ -99,11 +129,14 @@ function resetCurrentPlayback() {
   clearRelativeSeek();
   currentPlaybackPath = null;
   currentPlaybackPosition = 0;
+  playbackLatestObservedPosition = 0;
   currentPlaybackDuration = null;
   lastPlaybackPersistAt = 0;
   playbackIpcConnected = false;
   playbackRestorePending = false;
   playbackRestoreTarget = null;
+  playbackRestoreIssued = false;
+  playbackRestoreRequestId = null;
 }
 
 function waitForProcessExit(child: ChildProcess, timeoutMs = 1500): Promise<boolean> {
@@ -364,6 +397,7 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
     const previousPosition = previousProgress?.position ?? 0;
     const canResume = previousProgress && !previousProgress.completed && previousPosition > 5
       && (!previousDuration || previousPosition < previousDuration - 3);
+    writeRuntimeLog(`[mpv-resume-source] found=${Boolean(previousProgress)} position=${previousPosition} duration=${previousDuration ?? 'unknown'} completed=${previousProgress?.completed ?? 'none'} canResume=${Boolean(canResume)}`);
     currentPlaybackPath = videoPath;
     currentPlaybackPosition = canResume ? previousPosition : 0;
     currentPlaybackDuration = previousDuration;
@@ -371,6 +405,7 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
     playbackIpcConnected = false;
     playbackRestorePending = true;
     playbackRestoreTarget = null;
+    playbackRestoreIssued = false;
     clearPlaybackRestoreTimer();
 
     currentProcess.stderr?.on('data', (d) => {
@@ -533,26 +568,19 @@ function waitAndConnectSocket(
             currentPlaybackPosition = position;
             playbackRestoreTarget = position;
             playbackRestorePending = true;
-            sendCommand(['seek', position, 'absolute']);
-            // 某些文件的首个 time-pos 事件可能丢失。超时后保留目标位置，
-            // 让后续正常事件继续更新，而不是永久阻塞断点写入。
-            playbackRestoreTimer = setTimeout(() => {
-              if (mpvProcess !== expectedProcess || !playbackIpcConnected) return;
-              if (!playbackRestorePending) return;
-              playbackRestorePending = false;
-              playbackRestoreTarget = null;
-              playbackRestoreTimer = null;
-              persistCurrentPlayback(true);
-            }, PLAYBACK_RESTORE_TIMEOUT_MS);
+            // 等 file-loaded / duration 事件后再 seek；媒体尚未装载时直接 seek 会被 mpv 丢弃。
+            writeRuntimeLog(`[mpv-resume-pending] target=${position.toFixed(2)} duration=${duration ?? 'unknown'}`);
           } else {
             playbackRestoreTarget = null;
             playbackRestorePending = false;
+            playbackRestoreIssued = false;
             clearPlaybackRestoreTimer();
           }
         } catch (error) {
           console.warn('[mpv] failed to restore playback progress:', error);
           playbackRestorePending = false;
           playbackRestoreTarget = null;
+          playbackRestoreIssued = false;
           clearPlaybackRestoreTimer();
         }
         finish(true);
@@ -599,15 +627,18 @@ function setupIpcListeners(sock: net.Socket, expectedProcess: ChildProcess, expe
   sock.on('close', () => {
     console.log('[mpv] IPC closed');
     if (ipcSocket !== sock) return;
-    const isCurrentProcess = mpvProcess === expectedProcess
-      && socketPath === expectedSocketPath
-      && expectedProcess.exitCode === null;
-    if (isCurrentProcess) persistCurrentPlayback(true);
+    // Windows 上 mpv 退出时通常先关闭 IPC 管道，再触发 child_process exit；
+    // 此时 exitCode 可能已经有值，但最后一条 time-pos 仍应落盘。
+    const isCurrentProcess = mpvProcess === expectedProcess && socketPath === expectedSocketPath;
+    if (isCurrentProcess) {
+      writeRuntimeLog(`[mpv-ipc-close-persist] position=${currentPlaybackPosition} duration=${currentPlaybackDuration ?? 'unknown'}`);
+      persistCurrentPlayback(true);
+    }
     ipcSocket = null;
     playbackIpcConnected = false;
     // 进程退出或显式 stop 时由对应路径负责清理；这里只处理仍存活但
     // IPC 已断开的异常状态，避免界面继续显示一个无法控制的播放器。
-    if (!isCurrentProcess) return;
+    if (!isCurrentProcess || expectedProcess.exitCode !== null) return;
     if (mpvPlacementTimer) {
       clearTimeout(mpvPlacementTimer);
       mpvPlacementTimer = null;
@@ -626,8 +657,20 @@ function setupIpcListeners(sock: net.Socket, expectedProcess: ChildProcess, expe
 // 分发 mpv 的事件
 function handleMpvMessage(msg: any) {
   const mainWindow = getWin();
+  if (msg.request_id != null && msg.request_id === playbackRestoreRequestId) {
+    writeRuntimeLog(`[mpv-resume-ack] requestId=${msg.request_id} error=${msg.error ?? 'none'} data=${msg.data ?? ''}`);
+  }
   if (msg.error && msg.request_id != null && msg.error !== 'success') {
     console.warn('[mpv] command failed:', msg.request_id, msg.error, msg.data ?? '');
+    writeRuntimeLog(`[mpv-command-error] requestId=${msg.request_id} error=${msg.error} command=${JSON.stringify(msg.command ?? '')}`);
+  }
+  if (msg.event === 'file-loaded') {
+    const current = mpvProcess;
+    if (current) {
+      writeRuntimeLog('[mpv-file-loaded]');
+      issuePlaybackRestore(current);
+    }
+    return;
   }
   if (msg.event === 'end-file') {
     if (msg.reason === 'eof' && currentPlaybackPath) {
@@ -650,6 +693,7 @@ function handleMpvMessage(msg: any) {
         if (msg.data != null) {
           const position = Number(msg.data);
           if (Number.isFinite(position) && position >= 0) {
+            playbackLatestObservedPosition = position;
             if (playbackRestorePending && playbackRestoreTarget != null) {
               // MPV 通常会先回传一次初始 0，再回传 seek 后的位置。
               // 恢复完成前只更新 UI，不要让这条旧事件覆盖数据库断点。
@@ -660,8 +704,12 @@ function handleMpvMessage(msg: any) {
                 currentPlaybackPosition = position;
                 playbackRestorePending = false;
                 playbackRestoreTarget = null;
+                playbackRestoreIssued = false;
+                playbackRestoreRequestId = null;
                 clearPlaybackRestoreTimer();
                 persistCurrentPlayback(true);
+              } else if (!playbackRestoreIssued) {
+                currentPlaybackPosition = position;
               }
             } else {
               currentPlaybackPosition = position;
@@ -676,10 +724,7 @@ function handleMpvMessage(msg: any) {
           const duration = Number(msg.data);
           if (Number.isFinite(duration) && duration > 0) {
             currentPlaybackDuration = duration;
-            if (playbackRestorePending && playbackRestoreTarget != null && playbackRestoreTarget >= duration) {
-              playbackRestoreTarget = Math.max(0, duration - 0.5);
-              currentPlaybackPosition = playbackRestoreTarget;
-            }
+            issuePlaybackRestore(mpvProcess!);
             // 时长事件通常先于第一条 time-pos，确保最近播放记录也带有时长。
             persistCurrentPlayback();
           }
@@ -726,10 +771,12 @@ function handleMpvMessage(msg: any) {
 }
 
 // 发送命令给 mpv
-function sendCommand(command: any[]) {
-  if (!ipcSocket) return;
-  const msg = JSON.stringify({ command, request_id: ++requestId }) + '\n';
+function sendCommand(command: any[]): number | null {
+  if (!ipcSocket) return null;
+  const id = ++requestId;
+  const msg = JSON.stringify({ command, request_id: id }) + '\n';
   ipcSocket.write(msg);
+  return id;
 }
 
 // 订阅属性

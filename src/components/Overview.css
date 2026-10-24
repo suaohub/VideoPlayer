@@ -78,6 +78,7 @@
 .overview-thumb { display: block; width: 100%; object-fit: cover; }
 .overview-thumb-gradient, .overview-thumb-empty { display: grid; place-items: center; color: rgba(255,255,255,.8); }
 .overview-thumb-empty { color: var(--text-tertiary); background: var(--surface-2); }
+.overview-media-kind { position: absolute; top: 8px; left: 8px; padding: 3px 7px; color: rgba(255,255,255,.94); font-size: 9px; line-height: 1.2; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(12,16,24,.56); backdrop-filter: blur(8px); }
 .overview-card-play { position: absolute; right: 9px; bottom: 9px; width: 28px; height: 28px; opacity: 0; transform: translateY(4px); transition: opacity .18s ease, transform .18s ease; }
 .overview-media-card:hover .overview-card-play { opacity: 1; transform: translateY(0); }
 .overview-progress-track { position: absolute; right: 8px; bottom: 7px; left: 8px; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.26); }

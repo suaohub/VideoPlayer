@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Theme, ImportProgress, ThumbnailProgress, OperationProgress, MediaType, SortBy, SortDir, LibraryViewMode } from '../types';
+import brandMarkUrl from '../../assets/medianest-mark.svg';
 
 interface ToolbarProps {
   theme: Theme;
@@ -87,11 +88,6 @@ interface ToolbarProps {
   onToggleMaximize: () => void;
   onClose: () => void;
 }
-
-const THEMES: { value: Theme; label: string; Icon: typeof Sun }[] = [
-  { value: 'day', label: '日间', Icon: Sun },
-  { value: 'night', label: '夜间', Icon: Moon },
-];
 
 const MEDIA_TABS: { value: MediaType; label: string; Icon: typeof LayoutGrid }[] = [
   { value: 'all', label: '全部', Icon: LayoutGrid },
@@ -165,24 +161,21 @@ function Toolbar({
   onClose,
 }: ToolbarProps) {
   const [sortOpen, setSortOpen] = useState(false);
-  const [themeOpen, setThemeOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
-  const themeRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!sortOpen && !themeOpen && !moreOpen) return;
+    if (!sortOpen && !moreOpen) return;
     const close = (event: MouseEvent) => {
       const target = event.target as Node;
       if (sortRef.current && !sortRef.current.contains(target)) setSortOpen(false);
-      if (themeRef.current && !themeRef.current.contains(target)) setThemeOpen(false);
       if (moreRef.current && !moreRef.current.contains(target)) setMoreOpen(false);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
-  }, [sortOpen, themeOpen, moreOpen]);
+  }, [sortOpen, moreOpen]);
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -198,7 +191,6 @@ function Toolbar({
     return () => document.removeEventListener('keydown', focusSearch);
   }, []);
 
-  const currentTheme = THEMES.find((item) => item.value === theme) ?? THEMES[1];
   const sortOptions = SORT_OPTIONS.filter((item) => mediaType === 'video' || item.value !== 'duration').map((item) => (
     item.value === 'duration' && mediaType === 'video'
       ? { ...item, label: '视频时长' }
@@ -213,7 +205,7 @@ function Toolbar({
     >
       <div className="titlebar-row" style={{ WebkitAppRegion: 'drag' }}>
         <div className="brand-lockup" aria-label="MediaNest">
-          <div className="brand-mark"><PlayGlyph /></div>
+          <div className="brand-mark"><img src={brandMarkUrl} alt="" /></div>
           <div className="brand-copy">
             <span className="brand-name">MediaNest</span>
             <span className="brand-subtitle">Local media library</span>
@@ -272,6 +264,14 @@ function Toolbar({
                 ? <Loader2 {...ICON} className="spin" />
                 : <FolderPlus {...ICON} />}
             <span>{refreshing ? '刷新中' : importing ? '导入中' : '导入媒体'}</span>
+          </button>
+          <button
+            className="toolbar-icon-button"
+            onClick={() => onThemeChange(theme === 'night' ? 'day' : 'night')}
+            title={theme === 'night' ? '切换到日间主题' : '切换到夜间主题'}
+            aria-label={theme === 'night' ? '切换到日间主题' : '切换到夜间主题'}
+          >
+            {theme === 'night' ? <Sun {...ICON} /> : <Moon {...ICON} />}
           </button>
           <button className="toolbar-icon-button" onClick={onOpenSettings} title="设置">
             <Settings {...ICON} />
@@ -364,11 +364,6 @@ function Toolbar({
               <div className="toolbar-menu-separator" />
               <div className="toolbar-menu-label"><Grid2x2 {...ICON} /><span>卡片大小</span><span className="toolbar-menu-value">{cardSize}px</span></div>
               <input className="card-size-range app-range" type="range" min={120} max={420} value={cardSize} style={{ ['--range-progress' as string]: `${((cardSize - 120) / 300) * 100}%` }} onChange={(event) => onCardSizeChange(Number(event.target.value))} />
-              <div className="toolbar-menu-separator" />
-              <div className="theme-picker" ref={themeRef}>
-                <button className="toolbar-menu-item" onClick={() => setThemeOpen((open) => !open)}><currentTheme.Icon {...ICON} /><span>界面主题：{currentTheme.label}</span><ChevronDown size={14} /></button>
-                {themeOpen && <div className="theme-menu">{THEMES.map(({ value, label, Icon }) => <button key={value} className={`toolbar-menu-item${theme === value ? ' is-active' : ''}`} onClick={() => { onThemeChange(value); setThemeOpen(false); setMoreOpen(false); }}><Icon {...ICON} /><span>{label}</span></button>)}</div>}
-              </div>
             </div>
           )}
         </div>
@@ -396,10 +391,6 @@ function Toolbar({
 function ProgressStatus({ label, current, total, detail }: { label: string; current: number; total: number; detail?: string }) {
   const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
   return <div className="status-progress"><div className="status-progress-copy"><span>{label}</span><span>{current} / {total}{detail ? ` · ${detail}` : ''}</span></div><div className="status-progress-track"><div style={{ width: `${percent}%` }} /></div></div>;
-}
-
-function PlayGlyph() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.8v12.4a1.2 1.2 0 0 0 1.84 1.02l9.1-6.2a1.24 1.24 0 0 0 0-2.04l-9.1-6.2A1.2 1.2 0 0 0 8 5.8Z" fill="currentColor" /></svg>;
 }
 
 export { Toolbar };

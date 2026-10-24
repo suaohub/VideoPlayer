@@ -422,11 +422,24 @@ export function TextReader({ video, onClose, appTheme }: TextReaderProps) {
     return () => clearTimeout(t);
   }, [posOffset, loading, settingKey]);
 
+  // 阅读断点同时写入统一播放历史；稍作防抖，避免滚动时频繁落库。
+  useEffect(() => {
+    if (loading || posOffset <= 0 || content.length === 0) return;
+    const t = window.setTimeout(() => {
+      void api.savePlaybackProgress(video.id, posOffset, content.length);
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [posOffset, content.length, loading, video.id]);
+
   const closeReader = useCallback(async () => {
-    if (!loading) api.setSetting(settingKey, String(currentOffset()));
+    if (!loading) {
+      const offset = currentOffset();
+      api.setSetting(settingKey, String(offset));
+      if (offset > 0 && content.length > 0) await api.savePlaybackProgress(video.id, offset, content.length);
+    }
     if (await api.getFullscreen()) await api.setFullscreen(false);
     onClose();
-  }, [loading, settingKey, currentOffset, onClose]);
+  }, [loading, settingKey, currentOffset, content.length, video.id, onClose]);
 
   // 同步系统全屏状态
   useEffect(() => {

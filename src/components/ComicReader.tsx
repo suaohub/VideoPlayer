@@ -79,12 +79,14 @@ export function ComicReader({ video, onClose }: ComicReaderProps) {
   useEffect(() => {
     if (loading) return;
     api.setSetting(settingKey, String(page));
-  }, [page, loading, settingKey]);
+    if (page > 0 && pageCount > 1) void api.savePlaybackProgress(video.id, page, pageCount);
+  }, [page, pageCount, loading, settingKey, video.id]);
 
   const closeReader = useCallback(async () => {
+    if (!loading && page > 0 && pageCount > 1) await api.savePlaybackProgress(video.id, page, pageCount);
     await exitFsIfNeeded();
     onClose();
-  }, [exitFsIfNeeded, onClose]);
+  }, [exitFsIfNeeded, loading, page, pageCount, video.id, onClose]);
 
   const toggleFit = () => {
     setFit((f) => {

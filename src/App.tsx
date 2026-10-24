@@ -161,7 +161,21 @@ function App() {
   const [folderSortDir, setFolderSortDir] = useState<SortDir>('asc');
 
   // UI 状态
-  const [theme, setTheme] = useState<Theme>('night');
+  const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'day' ? 'day' : 'night');
+  const changeTheme = useCallback((nextTheme: Theme) => {
+    if (nextTheme === theme) return;
+    const apply = () => setTheme(nextTheme);
+    const viewTransition = (document as Document & {
+      startViewTransition?: (callback: () => void) => unknown;
+    }).startViewTransition;
+    if (viewTransition) {
+      viewTransition.call(document, apply);
+      return;
+    }
+    document.documentElement.classList.add('theme-transitioning');
+    apply();
+    window.setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 320);
+  }, [theme]);
   // 桌面端媒体库默认保留导航侧栏，用户仍可用顶栏按钮收起。
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(220);
@@ -511,7 +525,9 @@ function App() {
     const finishSplash = () => {
       if (splashFinished) return;
       splashFinished = true;
-      const remaining = Math.max(0, 720 - (performance.now() - splashStartedAt));
+      // 给品牌动画留出完整的入场和呼吸段；数据更慢时仍以数据准备完成为准。
+      const minimumSplashDuration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 720 : 1500;
+      const remaining = Math.max(0, minimumSplashDuration - (performance.now() - splashStartedAt));
       window.setTimeout(() => {
         // 等待 React 提交首屏数据后再显示根节点，避免闪过“无数据”状态。
         window.requestAnimationFrame(() => {
@@ -1610,7 +1626,7 @@ function App() {
         )}
         <Toolbar
           theme={theme}
-          onThemeChange={setTheme}
+          onThemeChange={changeTheme}
           onShuffle={shuffleVideos}
           onClearFilter={clearFilter}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -1999,7 +2015,7 @@ function App() {
           hiddenFolders={hiddenFolders}
           onRestoreHiddenFolder={handleRestoreHiddenFolder}
           theme={theme}
-          onThemeChange={setTheme}
+          onThemeChange={changeTheme}
           backgroundImagePath={wallpaperPath}
           backgroundOpacity={wallpaperOpacity}
           onSelectBackground={handleSelectBackground}
