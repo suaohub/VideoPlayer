@@ -16,10 +16,14 @@ import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME }
 import { createReadStream } from 'fs';
 import { Readable } from 'stream';
 
+// Keep the historical data directory so the MediaNest rename preserves existing libraries.
+app.setPath('userData', join(app.getPath('appData'), 'videoplayer'));
+
 // Development preview can run in restricted environments where the default
 // per-user Electron data directory is not writable.
-if (process.env.VIDEOPLAYER_USER_DATA) {
-  app.setPath('userData', process.env.VIDEOPLAYER_USER_DATA);
+const customUserDataPath = process.env.MEDIANEST_USER_DATA || process.env.VIDEOPLAYER_USER_DATA;
+if (customUserDataPath) {
+  app.setPath('userData', customUserDataPath);
 }
 
 // 图片扩展名 → MIME，用于 comic:// 协议响应头
@@ -54,7 +58,7 @@ function createWindow() {
     width: 1280,
     height: 720,
     frame: false,
-    title: 'VideoPlayer — Local Media Library',
+    title: 'MediaNest — Local Media Library',
     autoHideMenuBar: true,
     hasShadow: true,
     backgroundColor: '#f4f5f8',
@@ -644,7 +648,7 @@ function pathVolumeRoot(filePath: string): string {
   return parse(resolve(filePath)).root;
 }
 
-const DRIVE_ORGANIZE_FOLDER_NAME = 'VideoPlayer整理';
+const DRIVE_ORGANIZE_FOLDER_NAME = 'MediaNest整理';
 
 function isSamePath(firstPath: string, secondPath: string): boolean {
   const first = resolve(firstPath);

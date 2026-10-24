@@ -1,4 +1,4 @@
-# VideoPlayer v1.3.0 更新日志
+# MediaNest v1.3.0 更新日志
 
 ## 🎯 核心功能
 

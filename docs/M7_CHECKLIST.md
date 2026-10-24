@@ -128,7 +128,7 @@ console.log(`[perf] ${operation} took ${performance.now() - start}ms`);
 ### 6. 安装包优化 📦
 
 #### 当前构建
-- 文件：`VideoPlayer Setup 1.3.0.exe`
+- 文件：`MediaNest Setup 1.3.0.exe`
 - 大小：85MB
 - 格式：NSIS 安装包
 

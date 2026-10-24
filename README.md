@@ -1,8 +1,8 @@
-# VideoPlayer
+# MediaNest
 
 一个面向 Windows 的本地媒体库管理器与播放器，统一管理视频、音频、小说和漫画。
 
-VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中到一个本地库中，提供目录浏览、缩略图、搜索、收藏、分类整理、播放和阅读能力。数据保存在本机 SQLite 中，不需要账号，也不会把媒体文件上传到云端。
+MediaNest 把分散在硬盘、移动硬盘和多个目录里的媒体集中到一个本地库中，提供目录浏览、缩略图、搜索、收藏、分类整理、播放和阅读能力。数据保存在本机 SQLite 中，不需要账号，也不会把媒体文件上传到云端。
 
 ## 界面预览
 
@@ -36,9 +36,9 @@ VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中�
 | --- | --- |
 | ![文本阅读器](screenshots/text-reader-day.png) | ![漫画阅读器](screenshots/comic-reader-day.png) |
 
-## 为什么做 VideoPlayer
+## 为什么做 MediaNest
 
-当本地媒体数量变多之后，资源管理器适合“找文件”，但不适合持续浏览、筛选和管理媒体。VideoPlayer 试图把这些操作放在一个更适合媒体的界面里：
+当本地媒体数量变多之后，资源管理器适合“找文件”，但不适合持续浏览、筛选和管理媒体。MediaNest 试图把这些操作放在一个更适合媒体的界面里：
 
 - 导入一次，后续增量刷新
 - 通过目录树、搜索、收藏和媒体类型快速缩小范围
@@ -61,7 +61,7 @@ VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中�
 ### 播放与阅读
 
 - 视频使用 mpv 播放内核，支持播放、暂停、进度、音量和倍速控制
-- mpv 窗口嵌入 VideoPlayer，底部控制栏由 React 绘制
+- mpv 窗口嵌入 MediaNest，底部控制栏由 React 绘制
 - 记录播放进度，重新打开后可继续观看
 - 音频使用独立音乐播放界面
 - TXT 小说支持阅读进度、字号和行距调整
@@ -95,9 +95,9 @@ VideoPlayer 把分散在硬盘、移动硬盘和多个目录里的媒体集中�
 
 ## 安装
 
-从 [Releases](https://github.com/suaohub/VideoPlayer/releases) 下载 Windows x64 安装包，运行安装程序即可。安装程序默认创建桌面和开始菜单快捷方式，也允许选择安装目录。
+从 [Releases](https://github.com/suaohub/VideoPlayer/releases) 下载 MediaNest Windows x64 安装包，运行安装程序即可。安装程序默认创建桌面和开始菜单快捷方式，也允许选择安装目录。
 
-VideoPlayer 使用外部 mpv 和 FFmpeg：
+MediaNest 使用外部 mpv 和 FFmpeg：
 
 - **mpv**：负责视频和音频播放
 - **FFmpeg / ffprobe**：负责缩略图和媒体元数据
@@ -164,7 +164,7 @@ npm run dist
 ## 项目结构
 
 ```text
-VideoPlayer/
+MediaNest/
 ├── electron/              # Electron 主进程、SQLite、扫描、mpv 和 IPC
 ├── src/                   # React 界面和媒体库组件
 ├── assets/                # 应用图标
@@ -187,9 +187,9 @@ VideoPlayer/
 
 ## 项目状态
 
-VideoPlayer 目前处于持续打磨阶段。核心的导入、浏览、播放、分类整理和本地数据管理已经可用，界面和大媒体库性能仍在持续优化。
+MediaNest 目前处于持续打磨阶段。核心的导入、浏览、播放、分类整理和本地数据管理已经可用，界面和大媒体库性能仍在持续优化。
 
-欢迎提交 Issue、功能建议和改进代码。提交问题时，最好附上 Windows 版本、VideoPlayer 版本、复现步骤和相关日志。
+欢迎提交 Issue、功能建议和改进代码。提交问题时，最好附上 Windows 版本、MediaNest 版本、复现步骤和相关日志。
 
 ## 许可证
 

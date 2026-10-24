@@ -19,7 +19,7 @@ const PLAYER_BOTTOMBAR_HEIGHT = 64;
 const RESERVED_VERTICAL = PLAYER_TOPBAR_HEIGHT + PLAYER_BOTTOMBAR_HEIGHT;
 const MPV_DEBUG_LOG = join(app.getPath('temp'), 'mpv-place-debug.log');
 // 唯一 ASCII 标题：用于按标题定位 mpv 窗口（避免编码/PID 问题）
-const MPV_WINDOW_TITLE = 'VideoPlayerMpvEmbedWindow';
+const MPV_WINDOW_TITLE = 'MediaNestMpvEmbedWindow';
 // mpv 全屏时 app 收不到普通按键，故用系统级快捷键截帧设背景。
 // 播放器运行期间只在 mpv 场景注册 B；保留组合键作为备用入口。
 const WALLPAPER_ACCELS = ['B', 'CommandOrControl+Shift+B'] as const;

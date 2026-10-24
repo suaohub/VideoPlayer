@@ -212,10 +212,10 @@ function Toolbar({
       className={`app-topbar${isExpanded ? ' is-expanded' : ''}${isFullscreen ? ' is-fullscreen' : ''}`}
     >
       <div className="titlebar-row" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="brand-lockup" aria-label="VideoPlayer">
+        <div className="brand-lockup" aria-label="MediaNest">
           <div className="brand-mark"><PlayGlyph /></div>
           <div className="brand-copy">
-            <span className="brand-name">VideoPlayer</span>
+            <span className="brand-name">MediaNest</span>
             <span className="brand-subtitle">Local media library</span>
           </div>
         </div>

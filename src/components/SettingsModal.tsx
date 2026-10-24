@@ -54,11 +54,11 @@ const SETTINGS_TAB_LABELS: Record<SettingsSection, string> = {
 };
 
 function organizeFolderName(outputPath: string | null): string {
-  if (!outputPath) return 'VideoPlayer整理';
+  if (!outputPath) return 'MediaNest整理';
   const normalized = outputPath.replace(/\//g, '\\').replace(/[\\]+$/, '');
   const segments = normalized.split('\\').filter(Boolean);
   const name = segments[segments.length - 1] ?? '';
-  return /^[A-Za-z]:$/.test(name) ? 'VideoPlayer整理' : name || 'VideoPlayer整理';
+  return /^[A-Za-z]:$/.test(name) ? 'MediaNest整理' : name || 'MediaNest整理';
 }
 
 export function SettingsModal(props: SettingsModalProps) {
@@ -357,7 +357,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <span>
             {organizeOutputPath
               ? `集中整理位置：${organizeOutputPath}；不同盘符会在各自盘符根目录的「${organizeFolderName(organizeOutputPath)}」下整理，避免跨盘复制。`
-              : '未设置集中位置，将按文件所在盘符在盘符根目录的「VideoPlayer整理」下创建分类文件夹。'}
+              : '未设置集中位置，将按文件所在盘符在盘符根目录的「MediaNest整理」下创建分类文件夹。'}
             </span>
           </div>
           <div className="settings-hint settings-note">同名目标文件会直接覆盖；跨盘文件会按盘符分别处理。</div>

@@ -51,11 +51,11 @@ function fsPathJoin(parent: string, child: string): string {
 }
 
 function organizeFolderName(outputPath: string | null): string {
-  if (!outputPath) return 'VideoPlayer整理';
+  if (!outputPath) return 'MediaNest整理';
   const normalized = normalizeFsPath(outputPath);
   const segments = normalized.split('\\').filter(Boolean);
   const last = segments[segments.length - 1] ?? '';
-  return /^[A-Za-z]:$/.test(last) ? 'VideoPlayer整理' : last || 'VideoPlayer整理';
+  return /^[A-Za-z]:$/.test(last) ? 'MediaNest整理' : last || 'MediaNest整理';
 }
 
 function sameFsPath(first: string, second: string): boolean {
@@ -77,7 +77,7 @@ function expectedOrganizePath(
   const targetRoot = outputPath && fsPathRoot(outputPath).toLowerCase() === sourceRoot.toLowerCase()
     ? normalizeFsPath(outputPath)
     : sourceRoot === '/'
-      ? '/VideoPlayer整理'
+      ? '/MediaNest整理'
       : fsPathJoin(sourceRoot, fallbackFolderName);
   return fsPathJoin(fsPathJoin(targetRoot, category.name), video.name);
 }
@@ -105,7 +105,7 @@ function isOrganizedVideo(
   const targetRoot = outputPath && fsPathRoot(outputPath).toLowerCase() === sourceRoot.toLowerCase()
     ? normalizeFsPath(outputPath)
     : sourceRoot === '/'
-      ? '/VideoPlayer整理'
+      ? '/MediaNest整理'
       : fsPathJoin(sourceRoot, fallbackFolderName);
   const categoryRoot = fsPathJoin(targetRoot, category.name).toLowerCase();
   const currentPath = normalizeFsPath(video.path).toLowerCase();

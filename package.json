@@ -1,6 +1,6 @@
 {
-  "name": "videoplayer",
-  "version": "1.7.2",
+  "name": "medianest",
+  "version": "1.8.0",
   "main": "dist/electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -19,12 +19,12 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "本地视频库管理与播放器",
+  "description": "本地媒体库管理与播放器",
   "build": {
     "appId": "com.sususu.videoplayer",
-    "productName": "VideoPlayer",
+    "productName": "MediaNest",
     "directories": {
-      "output": "release/v1.7.2"
+      "output": "release/v1.8.0"
     },
     "files": [
       "dist/**/*",
@@ -49,7 +49,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "VideoPlayer"
+      "shortcutName": "MediaNest"
     }
   },
   "devDependencies": {

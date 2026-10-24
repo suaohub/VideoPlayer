@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Folder as FolderIcon, Heart, Trash2, FolderX, HardDrive, EyeOff, FolderOpen, Lock, Unlock } from 'lucide-react';
 import { Folder, FolderSortBy, SortDir } from '../types';
 
@@ -336,7 +337,7 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
         />
       ))}
 
-      {menu && (
+      {menu && createPortal((
         <div
           className="app-context-menu"
           onMouseDown={(e) => e.stopPropagation()}
@@ -396,7 +397,7 @@ export function FolderTree({ folders, selectedFolderIds, onSelectionChange, onDe
             隐藏目录及子目录
           </button>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

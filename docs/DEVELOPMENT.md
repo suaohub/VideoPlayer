@@ -1,4 +1,4 @@
-# VideoPlayer 开发方案与进度
+# MediaNest 开发方案与进度
 
 > 本文档面向接手开发者。项目只支持 Windows，后续开发不保留 macOS/Linux 兼容路径，避免兼容分支影响 Windows 主路径性能与复杂度。
 

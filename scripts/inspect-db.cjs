@@ -1,6 +1,6 @@
 const Database = require('better-sqlite3');
 
-const dbPath = process.env.VIDEOPLAYER_DB || 'C:\\Users\\sususu\\AppData\\Roaming\\videoplayer\\videoplayer.db';
+const dbPath = process.env.MEDIANEST_DB || process.env.VIDEOPLAYER_DB || `${process.env.APPDATA}\\videoplayer\\videoplayer.db`;
 if (!dbPath) throw new Error('database path required');
 
 try {

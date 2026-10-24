@@ -1,4 +1,4 @@
-# VideoPlayer v1.4.0 更新日志
+# MediaNest v1.4.0 更新日志
 
 ## 整理工作流
 
