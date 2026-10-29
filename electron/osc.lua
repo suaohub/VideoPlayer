@@ -948,6 +948,12 @@ local function prepare_elements()
         -- Calculate the hitbox
         local bX1, bY1, bX2, bY2 = get_hitbox_coords_geo(elem_geo)
         element.hitbox = {x1 = bX1, y1 = bY1, x2 = bX2, y2 = bY2}
+        -- Keep the visual seekbar compact while giving it a forgiving
+        -- transparent hit area for mouse/touch input.
+        if user_opts.layout == "medianest" and element.name == "seekbar" then
+            element.hitbox.y1 = element.hitbox.y1 - 12
+            element.hitbox.y2 = element.hitbox.y2 + 12
+        end
         if element.layout.hitbox then
             if element.layout.hitbox.x1 then
                 element.hitbox.x1 = element.layout.hitbox.x1
@@ -1379,6 +1385,7 @@ end
 
 local function new_element(name, type)
     elements[name] = {}
+    elements[name].name = name
     elements[name].type = type
 
     -- add default stuff
@@ -2402,7 +2409,7 @@ layouts["medianest"] = function ()
     lo.geometry = {x = x, y = y, an = 5, w = w, h = h}
     lo.layer = 10
     lo.style = osc_styles.glassBox
-    lo.alpha[1] = 182
+    lo.alpha[1] = 155
     lo.alpha[3] = 205
     lo.box.radius = 14
 

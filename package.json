@@ -1,6 +1,6 @@
 {
   "name": "medianest",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "main": "dist/electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -20,6 +20,38 @@
   "author": "",
   "license": "ISC",
   "description": "本地媒体库管理与播放器",
+  "build": {
+    "appId": "com.sususu.videoplayer",
+    "productName": "MediaNest",
+    "directories": {
+      "output": "release/v1.8.4"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MediaNest"
+    }
+  },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "@types/node": "^26.1.2",
