@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Film, Music2, BookOpen, RefreshCw, FolderOpen, Heart } from 'lucide-react';
+import { Film, Music2, BookOpen, RefreshCw, FolderOpen, Heart, Plus } from 'lucide-react';
 import { OrganizeCategory, Video, LibraryViewMode } from '../types';
 import { api } from '../api';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
@@ -10,10 +10,12 @@ import { isAudioFile, isTextFile, isComicExt } from '../media';
 
 interface VideoGridProps {
   videos: Video[];
+  /** 仅在目录筛选改变时变化，用于触发内容切换动效。 */
+  contentTransitionKey?: string;
   cardSize: number;
   onCardSizeChange: (n: number) => void;
   cardSizeRange: [number, number];
-  onPlay: (video: Video) => void;
+  onPlay: (video: Video, playlist?: Video[]) => void;
   onToggleFavorite: (videoId: number) => void;
   onBatchUnfavorite: (videoIds: number[]) => void;
   showFavorited: boolean;
@@ -29,6 +31,7 @@ interface VideoGridProps {
   organizeCategories?: OrganizeCategory[];
   onSetOrganizeCategory?: (videoId: number, categoryId: number | null) => void | Promise<boolean | void>;
   onBatchSetOrganizeCategory?: (videoIds: number[], categoryId: number | null) => boolean | Promise<boolean>;
+  onCreateOrganizeCategory?: (name: string) => void | Promise<unknown>;
   categoryTooltipEnabled?: boolean;
   viewMode?: LibraryViewMode;
 }
@@ -393,7 +396,7 @@ function VideoListRow({
   return (
     <div
       ref={cardRef}
-      className={`video-list-row${selected ? ' is-selected' : ''}`}
+      className={`video-list-row${selectionMode ? ' is-selection-mode' : ''}${selected ? ' is-selected' : ''}`}
       data-video-id={video.id}
       role="button"
       tabIndex={0}
@@ -428,7 +431,7 @@ function VideoListRow({
   );
 }
 
-export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory, categoryTooltipEnabled = true, viewMode = 'grid' }: VideoGridProps) {
+export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory, onCreateOrganizeCategory, categoryTooltipEnabled = true, viewMode = 'grid' }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -437,6 +440,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const [internalSelectionMode, setInternalSelectionMode] = useState(false);
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<number>>(new Set());
   const [moreCategoriesOpen, setMoreCategoriesOpen] = useState(false);
+  const [newBatchCategoryName, setNewBatchCategoryName] = useState('');
   const [batchActionBusy, setBatchActionBusy] = useState(false);
   const [categoryActionBusy, setCategoryActionBusy] = useState(false);
   const [categoryTooltipTarget, setCategoryTooltipTarget] = useState<{
@@ -520,7 +524,10 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
   const handlePlayFromGrid = useCallback((video: Video) => {
     playbackFocusVideoIdRef.current = video.id;
     focusVideoById(video.id);
-    onPlay(video);
+    const playlist = videosRef.current.filter((item) => (
+      !isAudioFile(item.path) && !isTextFile(item.path) && !isComicExt(item.ext)
+    ));
+    onPlay(video, playlist);
   }, [focusVideoById, onPlay]);
   onPlayRef.current = handlePlayFromGrid;
 
@@ -1187,6 +1194,13 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
     updateSelectionMode(false);
   };
 
+  const handleCreateBatchCategory = async () => {
+    const name = newBatchCategoryName.trim();
+    if (!name || !onCreateOrganizeCategory) return;
+    const created = await onCreateOrganizeCategory(name);
+    if (created !== false) setNewBatchCategoryName('');
+  };
+
   // 停用分类保留历史标记，但不参与新的快速分类和批量分类操作。
   const activeOrganizeCategories = organizeCategories.filter((category) => category.enabled !== 0);
   const visibleCategoryButtons = activeOrganizeCategories.slice(0, 3);
@@ -1204,6 +1218,7 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
       }}
       style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16, overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch', scrollbarGutter: 'stable' }}
     >
+      <div key={contentTransitionKey} className="video-grid-content">
       {videos.length === 0 ? (
         <div className="video-grid-empty">
           <div className="empty-state-icon"><Film size={25} strokeWidth={1.7} /></div>
@@ -1411,13 +1426,14 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
           })()}
         </div>
       )}
+      </div>
       {selectionMode && (onBatchSetOrganizeCategory || showFavorited) && (
         <div
-          className="batch-action-bar"
+          className={`batch-action-bar${selectedIds.size === 0 ? ' is-empty' : ''}`}
           aria-label="批量操作"
           onClick={(event) => event.stopPropagation()}
         >
-          <span className="batch-action-bar-count">已选择 <strong>{selectedIds.size}</strong> 项</span>
+          <span className="batch-action-bar-count">{selectedIds.size === 0 ? '先选择要整理的视频' : <>已选择 <strong>{selectedIds.size}</strong> 项</>}</span>
           <button
             className="batch-action-bar-secondary"
             onClick={() => updateSelectedIds(new Set(videos.filter((video) => !hiddenIds.has(video.id)).map((video) => video.id)))}
@@ -1472,6 +1488,23 @@ export function VideoGrid({ videos, cardSize, onCardSizeChange, cardSizeRange, o
                     </div>
                   )}
                 </div>
+              )}
+              {onCreateOrganizeCategory && (
+                <form
+                  className="batch-action-bar-create"
+                  onSubmit={(event) => { event.preventDefault(); void handleCreateBatchCategory(); }}
+                >
+                  <input
+                    value={newBatchCategoryName}
+                    onChange={(event) => setNewBatchCategoryName(event.target.value)}
+                    aria-label="新建整理分类名称"
+                    placeholder="新建分类…"
+                    maxLength={80}
+                  />
+                  <button type="submit" disabled={!newBatchCategoryName.trim()} title="新建分类">
+                    <Plus size={14} />
+                  </button>
+                </form>
               )}
             </>
           )}

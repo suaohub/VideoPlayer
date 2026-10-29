@@ -318,11 +318,11 @@ export const api = {
   onFullscreenChanged(cb: (on: boolean) => void): (() => void) | void {
     if (window.electronAPI?.onFullscreenChanged) return window.electronAPI.onFullscreenChanged(cb);
   },
-  async playVideo(path: string, options?: { alertOnError?: boolean }): Promise<{ success: boolean; error?: string }> {
+  async playVideo(path: string, options?: { alertOnError?: boolean; playlistPaths?: string[] }): Promise<{ success: boolean; error?: string }> {
     if (USE_MOCK) return { success: true };
     // 真实视频即便在 mock 模式也走 IPC 真播放
     if (window.electronAPI?.playVideo) {
-      const result = await window.electronAPI.playVideo(path);
+      const result = await window.electronAPI.playVideo(path, options?.playlistPaths);
       if (!result.success && options?.alertOnError !== false) {
         console.warn(`播放失败：${result.error ?? '未知错误'}`);
       }

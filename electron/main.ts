@@ -102,8 +102,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  globalShortcut.register('CommandOrControl+Alt+R', () => rotateVideo());
-  globalShortcut.register('CommandOrControl+Alt+M', () => toggleVideoMirror());
+  console.log('[shortcut] rotate registered:', globalShortcut.register('CommandOrControl+Alt+R', () => rotateVideo()));
+  console.log('[shortcut] mirror registered:', globalShortcut.register('CommandOrControl+Alt+M', () => toggleVideoMirror()));
   protocol.handle('thumb', async (request) => {
     const filePath = thumbnailFilePathFromUrl(request.url);
     if (!filePath) {
@@ -218,8 +218,8 @@ app.on('before-quit', (event) => {
 
 // ---------- mpv 播放控制 IPC handlers（实现见 ./mpv.ts） ----------
 
-ipcMain.handle('play-video', async (event, videoPath: string) => {
-  return playVideo(videoPath);
+ipcMain.handle('play-video', async (event, videoPath: string, playlistPaths?: string[]) => {
+  return playVideo(videoPath, playlistPaths);
 });
 
 ipcMain.handle('open-video-directory', async (event, videoPath: string) => {

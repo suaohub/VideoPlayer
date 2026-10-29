@@ -246,6 +246,8 @@ function App() {
   const [generatingHealthThumbnails, setGeneratingHealthThumbnails] = useState(false);
   const overviewRequestId = useRef(0);
   const videosRequestId = useRef(0);
+  const loadedFolderKeyRef = useRef<string | null>(null);
+  const [contentTransitionKey, setContentTransitionKey] = useState(0);
   const initializationStarted = useRef(false);
 
   // 定期检测磁盘挂载状态（启动时 + 每30秒一次）
@@ -323,6 +325,11 @@ function App() {
         api.getVideos({ ...filter, markedForDeletion: true, limit: 1 }),
       ]);
       if (requestId !== videosRequestId.current) return;
+      const folderKey = selectedFolderIds.join(',');
+      if (loadedFolderKeyRef.current !== null && loadedFolderKeyRef.current !== folderKey) {
+        setContentTransitionKey((value) => value + 1);
+      }
+      loadedFolderKeyRef.current = folderKey;
       // 目录选中态属于高优先级交互；大列表数据放进 transition，避免查询返回时卡住侧栏点击反馈。
       startTransition(() => {
         setVideos(list);
@@ -755,7 +762,7 @@ function App() {
     const importKind = await choose('导入媒体', [
       { value: 'files', label: '导入视频文件', description: '选择一个或多个视频、音频文件', icon: <FileVideo size={17} /> },
       { value: 'folders', label: '导入文件夹', description: '扫描文件夹及其子目录中的媒体', icon: <FolderOpen size={17} /> },
-    ], '选择你要加入媒体库的内容。');
+    ], '选择你要加入媒体库的内容。', 'import');
     if (!importKind) return;
     const selection = importKind === 'files'
       ? await api.selectVideoFiles()
@@ -925,7 +932,7 @@ function App() {
   };
 
   // 播放：文本走阅读器，音频走音乐播放页，视频走全屏 mpv
-  const handlePlay = async (video: Video) => {
+  const handlePlay = async (video: Video, playlist?: Video[]) => {
     if (isComicExt(video.ext)) {
       setReadingComic(video);
       return;
@@ -940,7 +947,16 @@ function App() {
       void loadOverview();
       return;
     }
-    const result = await api.playVideo(video.path, { alertOnError: false });
+    const playlistVideos = playlist ?? videos.filter((item) => (
+      !isAudioFile(item.path)
+      && !isTextFile(item.path)
+      && !isComicExt(item.ext)
+      && item.marked_for_deletion !== 1
+    ));
+    const result = await api.playVideo(video.path, {
+      alertOnError: false,
+      playlistPaths: playlistVideos.map((item) => item.path),
+    });
     if (!result.success && result.error) {
       notify(`播放失败：${result.error}`, 'danger');
       return;
@@ -1210,13 +1226,14 @@ function App() {
     return true;
   };
 
-  const handleCreateOrganizeCategory = async (name: string) => {
+  const handleCreateOrganizeCategory = async (name: string): Promise<boolean> => {
     const result = await api.createOrganizeCategory(name);
     if (!result.success) {
       notify(`新建分类失败：${result.error ?? '未知错误'}`, 'danger');
-      return;
+      return false;
     }
     await refreshOrganizeCategories();
+    return true;
   };
 
   const handleDeleteOrganizeCategory = async (categoryId: number) => {
@@ -1797,8 +1814,6 @@ function App() {
                       folders={activePage === 'overview' ? overviewFolders : visibleFolders}
                       selectedFolderIds={selectedFolderIds}
                       onSelectionChange={(ids) => {
-                        // 从概览首次进入媒体库时，先清掉预加载的整库列表，避免先挂载大量未筛选卡片再等待目录查询。
-                        setVideos([]);
                         setActivePage('library');
                         setShowFavorited(false);
                         setShowFavoritedInList(true);
@@ -1937,6 +1952,7 @@ function App() {
                   )}
                 <VideoGrid
                   videos={layoutVideos}
+                  contentTransitionKey={contentTransitionKey.toString()}
                   cardSize={cardSize}
                   onCardSizeChange={setCardSize}
                   cardSizeRange={[CARD_MIN, CARD_MAX]}
@@ -1950,6 +1966,7 @@ function App() {
                   organizeCategories={organizeCategories}
                   onSetOrganizeCategory={handleSetOrganizeCategory}
                   onBatchSetOrganizeCategory={handleBatchSetOrganizeCategory}
+                  onCreateOrganizeCategory={handleCreateOrganizeCategory}
                   selectionMode={batchSelectionMode}
                   selectedIds={batchSelectedIds}
                   onToggleSelect={toggleBatchSelection}

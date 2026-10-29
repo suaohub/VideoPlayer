@@ -29,13 +29,14 @@ export interface AppChoiceOption<T extends string = string> {
 export interface AppChoiceState {
   title: string;
   message?: string;
+  variant?: 'import';
   options: AppChoiceOption[];
   resolve: (value: string | null) => void;
 }
 
 interface FeedbackContextValue {
   confirm: (options: Omit<AppDialogState, 'resolve'>) => Promise<boolean>;
-  choose: (title: string, options: AppChoiceOption[], message?: string) => Promise<string | null>;
+  choose: (title: string, options: AppChoiceOption[], message?: string, variant?: 'import') => Promise<string | null>;
   notify: (message: string, tone?: FeedbackTone) => void;
 }
 
@@ -123,11 +124,12 @@ export function AppFeedbackProvider({ children }: { children: ReactNode }) {
     })
   ), []);
 
-  const choose = useCallback((title: string, options: AppChoiceOption[], message?: string) => (
+  const choose = useCallback((title: string, options: AppChoiceOption[], message?: string, variant?: 'import') => (
     new Promise<string | null>((resolve) => {
       setChoice({
         title,
         message,
+        variant,
         options,
         resolve: (value) => {
           setChoice(null);
@@ -160,7 +162,7 @@ export function AppFeedbackProvider({ children }: { children: ReactNode }) {
         <div className="app-dialog-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) choice.resolve(null);
         }}>
-          <section className="app-dialog app-choice-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+          <section className={`app-dialog app-choice-dialog${choice.variant ? ` app-choice-dialog-${choice.variant}` : ''}`} role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <div className="app-dialog-icon"><Info size={21} strokeWidth={1.9} /></div>
             <div className="app-dialog-content">
               <div className="app-dialog-title-row">

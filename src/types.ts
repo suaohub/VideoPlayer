@@ -176,7 +176,7 @@ export interface MediaLibraryHealth {
 
 // Electron API 类型
 export interface ElectronAPI {
-  playVideo: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
+  playVideo: (videoPath: string, playlistPaths?: string[]) => Promise<{ success: boolean; error?: string }>;
   openVideoDirectory: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
   openFolderDirectory: (folderPath: string) => Promise<{ success: boolean; missing?: boolean; error?: string }>;
   stopVideo: () => Promise<{ success: boolean }>;

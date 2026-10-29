@@ -12,17 +12,31 @@ import { isAudioFile } from './media';
 declare const __dirname: string;
 
 const DEFAULT_WINDOWS_MPV = 'C:\\Program Files\\MPV Player\\mpv.exe';
-const PLAYER_TOPBAR_HEIGHT = 48;
-// 底部 React 控制栏高度：mpv 原生窗口需为它让出这块区域，避免遮挡（airspace）
-const PLAYER_BOTTOMBAR_HEIGHT = 64;
+const PLAYER_TOPBAR_HEIGHT = 56;
+// 播放控制完全交给 mpv 原生 OSC，React 不再占用底部控制区。
+const PLAYER_BOTTOMBAR_HEIGHT = 0;
 // mpv 视频区 = 顶栏之下、底部控制栏之上的中间区域
 const RESERVED_VERTICAL = PLAYER_TOPBAR_HEIGHT + PLAYER_BOTTOMBAR_HEIGHT;
 const MPV_DEBUG_LOG = join(app.getPath('temp'), 'mpv-place-debug.log');
 // 唯一 ASCII 标题：用于按标题定位 mpv 窗口（避免编码/PID 问题）
 const MPV_WINDOW_TITLE = 'MediaNestMpvEmbedWindow';
+// mpv 是独立进程，不能读取 app.asar 内的脚本；安装版必须优先使用
+// electron-builder extraResources 放到 resources/osc.lua 的外部文件。
+const externalOscScript = join(process.resourcesPath, 'osc.lua');
+const bundledOscScript = join(__dirname, 'osc.lua');
+const sourceOscScript = join(app.getAppPath(), 'electron', 'osc.lua');
+// 开发预览必须直接读取源码脚本，否则 dist/electron/osc.lua 的旧副本
+// 会遮住正在调试的版本。正式运行仍优先使用 resources/osc.lua。
+const OSC_SCRIPT = process.env.NODE_ENV === 'development' && existsSync(sourceOscScript)
+  ? sourceOscScript
+  : existsSync(externalOscScript)
+    ? externalOscScript
+    : existsSync(bundledOscScript)
+      ? bundledOscScript
+      : sourceOscScript;
 // mpv 全屏时 app 收不到普通按键，故用系统级快捷键截帧设背景。
 // 播放器运行期间只在 mpv 场景注册 B；保留组合键作为备用入口。
-const WALLPAPER_ACCELS = ['B', 'CommandOrControl+Shift+B'] as const;
+const WALLPAPER_ACCELS = ['CommandOrControl+Alt+B'] as const;
 
 let getWin: () => BrowserWindow | null = () => null;
 
@@ -37,6 +51,7 @@ let videoMirrored = false;
 let ipcSocket: net.Socket | null = null;
 let socketPath = '';
 let requestId = 0;
+let currentPlaylistPaths: string[] = [];
 let mpvPlacementTimer: NodeJS.Timeout | null = null;
 let mpvScreenshotBusy = false;
 let playbackOperation: Promise<unknown> = Promise.resolve();
@@ -181,6 +196,27 @@ function resolveMpvBin() {
   return 'mpv';
 }
 
+/**
+ * MediaNest 只通过 mpv 官方 OSC 的 script-opts 调整外观，不接管渲染和输入。
+ * 这些参数随每次启动传入，因此不会修改用户机器上的 mpv.conf 或 osc.conf。
+ */
+function getMpvStyleArgs() {
+  const dayTheme = getSetting('theme') === 'day';
+  // 与主界面的主题令牌保持一致：日间使用暖金色强调，夜间使用低亮度金色。
+  const background = dayTheme ? '#ffffff' : '#101319';
+  const foreground = dayTheme ? '#181b22' : '#f0f1f3';
+  const accent = dayTheme ? '#a47738' : '#d3a966';
+  const held = dayTheme ? '#89652f' : '#e3bd83';
+  // 原生 OSC 是唯一的播放控制层。所有视觉参数通过启动参数注入，
+  // 不修改用户机器上的 mpv.conf / osc.conf。
+  return [
+    '--osc=no',
+    `--script=${OSC_SCRIPT}`,
+    '--osd-level=1',
+    `--script-opts=osc-layout=medianest,osc-scalefullscreen=0.72,osc-scalewindowed=0.72,osc-background_color=${dayTheme ? '#f4f6fb' : '#1d2735'},osc-boxalpha=255,osc-timecode_color=#FFFFFF,osc-title_color=#FFFFFF,osc-time_pos_color=#FFFFFF,osc-seekrange_color=#FFFFFF,osc-buttons_color=#FFFFFF,osc-held_element_color=#FFFFFF,osc-seekbarstyle=knob,osc-seekbarhandlesize=0.45,osc-seekrangestyle=slider,osc-seekrangeseparate=yes,osc-seekrangealpha=255,osc-seekbarkeyframes=no,osc-fadeduration=240,osc-fadein=yes,osc-hidetimeout=3000,osc-deadzonesize=0,osc-visibility=auto,osc-timetotal=yes,osc-showfullscreenbutton=yes,osc-showwindowedbutton=no,osc-showontopbutton=no,osc-showinfo=yes,osc-showtitle=no,osc-playlist_prev_mbtn_left_command=script-message-to osc prev-item,osc-playlist_next_mbtn_left_command=script-message-to osc next-item,osc-chapter_prev_mbtn_left_command=script-message-to osc prev-item,osc-chapter_prev_mbtn_mid_command=script-message-to osc prev-item,osc-chapter_prev_mbtn_right_command=script-message-to osc prev-item,osc-chapter_next_mbtn_left_command=script-message-to osc next-item,osc-chapter_next_mbtn_mid_command=script-message-to osc next-item,osc-chapter_next_mbtn_right_command=script-message-to osc next-item`,
+  ];
+}
+
 function writeRuntimeLog(message: string) {
   try {
     const logPath = join(app.getPath('userData'), 'runtime.log');
@@ -217,9 +253,7 @@ function getMainWindowHandle() {
 }
 
 export function syncMpvWindowBounds() {
-  const mainWindow = getWin();
-  if (!mpvProcess || !mainWindow || mainWindow.isMinimized()) return;
-  scheduleMpvWindowPlacement();
+  // 视频使用 mpv 自己的独立全屏窗口，不再跟随 Electron 内容区定位。
 }
 
 function scheduleMpvWindowPlacement(delay = 80) {
@@ -300,8 +334,9 @@ if ($handle -ne [IntPtr]::Zero) {
     $style = ($style -bor $WS_CHILD -bor $WS_VISIBLE) -band (-bnot $WS_POPUP) -band (-bnot $WS_CAPTION) -band (-bnot $WS_THICKFRAME)
     [WinApi]::SetWindowLong($handle, $GWL_STYLE, $style) | Out-Null
     $sp = [WinApi]::SetParent($handle, $parentHandle)
-    [WinApi]::ShowWindow($handle, 5) | Out-Null
-    [WinApi]::SetWindowPos($handle, [IntPtr]::Zero, ${bounds.x}, ${bounds.y}, ${bounds.width}, ${bounds.height}, 0x0040) | Out-Null
+    # 先完成尺寸和父窗口设置，再显示，避免默认小窗口闪现。
+    [WinApi]::SetWindowPos($handle, [IntPtr]::Zero, ${bounds.x}, ${bounds.y}, ${bounds.width}, ${bounds.height}, 0x0014) | Out-Null
+    [WinApi]::ShowWindow($handle, 9) | Out-Null
     $r = New-Object RECT
     [WinApi]::GetWindowRect($handle, [ref]$r) | Out-Null
     Add-Content -Path $log -Value ("  SetParent ret=" + $sp + " target=${bounds.x},${bounds.y},${bounds.width},${bounds.height} afterRect=" + $r.Left + "," + $r.Top + "," + $r.Right + "," + $r.Bottom)
@@ -325,7 +360,7 @@ if ($handle -ne [IntPtr]::Zero) {
 }
 
 export function hideMpvWindow() {
-  placeMpvWindow(false);
+  // 独立全屏窗口由 mpv 自己管理，Electron 最小化时不做 SetParent/SetWindowPos。
 }
 function enqueuePlaybackOperation<T>(operation: () => Promise<T>): Promise<T> {
   const run = playbackOperation.then(operation, operation);
@@ -333,11 +368,11 @@ function enqueuePlaybackOperation<T>(operation: () => Promise<T>): Promise<T> {
   return run;
 }
 
-export function playVideo(videoPath: string): Promise<{ success: boolean; error?: string }> {
-  return enqueuePlaybackOperation(() => playVideoInternal(videoPath));
+export function playVideo(videoPath: string, playlistPaths?: string[]): Promise<{ success: boolean; error?: string }> {
+  return enqueuePlaybackOperation(() => playVideoInternal(videoPath, playlistPaths));
 }
 
-async function playVideoInternal(videoPath: string): Promise<{ success: boolean; error?: string }> {
+async function playVideoInternal(videoPath: string, playlistPaths?: string[]): Promise<{ success: boolean; error?: string }> {
   if (!getWin()) return { success: false, error: 'no window' };
   const startedAt = Date.now();
   writeRuntimeLog(`[play-request] ${videoPath}`);
@@ -364,6 +399,7 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
 
     const audioOnly = isAudioFile(videoPath);
     videoRotation = 0;
+    // 默认保持原始画面，使用 Ctrl+Alt+M 后才开启镜像。
     videoMirrored = false;
     console.log(`[mpv] ${audioOnly ? 'Audio' : 'Video'} path:`, videoPath);
     writeRuntimeLog(`[mpv-start] audioOnly=${audioOnly} elapsedMs=${Date.now() - startedAt} bin=${resolveMpvBin()}`);
@@ -371,20 +407,45 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
     socketPath = `\\\\.\\pipe\\mpv-${process.pid}-${Date.now()}`;
     currentMpvWindowTitle = `${MPV_WINDOW_TITLE}-${Date.now()}`;
 
+    const playlist = !audioOnly
+      ? [...new Set((playlistPaths ?? [videoPath]).filter((path) => typeof path === 'string' && path.length > 0))]
+      : [videoPath];
+    if (!playlist.includes(videoPath)) playlist.push(videoPath);
+    const playlistStart = Math.max(0, playlist.indexOf(videoPath));
+    currentPlaylistPaths = playlist;
+    writeRuntimeLog(`[mpv-playlist] count=${playlist.length} start=${playlistStart} current=${videoPath}`);
     const args = [
       '--no-terminal',
-      '--keep-open=yes',
+      // mpv 的 yes 只保证最后一个 playlist 项停住；always 才会阻止
+      // 播放列表中间的文件在 EOF 时自动推进到下一项。
+      '--keep-open=always',
       '--no-config',
-      '--osd-level=1',
+      // 关闭 mpv 原生居中的 seek 进度条；自定义 OSC 仍保留底部沉浸式时间轴，
+      // 音量调节的原生 OSD 提示不受影响。
+      '--osd-on-seek=no',
+      // OSC 按钮位于原生 mpv 窗口，显式确保鼠标事件由 mpv 接收，避免
+      // 点击被透传到后方窗口；前后播放按钮的命令在 OSC 选项中单独指定。
+      '--input-cursor=yes',
+      '--input-cursor-passthrough=no',
+      '--input-default-bindings=yes',
+      '--input-vo-keyboard=yes',
+      '--focus-on=all',
+      ...(!audioOnly ? getMpvStyleArgs() : []),
       `--input-ipc-server=${socketPath}`,
       `--title=${currentMpvWindowTitle}`,
       '--border=no',
       '--show-in-taskbar=no',
       '--taskbar-progress=no',
+      // 镜像滤镜需要稳定经过视频帧处理；Windows 某些硬解路径下
+      // hflip 不会作用到最终输出，因此沿用远程播放器分支的软件解码。
       '--hwdec=no',
       ...(audioOnly
         ? ['--no-video', '--force-window=no']
-        : ['--force-window=immediate', '--fullscreen', '--vf=@mirror:lavfi=[hflip]']),
+        // 先以普通无边框窗口创建，再由 Windows SetParent 嵌入 Electron。
+        // 不能带 --fullscreen，否则 mpv 会先抢占整块桌面，盖住 React 控制栏。
+        : ['--force-window=immediate', '--fullscreen=yes']),
+      // 先只加载当前文件，连接 IPC 后再逐项 append，避免 Windows 版 mpv
+      // 将多个命令行文件参数折叠成单条目，导致 OSC 上下曲按钮被禁用。
       videoPath,
     ];
 
@@ -459,7 +520,7 @@ async function playVideoInternal(videoPath: string): Promise<{ success: boolean;
     if (audioOnly) unregisterMpvWallpaperShortcut();
     else registerMpvWallpaperShortcut();
 
-    const connected = await waitAndConnectSocket(currentProcess, socketPath, startedAt);
+    const connected = await waitAndConnectSocket(currentProcess, socketPath, startedAt, audioOnly, videoPath);
     if (!connected || mpvProcess !== currentProcess) {
       if (mpvProcess === currentProcess) await stopMpvInternal();
       return { success: false, error: '播放引擎连接超时，无法控制该媒体' };
@@ -480,6 +541,8 @@ function waitAndConnectSocket(
   expectedProcess: ChildProcess,
   expectedSocketPath: string,
   startedAt: number,
+  audioOnly: boolean,
+  videoPath: string,
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let attempts = 0;
@@ -530,14 +593,23 @@ function waitAndConnectSocket(
         playbackIpcConnected = true;
         setupIpcListeners(sock, expectedProcess, expectedSocketPath);
         // 订阅属性变化
-        observeProperty('time-pos', 1);
+        observeProperty('time-pos', 0.1);
         observeProperty('duration', 2);
         observeProperty('pause', 3);
         observeProperty('volume', 4);
         observeProperty('speed', 5);
         observeProperty('mute', 6);
-        // 预加载滤镜链但默认关闭镜像；快捷键切换时直接增删同一条链。
-        sendCommand(['vf', 'remove', '@mirror']);
+        observeProperty('filename', 7);
+        if (!audioOnly) {
+          const currentIndex = currentPlaylistPaths.indexOf(videoPath);
+          const rest = currentIndex >= 0
+            ? currentPlaylistPaths.slice(currentIndex + 1).concat(currentPlaylistPaths.slice(0, currentIndex))
+            : currentPlaylistPaths.filter((path) => path !== videoPath);
+          // append 只加入播放列表，不改变当前正在播放的文件；append-play
+          // 会立即切换到追加项，导致用户点选的视频被后续条目覆盖。
+          for (const path of rest) sendCommand(['loadfile', path, 'append']);
+          writeRuntimeLog(`[mpv-playlist-append] current=${videoPath} appended=${rest.length}`);
+        }
         // 绑定回车键 = 退出 mpv（回到列表）
         sendCommand(['keybind', 'ENTER', 'quit']);
         sendCommand(['keybind', 'KP_ENTER', 'quit']); // 小键盘回车
@@ -689,6 +761,13 @@ function handleMpvMessage(msg: any) {
   }
   if (msg.event === 'property-change') {
     switch (msg.name) {
+      case 'filename':
+        if (typeof msg.data === 'string' && msg.data.length > 0) {
+          // 窗口标题同时用于 mpv 原生标题栏和 OSC 标题。启动时使用唯一标题
+          // 便于定位窗口，媒体切换后改成当前文件名，避免标题停留在固定标识。
+          setProperty('title', msg.data);
+        }
+        break;
       case 'time-pos':
         if (msg.data != null) {
           const position = Number(msg.data);
@@ -841,10 +920,10 @@ export function rotateVideo() {
 export function toggleVideoMirror() {
   if (!mpvProcess || !playbackIpcConnected) return;
   videoMirrored = !videoMirrored;
-  // 运行时用 mpv 的 vf 命令增删镜像滤镜，避免 set_property vf 的兼容性问题。
+  // 直接重设 mpv 视频滤镜链，绕过标签和 toggle 状态判断。
   sendCommand(videoMirrored
-    ? ['vf', 'add', '@mirror:hflip']
-    : ['vf', 'remove', '@mirror']);
+    ? ['vf', 'set', 'hflip']
+    : ['vf', 'set', '']);
   console.log('[mpv] video mirror:', videoMirrored ? 'on' : 'off');
 }
 

@@ -25,6 +25,14 @@ interface FolderTreeProps {
 
 interface TreeNode extends Folder { children: TreeNode[]; }
 
+// Windows 盘符根目录（例如 E:\）的 basename 为空，用盘符补一个可读名称。
+function folderDisplayName(folder: Folder): string {
+  if (folder.name.trim()) return folder.name;
+  const driveRoot = folder.path.match(/^([a-z]):[\\/]*$/i);
+  if (driveRoot) return `${driveRoot[1].toUpperCase()}盘`;
+  return folder.name;
+}
+
 // 采用接近 Windows 资源管理器的名称排序：忽略大小写，并按数字的自然顺序比较。
 // 例如 `2` 会排在 `10` 前面。排序在每个父目录内独立进行。
 const windowsNameCollator = new Intl.Collator(undefined, {
@@ -52,7 +60,7 @@ function compareFolders(a: Folder, b: Folder, sortBy: FolderSortBy, sortDir: Sor
 function buildTree(folders: Folder[], sortBy: FolderSortBy, sortDir: SortDir): TreeNode[] {
   const map = new Map<number, TreeNode>();
   const roots: TreeNode[] = [];
-  folders.forEach((f) => map.set(f.id, { ...f, children: [] }));
+  folders.forEach((f) => map.set(f.id, { ...f, name: folderDisplayName(f), children: [] }));
   folders.forEach((f) => {
     const node = map.get(f.id)!;
     if (f.parent_id != null && map.has(f.parent_id)) map.get(f.parent_id)!.children.push(node);

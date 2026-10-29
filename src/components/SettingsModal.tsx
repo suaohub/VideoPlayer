@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import {
-  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, SlidersHorizontal, RefreshCw, Sun, Moon, GripVertical, Film,
+  Settings, X, FolderPlus, Loader2, Trash2, Image as ImageIcon, FolderKanban, Plus, FolderOpen, EyeOff, Eye, SlidersHorizontal, RefreshCw, Sun, Moon, GripVertical, Film, type LucideIcon,
 } from 'lucide-react';
 import { Folder, ImportProgress, OrganizeCategory, Theme } from '../types';
 import { api } from '../api';
@@ -47,10 +47,13 @@ interface SettingsModalProps {
 }
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
-type SettingsSection = 'all' | 'hidden' | 'library' | 'organize' | 'appearance';
-const DEFAULT_SETTINGS_TAB_ORDER: SettingsSection[] = ['all', 'hidden', 'library', 'organize', 'appearance'];
+type SettingsSection = 'hidden' | 'library' | 'organize' | 'appearance';
+const DEFAULT_SETTINGS_TAB_ORDER: SettingsSection[] = ['library', 'organize', 'hidden', 'appearance'];
 const SETTINGS_TAB_LABELS: Record<SettingsSection, string> = {
-  all: '全部', hidden: '隐藏目录', library: '媒体库', organize: '视频整理', appearance: '外观',
+  hidden: '隐藏目录', library: '媒体库', organize: '视频整理', appearance: '外观',
+};
+const SETTINGS_TAB_ICONS: Record<SettingsSection, LucideIcon> = {
+  hidden: EyeOff, library: FolderPlus, organize: FolderKanban, appearance: ImageIcon,
 };
 
 function organizeFolderName(outputPath: string | null): string {
@@ -78,26 +81,46 @@ export function SettingsModal(props: SettingsModalProps) {
     onOrganizeFolder, organizing, categoryTooltipEnabled, onCategoryTooltipEnabledChange,
   } = props;
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [activeSection, setActiveSection] = useState<SettingsSection>('all');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('library');
   const [tabOrder, setTabOrder] = useState<SettingsSection[]>(DEFAULT_SETTINGS_TAB_ORDER);
   const [draggingTab, setDraggingTab] = useState<SettingsSection | null>(null);
   const [draggingCategoryId, setDraggingCategoryId] = useState<number | null>(null);
   const [dropCategoryId, setDropCategoryId] = useState<number | null>(null);
-  const settingsContentRef = useRef<HTMLDivElement>(null);
-  const [settingsHasMore, setSettingsHasMore] = useState(false);
 
   useEffect(() => {
     void api.getSetting('settingsTabOrder').then((saved) => {
       if (!saved) return;
       try {
         const parsed = JSON.parse(saved) as unknown;
-        if (Array.isArray(parsed) && parsed.length === DEFAULT_SETTINGS_TAB_ORDER.length
-          && parsed.every((item) => DEFAULT_SETTINGS_TAB_ORDER.includes(item as SettingsSection))) {
-          setTabOrder(parsed as SettingsSection[]);
+        if (Array.isArray(parsed)) {
+          const migrated = parsed.filter((item): item is SettingsSection =>
+            item !== 'all' && DEFAULT_SETTINGS_TAB_ORDER.includes(item as SettingsSection));
+          const unique = [...new Set(migrated)];
+          if (unique.length === DEFAULT_SETTINGS_TAB_ORDER.length) {
+            setTabOrder(unique);
+            if (JSON.stringify(parsed) !== JSON.stringify(unique)) {
+              void api.setSetting('settingsTabOrder', JSON.stringify(unique));
+            }
+          }
         }
       } catch { /* ignore invalid preference */ }
     });
   }, []);
+
+  useEffect(() => {
+    void api.getSetting('settingsActiveSection').then((saved) => {
+      if (saved && DEFAULT_SETTINGS_TAB_ORDER.includes(saved as SettingsSection)) {
+        setActiveSection(saved as SettingsSection);
+      } else {
+        setActiveSection('library');
+      }
+    });
+  }, []);
+
+  const selectSection = (section: SettingsSection) => {
+    setActiveSection(section);
+    void api.setSetting('settingsActiveSection', section);
+  };
 
   const moveTab = (from: SettingsSection, to: SettingsSection) => {
     if (from === to) return;
@@ -112,24 +135,6 @@ export function SettingsModal(props: SettingsModalProps) {
       return next;
     });
   };
-
-  useEffect(() => {
-    const element = settingsContentRef.current;
-    if (!element) return;
-    const update = () => {
-      const canScroll = element.scrollHeight > element.clientHeight + 2;
-      const atBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 2;
-      setSettingsHasMore(canScroll && atBottom);
-    };
-    update();
-    element.addEventListener('scroll', update, { passive: true });
-    const resizeObserver = new ResizeObserver(update);
-    resizeObserver.observe(element);
-    return () => {
-      element.removeEventListener('scroll', update);
-      resizeObserver.disconnect();
-    };
-  }, [activeSection, tabOrder]);
 
   // Esc 关闭
   useEffect(() => {
@@ -161,9 +166,9 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="settings-head-brand">
             <div className="settings-head-icon"><Settings size={19} strokeWidth={1.8} /></div>
             <div>
-              <div className="settings-eyebrow">WORKSPACE SETTINGS</div>
-              <div className="settings-title-row"><h2 className="settings-title" id="settings-title">设置中心</h2><span className="settings-version">v{__APP_VERSION__}</span><span className="settings-status">● 在线就绪</span></div>
-              <p className="settings-subtitle">把媒体库整理成更顺手的工作空间</p>
+              <div className="settings-eyebrow">MEDIANEST · PREFERENCES</div>
+              <div className="settings-title-row"><h2 className="settings-title" id="settings-title">设置中心</h2><span className="settings-version">v{__APP_VERSION__}</span></div>
+              <p className="settings-subtitle">管理媒体库、整理方式与界面外观</p>
             </div>
           </div>
           <button type="button" className="settings-close" onClick={onClose} title="关闭 (Esc)" aria-label="关闭设置">
@@ -173,14 +178,13 @@ export function SettingsModal(props: SettingsModalProps) {
 
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="设置分类">
-            <div className="settings-nav-label">设置分类</div>
             {tabOrder.map((section) => (
               <button
                 key={section}
                 type="button"
                 draggable
                 className={`settings-nav-item${activeSection === section ? ' is-active' : ''}${draggingTab === section ? ' is-dragging' : ''}`}
-                onClick={() => setActiveSection(section)}
+                onClick={() => selectSection(section)}
                 onDragStart={(event) => {
                   setDraggingTab(section);
                   event.dataTransfer.effectAllowed = 'move';
@@ -193,15 +197,16 @@ export function SettingsModal(props: SettingsModalProps) {
                   setDraggingTab(null);
                 }}
                 onDragEnd={() => setDraggingTab(null)}
-                title="拖动调整标签顺序"
+                title={`${SETTINGS_TAB_LABELS[section]}设置，拖动可调整顺序`}
               >
-                <span>{SETTINGS_TAB_LABELS[section]}</span><small>拖动排序</small>
+                {(() => { const TabIcon = SETTINGS_TAB_ICONS[section]; return <TabIcon size={17} strokeWidth={1.8} />; })()}
+                <span>{SETTINGS_TAB_LABELS[section]}</span>
               </button>
             ))}
             <div className="settings-nav-footer"><SlidersHorizontal {...ICON} /> 偏好设置会自动保存</div>
           </nav>
 
-          <div ref={settingsContentRef} className={`settings-content settings-content-${activeSection}`}>
+          <div className={`settings-content settings-content-${activeSection}`}>
 
         {/* 隐藏目录 */}
         <div className="settings-section settings-panel-hidden">
@@ -362,6 +367,31 @@ export function SettingsModal(props: SettingsModalProps) {
           </div>
           <div className="settings-hint settings-note">同名目标文件会直接覆盖；跨盘文件会按盘符分别处理。</div>
           <div className="settings-subsection-label">分类</div>
+          <div className="settings-row settings-category-create">
+            <input
+              className="settings-text-input"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newCategoryName.trim()) {
+                  onCreateOrganizeCategory(newCategoryName);
+                  setNewCategoryName('');
+                }
+              }}
+              placeholder="输入分类名称"
+              aria-label="新分类名称"
+            />
+            <button
+              className="settings-btn settings-btn-primary"
+              disabled={!newCategoryName.trim()}
+              onClick={() => {
+                onCreateOrganizeCategory(newCategoryName);
+                setNewCategoryName('');
+              }}
+            >
+              <Plus {...ICON} /> 新建分类
+            </button>
+          </div>
           <div className="settings-category-list">
             {organizeCategories.length === 0 && (
               <div className="settings-hint">还没有预设分类。</div>
@@ -441,30 +471,6 @@ export function SettingsModal(props: SettingsModalProps) {
                 </button>
               </div>
             ))}
-          </div>
-          <div className="settings-row">
-            <input
-              className="settings-text-input"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newCategoryName.trim()) {
-                  onCreateOrganizeCategory(newCategoryName);
-                  setNewCategoryName('');
-                }
-              }}
-              placeholder="新分类名称"
-            />
-            <button
-              className="settings-btn"
-              disabled={!newCategoryName.trim()}
-              onClick={() => {
-                onCreateOrganizeCategory(newCategoryName);
-                setNewCategoryName('');
-              }}
-            >
-              <Plus {...ICON} /> 新建分类
-            </button>
           </div>
         </div>
 
@@ -589,11 +595,6 @@ export function SettingsModal(props: SettingsModalProps) {
             </div>
           </details>
         </div>
-          </div>
-          <div className={`settings-scroll-edge${settingsHasMore ? ' is-visible' : ''}`} aria-hidden="true" />
-          <div className="settings-footer">
-            <span><i /> 更改将自动同步至本地索引</span>
-            <button type="button" onClick={onClose}>完成</button>
           </div>
         </div>
       </aside>

@@ -3,7 +3,7 @@ import type { VideoFilter } from '../src/types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ---------- 播放控制 ----------
-  playVideo: (videoPath: string) => ipcRenderer.invoke('play-video', videoPath),
+  playVideo: (videoPath: string, playlistPaths?: string[]) => ipcRenderer.invoke('play-video', videoPath, playlistPaths),
   openVideoDirectory: (videoPath: string) => ipcRenderer.invoke('open-video-directory', videoPath),
   openFolderDirectory: (folderPath: string) => ipcRenderer.invoke('open-folder-directory', folderPath),
   stopVideo: () => ipcRenderer.invoke('stop-video'),
