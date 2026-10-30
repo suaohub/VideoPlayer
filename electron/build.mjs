@@ -1,4 +1,5 @@
 import esbuild from 'esbuild';
+import { copyFile } from 'node:fs/promises';
 
 // 编译主进程和 preload 脚本
 const isWatch = process.argv.includes('--watch');
@@ -36,5 +37,8 @@ if (isWatch) {
   console.log('[esbuild] watching electron main/preload...');
 } else {
   await Promise.all([esbuild.build(mainOptions), esbuild.build(preloadOptions)]);
+  // Keep the bundled fallback in sync with the source OSC. Packaged builds
+  // also copy the source directly to resources/osc.lua for the external mpv.
+  await copyFile('electron/osc.lua', 'dist/electron/osc.lua');
   console.log('[esbuild] built electron main/preload');
 }

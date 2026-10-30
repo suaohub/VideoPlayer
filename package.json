@@ -33,7 +33,7 @@
     ],
     "extraResources": [
       {
-        "from": "dist/electron/osc.lua",
+        "from": "electron/osc.lua",
         "to": "osc.lua"
       },
       {
