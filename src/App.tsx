@@ -285,12 +285,14 @@ function App() {
   // 深度规格由主进程逐文件低优先级探测；概览页统一防抖刷新，避免卡片逐条重排。
   useEffect(() => {
     const offMetadata = api.onMediaMetadataReady((data) => {
+      // 概览页不展示这些深度字段；后台探测期间跳过父级状态更新，避免整页重绘。
+      if (activePage === 'overview') return;
       startTransition(() => {
         setVideos((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
       });
     });
     return () => { offMetadata?.(); };
-  }, []);
+  }, [activePage]);
 
   // 刷新标签、目录、视频总数（跟随当前媒体类型分类）
   const refreshAll = useCallback(async () => {
