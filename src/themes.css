@@ -2482,23 +2482,13 @@ textarea:focus-visible,
   padding: 4px 8px 14px;
 }
 
-.organize-preview-note {
-  display: flex;
+.organize-preview-info {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: 2px 0 8px;
-  padding: 7px 8px;
-  color: var(--text-tertiary);
-  background: var(--bg-hover);
-  border: 1px solid var(--line-subtle);
-  border-radius: 7px;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.organize-preview-note svg {
-  flex: 0 0 auto;
-  color: var(--accent);
+  justify-content: center;
+  flex: 0 0 18px;
+  height: 18px;
+  cursor: help;
 }
 
 .organize-preview-heading {

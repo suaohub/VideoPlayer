@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, FolderKanban, Tag } from 'lucide-react';
+import { ChevronDown, ChevronRight, FolderKanban, Info } from 'lucide-react';
 import { OrganizeCategory, Video } from '../types';
 
 interface OrganizePreviewTreeProps {
@@ -66,18 +66,12 @@ export function OrganizePreviewTree({
       .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'zh-CN'));
   }, [videos, organizeCategories]);
 
-  const markedCount = categories.reduce((total, category) => total + category.count, 0);
-
   if (loading) {
     return <div className="organize-preview-empty">正在加载整理预览…</div>;
   }
 
   return (
     <div className="organize-preview-tree">
-      <div className="organize-preview-note">
-        <Tag size={12} />
-        <span>这里是分类后的预览目录，不会移动文件</span>
-      </div>
       <div className="organize-preview-heading">
         <button
           type="button"
@@ -96,7 +90,9 @@ export function OrganizePreviewTree({
           </span>
           <FolderKanban size={15} strokeWidth={1.7} />
           <span className="organize-preview-category-name">已标记分类</span>
-          <span className="organize-preview-category-count">{markedCount}</span>
+          <span className="organize-preview-info" title="这里是分类后的预览目录，不会移动文件">
+            <Info size={14} aria-label="整理预览说明" />
+          </span>
         </button>
       </div>
       {expanded && (
