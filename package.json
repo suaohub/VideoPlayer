@@ -1,6 +1,6 @@
 {
   "name": "medianest",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "main": "dist/electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -26,7 +26,7 @@
     "appId": "com.sususu.videoplayer",
     "productName": "MediaNest",
     "directories": {
-      "output": "release/v1.8.4"
+      "output": "release/v1.8.5"
     },
     "files": [
       "dist/**/*",
