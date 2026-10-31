@@ -283,14 +283,11 @@ function App() {
     };
   }, []);
 
-  // 深度规格由主进程逐文件低优先级探测，单条更新，避免刷新整个列表。
+  // 深度规格由主进程逐文件低优先级探测；概览页统一防抖刷新，避免卡片逐条重排。
   useEffect(() => {
     const offMetadata = api.onMediaMetadataReady((data) => {
       startTransition(() => {
         setVideos((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
-        setOverviewRecentAdded((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
-        setOverviewFavorites((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
-        setOverviewRecentPlayback((prev) => prev.map((item) => item.id === data.id || item.video_id === data.id ? { ...item, ...data } : item));
       });
     });
     return () => { offMetadata?.(); };
@@ -747,19 +744,14 @@ function App() {
   }, [playingAudio, readingText, readingComic, feedVideos]);
 
   useEffect(() => {
-    const offMetadata = api.onMediaMetadataReady((data) => {
-      startTransition(() => {
-        setOverviewRecentAdded((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
-        setOverviewFavorites((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
-        setOverviewRecentPlayback((prev) => prev.map((item) => item.id === data.id || item.video_id === data.id ? { ...item, ...data } : item));
-      });
+    const offMetadata = api.onMediaMetadataReady(() => {
       // 规格探测可能在渲染进程完成首次加载前就结束，事件不会被首次页面接收。
       // 合并短时间内的通知，重新读取概览数据，确保这类后台更新最终可见。
       if (metadataOverviewRefreshTimer.current != null) window.clearTimeout(metadataOverviewRefreshTimer.current);
       metadataOverviewRefreshTimer.current = window.setTimeout(() => {
         metadataOverviewRefreshTimer.current = null;
         void loadOverview();
-      }, 300);
+      }, 700);
     });
     return () => {
       offMetadata?.();
