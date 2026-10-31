@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react';
+import { useRef } from 'react';
 import {
   ArrowRight,
   BookOpen,
@@ -229,7 +229,7 @@ function SectionHeading({
   );
 }
 
-export const Overview = memo(function Overview({
+export function Overview({
   recentAdded,
   continueWatching,
   favorites,
@@ -362,4 +362,4 @@ export const Overview = memo(function Overview({
       )}
     </div>
   );
-});
+}
