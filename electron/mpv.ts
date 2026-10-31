@@ -8,6 +8,7 @@ import * as net from 'net';
 import { getSetting, setSetting, savePlaybackProgress, getPlaybackProgress } from './queries';
 import { setThumbnailGenerationPaused } from './thumbnailQueue';
 import { isAudioFile } from './media';
+import { ensureMpvInputConfig } from './mpvInput';
 
 declare const __dirname: string;
 
@@ -420,6 +421,9 @@ async function playVideoInternal(videoPath: string, playlistPaths?: string[]): P
       // 播放列表中间的文件在 EOF 时自动推进到下一项。
       '--keep-open=always',
       '--no-config',
+      // Load before the window accepts input: default ENTER advances the playlist.
+      // Binding over IPC after appending a large playlist leaves a startup race.
+      `--input-conf=${ensureMpvInputConfig(app.getPath('userData'))}`,
       // 关闭 mpv 原生居中的 seek 进度条；自定义 OSC 仍保留底部沉浸式时间轴，
       // 音量调节的原生 OSD 提示不受影响。
       '--osd-on-seek=no',
@@ -612,12 +616,6 @@ function waitAndConnectSocket(
           for (const path of rest) sendCommand(['loadfile', path, 'append']);
           writeRuntimeLog(`[mpv-playlist-append] current=${videoPath} appended=${rest.length}`);
         }
-        // 绑定回车键 = 退出 mpv（回到列表）
-        sendCommand(['keybind', 'ENTER', 'quit']);
-        sendCommand(['keybind', 'KP_ENTER', 'quit']); // 小键盘回车
-        // 左右方向键使用相对跳转 + 关键帧模式，避免长 GOP 视频精确追帧卡顿。
-        sendCommand(['keybind', 'LEFT', 'seek', '-5', 'relative+keyframes']);
-        sendCommand(['keybind', 'RIGHT', 'seek', '5', 'relative+keyframes']);
         void Promise.all([
           getSetting('playerVolume'),
           getSetting('playerSpeed'),

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import { memo, useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Film, Music2, BookOpen, RefreshCw, FolderOpen, Heart, Plus } from 'lucide-react';
@@ -6,6 +6,7 @@ import { OrganizeCategory, Video, LibraryViewMode } from '../types';
 import { api } from '../api';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
 import { computeMasonry, CardLayout } from '../masonry';
+import { computeListLayout, visibleListRange } from '../listLayout';
 import { isAudioFile, isTextFile, isComicExt } from '../media';
 
 interface VideoGridProps {
@@ -37,11 +38,13 @@ interface VideoGridProps {
 }
 
 const GAP = 12;
+const CONTENT_PADDING = 16;
 // 视口外上下各预渲染这么多像素，防止快速滚动时空白闪烁
 const OVERSCAN = 640;
 const VERTICAL_REPEAT_DELAY = 420;
 const VERTICAL_REPEAT_INTERVAL = 190;
 const EMPTY_HIDDEN_IDS = new Set<number>();
+const EMPTY_ORGANIZE_CATEGORIES: OrganizeCategory[] = [];
 type MoveBehavior = 'auto' | 'smooth' | 'linear';
 
 function formatSize(bytes: number): string {
@@ -372,38 +375,53 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   );
 }
 
-function VideoListRow({
-  video,
+const VideoListRow = memo(function VideoListRow({
+  layout,
+  focused,
   organizeCategories,
   selectionMode,
   selected,
   onPlay,
   onToggleFavorite,
   onToggleSelect,
+  onFocus,
+  canActivateKeyboard,
   cardRef,
 }: {
-  video: Video;
+  layout: CardLayout;
+  focused: boolean;
   organizeCategories: OrganizeCategory[];
   selectionMode: boolean;
   selected: boolean;
   onPlay: (video: Video) => void;
   onToggleFavorite: (videoId: number) => void;
   onToggleSelect: (videoId: number) => void;
-  cardRef: (el: HTMLDivElement | null) => void;
+  onFocus: (videoId: number) => void;
+  canActivateKeyboard: () => boolean;
+  cardRef: (videoId: number, el: HTMLDivElement | null) => void;
 }) {
+  const video = layout.video;
+  const setRowRef = useCallback((el: HTMLDivElement | null) => cardRef(video.id, el), [cardRef, video.id]);
   const category = organizeCategories.find((item) => item.id === video.organize_category_id);
   const modified = video.mtime ? new Date(video.mtime).toLocaleDateString() : '—';
   return (
     <div
-      ref={cardRef}
-      className={`video-list-row${selectionMode ? ' is-selection-mode' : ''}${selected ? ' is-selected' : ''}`}
+      ref={setRowRef}
+      className={`video-list-row${focused ? ' is-focused' : ''}${selectionMode ? ' is-selection-mode' : ''}${selected ? ' is-selected' : ''}`}
+      style={{ position: 'absolute', left: 0, right: 0, top: layout.y, height: layout.height }}
       data-video-id={video.id}
       role="button"
       tabIndex={0}
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) onFocus(video.id);
+      }}
       onClick={() => selectionMode ? onToggleSelect(video.id) : onPlay(video)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
+          event.stopPropagation();
+          if (event.repeat || !canActivateKeyboard()) return;
           selectionMode ? onToggleSelect(video.id) : onPlay(video);
         }
       }}
@@ -429,12 +447,17 @@ function VideoListRow({
       </button>
     </div>
   );
-}
+});
 
-export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = [], onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory, onCreateOrganizeCategory, categoryTooltipEnabled = true, viewMode = 'grid' }: VideoGridProps) {
+export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardSizeChange, cardSizeRange, onPlay, onToggleFavorite, onBatchUnfavorite, showFavorited, onRegenerateThumbnail, regeneratingThumbnailIds, selectionMode: externalSelectionMode, selectedIds: externalSelectedIds, onToggleSelect: externalOnToggleSelect, onSelectionModeChange, onSelectedIdsChange, onMarkForDeletion, hiddenVideoIds, organizeCategories = EMPTY_ORGANIZE_CATEGORIES, onSetOrganizeCategory = () => {}, onBatchSetOrganizeCategory, onCreateOrganizeCategory, categoryTooltipEnabled = true, viewMode = 'grid' }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 用 Map 存 ref，key=video.id，虚拟化后 index 不再稳定
   const cardEls = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  const registerListRow = useCallback((videoId: number, el: HTMLDivElement | null) => {
+    if (el) cardEls.current.set(videoId, el);
+    else cardEls.current.delete(videoId);
+  }, []);
+  const pendingListFocus = useRef<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   // 多选模式状态：收藏管理和批量整理共用同一套选择逻辑。
   const [internalSelectionMode, setInternalSelectionMode] = useState(false);
@@ -506,6 +529,10 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
   // Enter 播放时记住原始卡片，mpv 退出后恢复到这张卡片，而不是恢复到鼠标最后经过的位置。
   const playbackFocusVideoIdRef = useRef<number | null>(null);
   const pointerFocusSuppressedUntilRef = useRef(0);
+  const keyboardActivationBlockedUntilRef = useRef(0);
+  const canActivateKeyboard = useCallback(() => (
+    performance.now() >= keyboardActivationBlockedUntilRef.current
+  ), []);
   const hiddenIdsRef = useRef(hiddenIds);
   hiddenIdsRef.current = hiddenIds;
 
@@ -535,6 +562,8 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
   // 这里只处理键盘焦点，避免两套交互互相覆盖。
   useEffect(() => {
     const off = api.onStopped(() => {
+      // Focus returns while the mpv exit key may still be held down.
+      keyboardActivationBlockedUntilRef.current = performance.now() + 400;
       const videoId = playbackFocusVideoIdRef.current;
       playbackFocusVideoIdRef.current = null;
       if (videoId == null) return;
@@ -820,7 +849,7 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
     }
     el.scrollTop = 0;
     setScrollTop(0);
-  }, [contentTransitionKey]);
+  }, [contentTransitionKey, viewMode]);
 
   // 追踪 scroll 位置（用于虚拟化窗口计算）
   useEffect(() => {
@@ -880,33 +909,49 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
     };
   }, [onCardSizeChange, cardSizeRange]);
 
-  // 计算瀑布流布局
+  // List rows use their own coordinates; masonry geometry cannot position list focus.
   const { layouts, totalHeight } = useMemo(
-    () => computeMasonry(videos, containerWidth, cardSize, GAP),
-    [videos, containerWidth, cardSize]
+    () => viewMode === 'list'
+      ? computeListLayout(videos, Math.max(760, containerWidth))
+      : computeMasonry(videos, containerWidth, cardSize, GAP),
+    [videos, containerWidth, cardSize, viewMode]
   );
 
   // 虚拟化：只渲染视口 ± OVERSCAN 范围内的卡片（外加当前焦点卡片）
   const visibleIndices = useMemo(() => {
-    const top = scrollTop - OVERSCAN;
-    const bottom = scrollTop + viewportHeight + OVERSCAN;
+    const top = scrollTop - CONTENT_PADDING - OVERSCAN;
+    const bottom = scrollTop - CONTENT_PADDING + viewportHeight + OVERSCAN;
     const set = new Set<number>();
+    if (viewMode === 'list') {
+      const [start, end] = visibleListRange(layouts.length, top, bottom);
+      for (let index = start; index < end; index++) set.add(index);
+      return set;
+    }
     layouts.forEach((L, i) => {
       if (L.y + L.height >= top && L.y <= bottom) set.add(i);
     });
     return set;
-  }, [layouts, scrollTop, viewportHeight]);
+  }, [layouts, scrollTop, viewportHeight, viewMode]);
 
   const renderedLayouts = useMemo(() => {
     const rendered: Array<{ layout: CardLayout; index: number }> = [];
-    layouts.forEach((layout, index) => {
-      if (hiddenIds.has(layout.video.id)) return;
-      if (visibleIndices.has(index) || index === focusedIndex) {
-        rendered.push({ layout, index });
-      }
-    });
+    const indices = new Set(visibleIndices);
+    if (focusedIndex >= 0 && focusedIndex < layouts.length) indices.add(focusedIndex);
+    for (const index of Array.from(indices).sort((a, b) => a - b)) {
+      const layout = layouts[index];
+      if (hiddenIds.has(layout.video.id)) continue;
+      rendered.push({ layout, index });
+    }
     return rendered;
   }, [layouts, hiddenIds, visibleIndices, focusedIndex]);
+
+  // An offscreen keyboard target mounts in this commit, then receives DOM focus.
+  useLayoutEffect(() => {
+    const videoId = pendingListFocus.current;
+    if (videoId == null) return;
+    pendingListFocus.current = null;
+    cardEls.current.get(videoId)?.focus({ preventScroll: true });
+  }, [renderedLayouts]);
 
   useEffect(() => {
     const current = focusedIndexRef.current;
@@ -971,11 +1016,12 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
     if (!container) return;
     const viewportTop = container.scrollTop;
     const viewportBottom = viewportTop + container.clientHeight;
-    const cardBottom = L.y + L.height;
+    const cardTop = L.y + CONTENT_PADDING;
+    const cardBottom = cardTop + L.height;
     let targetTop = viewportTop;
 
-    if (L.y < viewportTop) {
-      targetTop = L.y;
+    if (cardTop < viewportTop) {
+      targetTop = cardTop;
     } else if (cardBottom > viewportBottom) {
       targetTop = cardBottom - container.clientHeight;
     }
@@ -1009,7 +1055,6 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
 
   // 视频列表变化时重置焦点
   useEffect(() => {
-    cardEls.current = new Map();
     const previousId = focusedVideoIdRef.current;
     const preservedIndex = previousId == null
       ? -1
@@ -1052,6 +1097,7 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
     if (current < 0) {
       const firstVisibleIndex = videos.findIndex((video) => !hiddenIds.has(video.id));
       if (firstVisibleIndex >= 0) {
+        if (viewMode === 'list') pendingListFocus.current = videos[firstVisibleIndex].id;
         focusedVideoIdRef.current = videos[firstVisibleIndex].id;
         focusedIndexRef.current = firstVisibleIndex;
         setFocusedIndex(firstVisibleIndex);
@@ -1062,11 +1108,12 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
 
     const target = findTarget(getLayoutRects(), current, dir);
     if (target < 0 || target === current) return;
+    if (viewMode === 'list') pendingListFocus.current = videos[target].id;
     focusedVideoIdRef.current = videos[target].id;
     focusedIndexRef.current = target;
     setFocusedIndex(target);
     scrollIntoView(target, behavior);
-  }, [videos, hiddenIds, scrollIntoView, getLayoutRects]);
+  }, [videos, hiddenIds, scrollIntoView, getLayoutRects, viewMode]);
 
   const startVerticalRepeat = useCallback((key: 'ArrowUp' | 'ArrowDown') => {
     stopVerticalRepeat();
@@ -1129,6 +1176,8 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
           startVerticalRepeat(e.key);
         }
       } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.repeat || !canActivateKeyboard()) return;
         const current = focusedIndexRef.current;
         const currentVideos = videosRef.current;
         if (current >= 0 && currentVideos[current]) {
@@ -1172,9 +1221,9 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
       }
       if (comboTimer.current != null) { clearTimeout(comboTimer.current); comboTimer.current = null; }
     };
-  }, [move, startVerticalRepeat, stopVerticalRepeat, updateSelectionMode, updateSelectedIds]);
+  }, [move, startVerticalRepeat, stopVerticalRepeat, updateSelectionMode, updateSelectedIds, canActivateKeyboard]);
 
-  const handleToggleSelect = (videoId: number) => {
+  const handleToggleSelect = useCallback((videoId: number) => {
     if (externalOnToggleSelect) {
       externalOnToggleSelect(videoId);
     } else {
@@ -1185,7 +1234,7 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
         return next;
       });
     }
-  };
+  }, [externalOnToggleSelect, updateSelectedIds]);
 
   const handleBatchCategory = async (categoryId: number | null) => {
     if (!onBatchSetOrganizeCategory || selectedIds.size === 0 || batchActionBusy) return;
@@ -1232,7 +1281,7 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
       }}
       style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: 16, overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch', scrollbarGutter: 'stable' }}
     >
-      <div key={contentTransitionKey} className="video-grid-content">
+      <div key={contentTransitionKey} className={`video-grid-content${viewMode === 'list' ? ' video-grid-content-list' : ''}`}>
       {videos.length === 0 ? (
         <div className="video-grid-empty">
           <div className="empty-state-icon"><Film size={25} strokeWidth={1.7} /></div>
@@ -1240,21 +1289,21 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
           <div className="empty-state-hint">从顶部导入文件夹或媒体文件，建立你的本地收藏。</div>
         </div>
       ) : viewMode === 'list' ? (
-        <div className="video-list" role="list" aria-label="媒体列表">
-          {videos.map((video) => (
+        <div className="video-list" role="list" aria-label="媒体列表" style={{ height: totalHeight }}>
+          {renderedLayouts.map(({ layout, index }) => (
             <VideoListRow
-              key={video.id}
-              video={video}
+              key={layout.video.id}
+              layout={layout}
+              focused={index === focusedIndex}
               organizeCategories={organizeCategories}
               selectionMode={selectionMode}
-              selected={selectedIds.has(video.id)}
+              selected={selectedIds.has(layout.video.id)}
               onPlay={handlePlayFromGrid}
               onToggleFavorite={onToggleFavorite}
               onToggleSelect={handleToggleSelect}
-              cardRef={(el) => {
-                if (el) cardEls.current.set(video.id, el);
-                else cardEls.current.delete(video.id);
-              }}
+              onFocus={focusVideoById}
+              canActivateKeyboard={canActivateKeyboard}
+              cardRef={registerListRow}
             />
           ))}
         </div>

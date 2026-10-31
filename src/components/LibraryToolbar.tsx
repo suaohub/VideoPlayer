@@ -21,8 +21,9 @@ import {
   MonitorPlay,
   RefreshCw,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { LibraryViewMode, MediaType, SortBy, SortDir } from '../types';
+import { ToolbarMenu } from './ToolbarMenu';
 
 const MEDIA_TABS: { value: MediaType; label: string; Icon: typeof LayoutGrid }[] = [
   { value: 'all', label: '全部', Icon: LayoutGrid },
@@ -122,17 +123,6 @@ export function LibraryToolbar({
     return () => observer.disconnect();
   }, [mediaType]);
 
-  useEffect(() => {
-    if (!sortOpen && !moreOpen) return;
-    const close = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (sortRef.current && !sortRef.current.contains(target)) setSortOpen(false);
-      if (moreRef.current && !moreRef.current.contains(target)) setMoreOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [sortOpen, moreOpen]);
-
   const sortOptions = SORT_OPTIONS.filter((item) => mediaType === 'video' || item.value !== 'duration').map((item) => (
     item.value === 'duration' && mediaType === 'video' ? { ...item, label: '视频时长' } : item
   ));
@@ -156,16 +146,16 @@ export function LibraryToolbar({
       <span className="toolbar-count"><strong>{filteredCount.toLocaleString()}</strong><span> / {videoCount.toLocaleString()} 项</span><span className="toolbar-count-size">• {currentSizeLabel}</span></span>
       <div className="toolbar-divider" />
       <div className="sort-control" ref={sortRef}>
-        <button className={`toolbar-quiet-button${sortOpen ? ' is-open' : ''}`} onClick={() => setSortOpen((open) => !open)}>
+        <button className={`toolbar-quiet-button${sortOpen ? ' is-open' : ''}`} aria-haspopup="menu" aria-expanded={sortOpen} onClick={() => { setMoreOpen(false); setSortOpen((open) => !open); }}>
           <ArrowDownUp {...ICON} /><span>{currentSort.label}</span><ChevronDown size={14} className={sortOpen ? 'rotate-180' : undefined} />
         </button>
-        {sortOpen && <div className="toolbar-menu" role="menu">
+        {sortOpen && <ToolbarMenu anchorRef={sortRef} onClose={() => setSortOpen(false)}>
           {sortOptions.map(({ value, label, Icon }) => (
             <button key={value} className={`toolbar-menu-item${sortBy === value ? ' is-active' : ''}`} onClick={() => { onSortByChange(value); setSortOpen(false); }}>
               <Icon {...ICON} /><span>{label}</span>{sortBy === value && <span className="menu-check">✓</span>}
             </button>
           ))}
-        </div>}
+        </ToolbarMenu>}
       </div>
       <div className="toolbar-divider" />
       {sortBy !== 'random' && <button className="toolbar-icon-button quiet" onClick={() => onSortDirChange(sortDir === 'asc' ? 'desc' : 'asc')} title={sortDir === 'asc' ? '升序' : '降序'}>
@@ -184,10 +174,10 @@ export function LibraryToolbar({
       </div>
       <div className="toolbar-divider" />
       <div className="more-control" ref={moreRef}>
-        <button className={`toolbar-quiet-button${moreOpen ? ' is-open' : ''}`} onClick={() => setMoreOpen((open) => !open)}>
+        <button className={`toolbar-quiet-button${moreOpen ? ' is-open' : ''}`} aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => { setSortOpen(false); setMoreOpen((open) => !open); }}>
           <span>更多</span><ChevronDown size={14} className={moreOpen ? 'rotate-180' : undefined} />
         </button>
-        {moreOpen && <div className="toolbar-menu toolbar-menu-right" role="menu">
+        {moreOpen && <ToolbarMenu anchorRef={moreRef} align="right" onClose={() => setMoreOpen(false)}>
           <button className="toolbar-menu-item" onClick={() => { onOpenFeed(); setMoreOpen(false); }}><Clapperboard {...ICON} /><span>沉浸式刷视频</span></button>
           <button className="toolbar-menu-item" onClick={() => { onShuffle(); setMoreOpen(false); }}><Dices {...ICON} /><span>随机排列</span></button>
           <button className="toolbar-menu-item" onClick={() => { onClearFilter(); setMoreOpen(false); }}><FilterX {...ICON} /><span>清除筛选</span></button>
@@ -197,7 +187,7 @@ export function LibraryToolbar({
           <div className="toolbar-menu-separator" />
           <div className="toolbar-menu-label"><Grid2x2 {...ICON} /><span>卡片大小</span><span className="toolbar-menu-value">{cardSize}px</span></div>
           <input className="card-size-range app-range" type="range" min={120} max={420} value={cardSize} style={{ ['--range-progress' as string]: `${((cardSize - 120) / 300) * 100}%` }} onChange={(event) => onCardSizeChange(Number(event.target.value))} />
-        </div>}
+        </ToolbarMenu>}
       </div>
       {batchActionAvailable && !batchSelectionMode && <>
         <div className="toolbar-divider" />

@@ -2114,6 +2114,18 @@ textarea:focus-visible,
   min-width: 232px;
 }
 
+.toolbar-menu.toolbar-menu-floating {
+  position: fixed;
+  right: auto;
+  min-width: min(188px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  overflow-y: auto;
+}
+
+.toolbar-menu-floating.toolbar-menu-right {
+  min-width: min(232px, calc(100vw - 16px));
+}
+
 .toolbar-menu-item {
   display: flex;
   align-items: center;
@@ -3725,11 +3737,8 @@ button[aria-busy='true'] {
 }
 
 .video-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  position: relative;
   min-width: 760px;
-  padding-bottom: 16px;
 }
 
 .video-list-row {
@@ -3758,6 +3767,7 @@ button[aria-busy='true'] {
 }
 
 .video-list-row:hover,
+.video-list-row.is-focused,
 .video-list-row:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--line-default));
   background: color-mix(in srgb, var(--accent-soft) 58%, var(--bg-card));
@@ -4281,11 +4291,6 @@ button[aria-busy='true'] {
   to { opacity: 1; transform: none; filter: blur(0); }
 }
 
-@keyframes library-row-in {
-  from { opacity: 0; transform: translateY(14px); filter: blur(2px); }
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
-}
-
 @keyframes library-status-in {
   from { opacity: 0; max-height: 0; transform: translateY(-5px); }
   to { opacity: 1; max-height: 120px; transform: none; }
@@ -4340,20 +4345,9 @@ button[aria-busy='true'] {
   transform-origin: top center;
 }
 
-.video-list-row {
-  animation: library-row-in 360ms cubic-bezier(.2, .8, .2, 1) both;
+.video-grid-content-list {
+  animation: none;
 }
-
-.video-list-row:nth-child(2) { animation-delay: 24ms; }
-.video-list-row:nth-child(3) { animation-delay: 48ms; }
-.video-list-row:nth-child(4) { animation-delay: 72ms; }
-.video-list-row:nth-child(5) { animation-delay: 96ms; }
-.video-list-row:nth-child(6) { animation-delay: 120ms; }
-.video-list-row:nth-child(7) { animation-delay: 144ms; }
-.video-list-row:nth-child(8) { animation-delay: 168ms; }
-.video-list-row:nth-child(9) { animation-delay: 192ms; }
-.video-list-row:nth-child(10) { animation-delay: 216ms; }
-.video-list-row:nth-child(n+11) { animation-delay: 240ms; }
 
 .video-grid-content .video-card {
   animation: library-card-in 360ms cubic-bezier(.22, 1, .36, 1) both;
