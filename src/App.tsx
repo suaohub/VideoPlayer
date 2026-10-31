@@ -4,6 +4,7 @@ import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, M
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
 import { LibraryToolbar } from './components/LibraryToolbar';
+import { ToolbarMenu } from './components/ToolbarMenu';
 import { FolderTree } from './components/FolderTree';
 import { OrganizePreviewTree } from './components/OrganizePreviewTree';
 import { SettingsModal } from './components/SettingsModal';
@@ -233,14 +234,6 @@ function App() {
   const [folderSortMenuOpen, setFolderSortMenuOpen] = useState(false);
   const folderSortRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!folderSortMenuOpen) return;
-    const close = (event: MouseEvent) => {
-      if (folderSortRef.current && !folderSortRef.current.contains(event.target as Node)) setFolderSortMenuOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [folderSortMenuOpen]);
   const [libraryHealth, setLibraryHealth] = useState<MediaLibraryHealth | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -1752,7 +1745,8 @@ function App() {
                 </button>
               </nav>
               <div className="sidebar-folder-section">
-                <div className="sidebar-folder-tabs" role="tablist" aria-label="目录视图">
+                <div className="sidebar-folder-tabs" role="tablist" aria-label="目录视图" data-active-tab={sidebarFolderTab}>
+                  <span className="sidebar-folder-tab-slider" aria-hidden="true" />
                   <button
                     type="button"
                     role="tab"
@@ -1795,7 +1789,9 @@ function App() {
                         <div className="folder-sort-picker">
                           <button
                             type="button"
-                            className="toolbar-quiet-button"
+                            className={`toolbar-quiet-button${folderSortMenuOpen ? ' is-open' : ''}`}
+                            aria-haspopup="menu"
+                            aria-expanded={folderSortMenuOpen}
                             title={`目录排序：${folderSortBy === 'name' ? '名称（Windows 风格自然排序）' : folderSortBy === 'size' ? '目录大小' : '导入日期'}，${folderSortDir === 'asc' ? '升序' : '降序'}`}
                             aria-label={`目录排序：${folderSortBy === 'name' ? '名称' : folderSortBy === 'size' ? '目录大小' : '导入日期'}，${folderSortDir === 'asc' ? '升序' : '降序'}`}
                             onClick={() => setFolderSortMenuOpen((open) => !open)}
@@ -1805,7 +1801,7 @@ function App() {
                             <ChevronDown size={13} className={folderSortMenuOpen ? 'rotate-180' : undefined} />
                           </button>
                           {folderSortMenuOpen && (
-                            <div className="toolbar-menu" role="menu">
+                            <ToolbarMenu anchorRef={folderSortRef} onClose={() => setFolderSortMenuOpen(false)}>
                               {([
                                 ['name', '名称（Windows 风格）', Search],
                                 ['imported', '导入日期', Clock3],
@@ -1815,7 +1811,7 @@ function App() {
                                   <Icon size={15} /><span>{label}</span>{folderSortBy === value && <span className="menu-check">✓</span>}
                                 </button>
                               ))}
-                            </div>
+                            </ToolbarMenu>
                           )}
                         </div>
                         <button
