@@ -72,7 +72,7 @@
 .overview-hero-play { position: absolute; z-index: 3; right: 8%; bottom: 11%; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 16px; color: #fff; border-radius: 9px; background: var(--accent); font-size: 11px; font-weight: 650; box-shadow: 0 5px 12px rgba(45, 102, 239, .24); transition: background .18s ease; }
 .overview-hero-play svg { width: 13px; height: 13px; }
 .overview-hero-feature:hover .overview-hero-play { background: var(--accent-hover); }
-.overview-collection-rail { min-width: 0; padding: 20px 20px 12px; border: 1px solid var(--overview-line); border-radius: 21px; background: var(--overview-surface); box-shadow: var(--overview-shadow); }
+.overview-collection-rail { min-width: 0; min-height: 100%; align-self: stretch; display: flex; flex-direction: column; box-sizing: border-box; padding: 20px 20px 12px; border: 1px solid var(--overview-line); border-radius: 21px; background: var(--overview-surface); box-shadow: var(--overview-shadow); }
 .overview-rail-heading { position: relative; display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
 .overview-rail-heading > span { color: var(--accent); font-size: 8px; letter-spacing: .12em; }
 .overview-rail-heading strong { color: var(--text-primary); font-size: 16px; font-weight: 700; letter-spacing: -.035em; }
@@ -85,7 +85,7 @@
 .overview-pick-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font-size: 11px; font-weight: 650; }
 .overview-pick-copy small { color: var(--overview-muted); font-size: 9px; line-height: 1.5; }
 .overview-pick-card > svg { color: var(--overview-muted); opacity: .6; }
-.overview-rail-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin-top: 6px; padding: 12px 0 4px; border: 0; border-top: 1px solid var(--overview-line); color: var(--text-secondary); background: transparent; font-size: 10px; cursor: pointer; }
+.overview-rail-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin-top: auto; padding: 12px 0 4px; border: 0; border-top: 1px solid var(--overview-line); color: var(--text-secondary); background: transparent; font-size: 10px; cursor: pointer; }
 .overview-rail-link:hover { color: var(--accent); }
 .overview-rail-link svg { color: var(--overview-muted); }
 .overview-rail-stat { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; min-height: 54px; color: var(--overview-muted); border-top: 1px solid var(--overview-line); font-size: 11px; }
@@ -187,7 +187,7 @@
   .overview-featured-layout { grid-template-columns: 1fr; }
   .overview-hero-feature-copy { width: 53%; bottom: 18%; }
   .overview-hero-feature-copy strong { font-size: clamp(22px, 5cqw, 28px); }
-  .overview-collection-rail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; padding: 18px; }
+  .overview-collection-rail { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; padding: 18px; }
   .overview-rail-heading, .overview-rail-link { grid-column: 1 / -1; }
   .overview-rail-heading { margin-bottom: 8px; }
   .overview-pick-card { grid-template-columns: 14px 32px minmax(0, 1fr) 10px; }
