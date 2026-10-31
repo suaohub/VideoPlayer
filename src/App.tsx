@@ -133,7 +133,7 @@ function App() {
   // 数据
   const [videos, setVideos] = useState<Video[]>([]);
   // 当前目录/筛选范围内是否有被标记删除的视频。常规列表隐藏这些卡片，
-  // 但目录状态仍需告诉用户它们正在“待处理”，避免显示成空目录。
+  // 但目录状态仍需提示用户回收站中还有文件，避免误以为目录为空。
   const [markedVideosInView, setMarkedVideosInView] = useState(0);
   const [regeneratingThumbnailIds, setRegeneratingThumbnailIds] = useState<Set<number>>(new Set());
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -150,7 +150,6 @@ function App() {
   const [showFavoritedInList, setShowFavoritedInList] = useState(true);
   const [categoryTooltipEnabled, setCategoryTooltipEnabled] = useState(true);
   const [favoritedCount, setFavoritedCount] = useState(0);
-  const [showMarkedForDeletion, setShowMarkedForDeletion] = useState(false);
   const [markedForDeletionCount, setMarkedForDeletionCount] = useState(0);
   // 固定布局模式下，标记删除只隐藏卡片，不从布局数据中移除。
   const [fixedLayoutMode, setFixedLayoutMode] = useState(false);
@@ -221,7 +220,7 @@ function App() {
   const [organizing, setOrganizing] = useState(false);
   const [batchSelectionMode, setBatchSelectionMode] = useState(false);
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
-  const [activePage, setActivePage] = useState<'overview' | 'library' | 'health'>('overview');
+  const [activePage, setActivePage] = useState<'overview' | 'library' | 'health' | 'trash'>('overview');
   const [overviewRecentPlayback, setOverviewRecentPlayback] = useState<RecentPlayback[]>([]);
   const [overviewRecentAdded, setOverviewRecentAdded] = useState<Video[]>([]);
   const [overviewFavorites, setOverviewFavorites] = useState<Video[]>([]);
@@ -315,7 +314,7 @@ function App() {
     try {
       const [list, markedList] = await Promise.all([
         api.getVideos(filter),
-        // 这里只需要判断当前范围是否有待处理文件，不能再把整批记录和缩略图读入渲染进程。
+        // 这里只需要判断当前范围是否有已标记删除的文件，避免把整批记录和缩略图读入渲染进程。
         api.getVideos({ ...filter, markedForDeletion: true, limit: 1 }),
       ]);
       if (requestId !== videosRequestId.current) return;
@@ -1455,7 +1454,7 @@ function App() {
   // 原始目录视图只显示还未标记分类的视频；整理预览视图只显示已标记视频。
   const workingVideos = sidebarFolderTab === 'preview'
     ? previewVideos
-    : (!showFavorited && !showMarkedForDeletion
+    : (!showFavorited
       ? videos.filter((video) => (
         video.organize_category_id == null
         || isOrganizedVideo(video, organizeCategories, organizeOutputPath)
@@ -1472,7 +1471,6 @@ function App() {
   const showCategorizedOnlyNotice = sidebarFolderTab === 'source'
     && activePage === 'library'
     && !showFavorited
-    && !showMarkedForDeletion
     && videos.length > 0
     && categorizedVideoCount === videos.length
     && markedVideosInView === 0
@@ -1480,7 +1478,6 @@ function App() {
   const showMarkedFilesNotice = sidebarFolderTab === 'source'
     && activePage === 'library'
     && !showFavorited
-    && !showMarkedForDeletion
     && selectedFolderIds.length > 0
     && markedVideosInView > 0;
   const currentViewSize = visibleVideos.reduce((total, video) => {
@@ -1520,7 +1517,6 @@ function App() {
     setActivePage('overview');
     startTransition(() => {
       setMediaType('video');
-      setShowMarkedForDeletion(false);
       setShowFavorited(false);
       setShowFavoritedInList(true);
       setSelectedFolderIds([]);
@@ -1535,7 +1531,6 @@ function App() {
     setActivePage('health');
     startTransition(() => {
       setMediaType('all');
-      setShowMarkedForDeletion(false);
       setShowFavorited(false);
       setSelectedFolderIds([]);
       setSearch('');
@@ -1546,7 +1541,6 @@ function App() {
     setActivePage('library');
     startTransition(() => {
       setMediaType('video');
-      setShowMarkedForDeletion(false);
       setShowFavorited(false);
       setShowFavoritedInList(true);
       setSelectedFolderIds([]);
@@ -1555,32 +1549,32 @@ function App() {
   const openFavorites = () => {
     setActivePage('library');
     startTransition(() => {
-      setShowMarkedForDeletion(false);
       setMediaType('video');
       setShowFavoritedInList(true);
       setShowFavorited(true);
       setSelectedFolderIds([]);
     });
   };
-  const openMarkedForDeletion = () => {
-    setActivePage('library');
+  const openRecycleBin = () => {
+    setActivePage('trash');
     startTransition(() => {
       setMediaType('video');
       setShowFavorited(false);
       setShowFavoritedInList(true);
-      setShowMarkedForDeletion(true);
+      setSelectedFolderIds([]);
+      setSearch('');
+      setSidebarFolderTab('source');
     });
   };
 
-  const openHealthMarkedForDeletion = () => {
-    openMarkedForDeletion();
+  const openHealthRecycleBin = () => {
+    openRecycleBin();
     setSidebarFolderTab('source');
   };
 
   const openHealthOrganizePreview = () => {
     setActivePage('library');
     setMediaType('video');
-    setShowMarkedForDeletion(false);
     setShowFavorited(false);
     setShowFavoritedInList(true);
     setSelectedFolderIds([]);
@@ -1603,11 +1597,9 @@ function App() {
     && sidebarFolderTab === 'source'
     && (mediaType === 'all' || mediaType === 'video')
     && !showFavorited
-    && !showMarkedForDeletion
     && visibleVideos.length > 0;
   const batchFavoritesAvailable = activePage === 'library'
     && showFavorited
-    && !showMarkedForDeletion
     && visibleVideos.length > 0;
   const batchActionAvailable = batchOrganizeAvailable || batchFavoritesAvailable;
 
@@ -1615,7 +1607,7 @@ function App() {
   useEffect(() => {
     setBatchSelectionMode(false);
     setBatchSelectedIds(new Set());
-  }, [activePage, mediaType, search, showFavorited, showMarkedForDeletion, selectedFolderIds]);
+  }, [activePage, mediaType, search, showFavorited, selectedFolderIds]);
 
   const enterBatchSelection = () => {
     if (!batchActionAvailable) return;
@@ -1670,7 +1662,7 @@ function App() {
           refreshing={refreshing}
           sidebarOpen={sidebarOpen}
           onSidebarOpenChange={setSidebarOpen}
-          pageLabel={activePage === 'overview' ? '工作台' : activePage === 'health' ? '健康中心' : '媒体库'}
+          pageLabel={activePage === 'overview' ? '工作台' : activePage === 'health' ? '健康中心' : activePage === 'trash' ? '回收站' : '媒体库'}
           pageCurrent={activePage === 'overview' ? '概览' : activePage === 'health' ? '诊断' : undefined}
           isOverview
           mediaType={mediaType}
@@ -1697,7 +1689,6 @@ function App() {
           showFavorited={showFavorited}
           onShowFavoritedChange={(show) => {
             setActivePage('library');
-            setShowMarkedForDeletion(false);
             setShowFavorited(show);
           }}
           showFavoritedInList={showFavoritedInList}
@@ -1734,14 +1725,11 @@ function App() {
                 <button className={`sidebar-nav-item${activePage === 'overview' ? ' is-active' : ''}`} onClick={openOverview}>
                   <Home size={17} /><span>概览</span>
                 </button>
-                <button className={`sidebar-nav-item${activePage === 'library' && !showFavorited && !showMarkedForDeletion ? ' is-active' : ''}`} onClick={openLibrary}>
+                <button className={`sidebar-nav-item${activePage === 'library' && !showFavorited ? ' is-active' : ''}`} onClick={openLibrary}>
                   <LayoutGrid size={17} /><span>媒体库</span><span className="sidebar-nav-count">{(activePage === 'overview' ? overviewVideoCount : videoCount).toLocaleString()}</span>
                 </button>
                 <button className={`sidebar-nav-item${activePage === 'library' && showFavorited ? ' is-active' : ''}`} onClick={openFavorites}>
                   <Heart size={17} fill={showFavorited ? 'currentColor' : 'none'} /><span>收藏</span><span className="sidebar-nav-count">{(activePage === 'overview' ? overviewFavoriteCount : favoritedCount).toLocaleString()}</span>
-                </button>
-                <button className={`sidebar-nav-item${activePage === 'library' && showMarkedForDeletion ? ' is-active' : ''}`} onClick={openMarkedForDeletion}>
-                  <Trash2 size={17} /><span>待处理</span><span className="sidebar-nav-count">{markedForDeletionCount.toLocaleString()}</span>
                 </button>
               </nav>
               <div className="sidebar-folder-section">
@@ -1772,7 +1760,6 @@ function App() {
                       setMediaType('video');
                       setShowFavorited(false);
                       setShowFavoritedInList(true);
-                      setShowMarkedForDeletion(false);
                       setSelectedFolderIds([]);
                       setOrganizePreviewCategoryId(null);
                       void loadOrganizePreview();
@@ -1832,7 +1819,6 @@ function App() {
                         setActivePage('library');
                         setShowFavorited(false);
                         setShowFavoritedInList(true);
-                        setShowMarkedForDeletion(false);
                         setSelectedFolderIds(ids);
                       }}
                       onDeleteFolder={handleDeleteFolder}
@@ -1860,14 +1846,29 @@ function App() {
               </div>
               <div className="sidebar-footer">
                 <span>本地媒体库</span><span className="sidebar-footer-dot" /> <span>Windows</span>
-                <button
-                  className={`sidebar-footer-health${activePage === 'health' ? ' is-active' : ''}`}
-                  onClick={openHealth}
-                  title="健康中心"
-                  aria-label="健康中心"
-                >
-                  <Activity size={14} />
-                </button>
+                <div className="sidebar-footer-actions">
+                  <button
+                    className={`sidebar-footer-health${activePage === 'health' ? ' is-active' : ''}`}
+                    onClick={openHealth}
+                    title="健康中心"
+                    aria-label="健康中心"
+                  >
+                    <Activity size={14} />
+                  </button>
+                  <button
+                    className={`sidebar-footer-health sidebar-footer-recycle${activePage === 'trash' ? ' is-active' : ''}`}
+                    onClick={openRecycleBin}
+                    title={`回收站${markedForDeletionCount > 0 ? `（${markedForDeletionCount.toLocaleString()}）` : ''}`}
+                    aria-label={`回收站，${markedForDeletionCount.toLocaleString()} 个文件`}
+                  >
+                    <Trash2 size={14} />
+                  {markedForDeletionCount > 0 && (
+                    <span className="sidebar-footer-recycle-count">
+                      {markedForDeletionCount > 99 ? '99+' : markedForDeletionCount.toLocaleString()}
+                    </span>
+                  )}
+                  </button>
+                </div>
               </div>
               <div
                 className="sidebar-resize-handle"
@@ -1912,9 +1913,11 @@ function App() {
                 onRefresh={loadLibraryHealth}
                 onGenerateThumbnails={handleGenerateHealthThumbnails}
                 onGenerateThumbnailsBoost={() => { void handleGenerateHealthThumbnails(true); }}
-                onOpenMarkedForDeletion={openHealthMarkedForDeletion}
+                onOpenRecycleBin={openHealthRecycleBin}
                 onOpenOrganizePreview={openHealthOrganizePreview}
               />
+            ) : activePage === 'trash' ? (
+              <MarkedForDeletionManager onRefresh={refreshWorkspace} />
             ) : (
               <>
                 <div className="library-list-header">
@@ -1929,7 +1932,7 @@ function App() {
                     sortDir={sortDir}
                     onSortDirChange={setSortDir}
                     showFavorited={showFavorited}
-                    onShowFavoritedChange={(show) => { setShowMarkedForDeletion(false); setShowFavorited(show); }}
+                    onShowFavoritedChange={setShowFavorited}
                     favoritedCount={favoritedCount}
                     viewMode={viewMode}
                     onViewModeChange={setViewMode}
@@ -1996,13 +1999,13 @@ function App() {
                     <div className="organize-filter-notice" role="status">
                       <Trash2 size={16} />
                       <div className="organize-filter-notice-copy">
-                        <strong>此目录有文件待处理</strong>
+                        <strong>此目录有文件已移入回收站</strong>
                         <span>
-                          当前目录中有视频已标记删除，已移入“待处理”，所以不会出现在当前列表中。
-                          请在“待处理”中彻底删除；当目录内文件全部处理完后，空目录会一并从电脑中清理。
+                          当前目录中有视频已标记删除，已移入“回收站”，所以不会出现在当前列表中。
+                          请在“回收站”中恢复或彻底删除；当目录内文件全部处理完后，空目录会一并从电脑中清理。
                         </span>
                       </div>
-                      <button type="button" onClick={openMarkedForDeletion}>打开待处理</button>
+                      <button type="button" onClick={openRecycleBin}>打开回收站</button>
                     </div>
                   )}
                 <VideoGrid
@@ -2064,13 +2067,6 @@ function App() {
           videos={feedVideos}
           onClose={() => setFeedVideos(null)}
           onCaptureWallpaper={handleCaptureWallpaper}
-        />
-      )}
-
-      {showMarkedForDeletion && (
-        <MarkedForDeletionManager
-          onClose={() => setShowMarkedForDeletion(false)}
-          onRefresh={refreshWorkspace}
         />
       )}
 

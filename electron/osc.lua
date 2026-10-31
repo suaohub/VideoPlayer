@@ -84,6 +84,7 @@ local user_opts = {
     icon_style = "layout",      -- icon style: layout/classic/fluent
 
     background_color = "#000000",     -- background color of the osc
+    glass_border_color = "#FFFFFF",   -- subtle outline for the MediaNest glass panel
     timecode_color = "#FFFFFF",       -- color of the progress bar and time color
     seekrange_color = "#566070",      -- color of the unplayed seekbar range
     title_color = "#FFFFFF",          -- color of the title
@@ -306,9 +307,9 @@ local function set_osc_styles()
         smallButtonsBar = "{\\blur0\\bord0\\1c&H" .. osc_color_convert(user_opts.buttons_color) .. "\\3c&HFFFFFF\\fs28\\fn" .. icon_font .. "}",
         timecodesBar = "{\\blur0\\bord0\\1c&H" .. osc_color_convert(user_opts.timecode_color) .."\\3c&HFFFFFF\\fs27}",
         seekrangeBar = "{\\1c&H" .. osc_color_convert(user_opts.seekrange_color) .. "}",
-        glassBox = "{\\rDefault\\blur1.1\\bord1\\1c&H" ..
+        glassBox = "{\\rDefault\\blur0\\bord1\\1c&H" ..
             osc_color_convert(user_opts.background_color) ..
-            "\\3c&HFFFFFF&\\shad0}",
+            "\\3c&H" .. osc_color_convert(user_opts.glass_border_color) .. "&\\shad0}",
         -- The immersive track deliberately stays dark while the played part
         -- remains white, so the two states do not merge over bright video.
         seekOverlayTrack = "{\\blur0\\bord0\\1c&H4A505C&\\1a&H10&}",
@@ -2390,8 +2391,8 @@ layouts["medianest"] = function ()
     local btn = 24
     -- Two compact rows: timeline above, controls below.
     local ctrlY = y + 9
-    local buttonStyle = osc_styles.smallButtonsBar .. "{\\bord2\\3c&H000000&}"
-    local playStyle = osc_styles.floatingButtonsBig .. "{\\bord2\\3c&H000000&}"
+    local buttonStyle = osc_styles.smallButtonsBar
+    local playStyle = osc_styles.floatingButtonsBig
     local timeStyle = osc_styles.timecodesBar .. "{\\fs23}"
 
     osc_param.areas = {}
@@ -2409,9 +2410,9 @@ layouts["medianest"] = function ()
     lo.geometry = {x = x, y = y, an = 5, w = w, h = h}
     lo.layer = 10
     lo.style = osc_styles.glassBox
-    lo.alpha[1] = 155
-    lo.alpha[3] = 205
-    lo.box.radius = 14
+    lo.alpha[1] = 112
+    lo.alpha[3] = 184
+    lo.box.radius = 12
 
     -- Keep the full-control seekbar at the bottom edge.  The old top-row
     -- placement looked like an unrelated white line floating above the UI.

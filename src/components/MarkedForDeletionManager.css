@@ -1,0 +1,203 @@
+.marked-deletion-page {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.marked-deletion-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.marked-deletion-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.marked-deletion-heading-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line-default));
+  border-radius: 11px;
+  background: var(--accent-soft);
+}
+
+.marked-deletion-heading h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(22px, 2.3vw, 28px);
+  line-height: 1.05;
+  letter-spacing: -.04em;
+  font-weight: var(--weight-page-title);
+}
+
+.marked-deletion-heading p {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.marked-deletion-total {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
+  padding-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.marked-deletion-total strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: var(--weight-page-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.marked-deletion-total small {
+  margin-left: 8px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.marked-deletion-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 32px;
+  border-bottom: 1px solid var(--line-subtle);
+  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+}
+
+.marked-deletion-selection-count {
+  margin-right: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.marked-deletion-selection-count strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.marked-deletion-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.marked-deletion-button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: var(--text-primary);
+  border: 1px solid var(--line-default);
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-size: 11px;
+  font-weight: 560;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease, opacity 130ms ease;
+}
+
+.marked-deletion-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line-default));
+  background: var(--surface-2);
+}
+
+.marked-deletion-button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.marked-deletion-button.is-accent {
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.marked-deletion-button.is-accent:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.marked-deletion-button.is-restore {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 32%, var(--line-default));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface-1));
+}
+
+.marked-deletion-button.is-delete {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line-default));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface-1));
+}
+
+.marked-deletion-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.marked-deletion-state {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.marked-deletion-empty {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.marked-deletion-empty svg {
+  color: var(--text-tertiary);
+}
+
+.marked-deletion-empty strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.marked-deletion-empty span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .marked-deletion-header { padding: 8px 22px; }
+  .marked-deletion-actions { flex-wrap: wrap; padding: 5px 22px; }
+  .marked-deletion-actions-spacer { flex-basis: 12px; }
+}
+
+@media (max-width: 620px) {
+  .marked-deletion-header { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .marked-deletion-total small { margin-left: 6px; }
+  .marked-deletion-actions { gap: 6px; padding-inline: 16px; }
+  .marked-deletion-actions-spacer { display: none; }
+  .marked-deletion-button { min-height: 28px; padding-inline: 9px; }
+}

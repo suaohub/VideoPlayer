@@ -570,7 +570,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
               <div>
                 <strong>整理与删除</strong>
-                <p>在“整理预览”中给视频分组后，可在设置中心执行整理。删除标记会先进入“待处理”，确认后才会从磁盘删除。</p>
+                <p>在“整理预览”中给视频分组后，可在设置中心执行整理。删除标记会先进入“回收站”，确认后才会从磁盘删除。</p>
               </div>
               <div>
                 <strong>健康中心</strong>

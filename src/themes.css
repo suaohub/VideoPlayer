@@ -1434,9 +1434,10 @@ textarea:focus-visible,
 .library-list-header .library-content-toolbar .sort-control > .toolbar-quiet-button,
 .library-list-header .library-content-toolbar .more-control > .toolbar-quiet-button,
 .library-list-header .library-content-toolbar .library-batch-button {
-  height: 32px;
-  min-height: 32px;
+  height: 28px;
+  min-height: 28px;
   box-sizing: border-box;
+  box-shadow: none;
 }
 
 .library-list-header .library-content-toolbar .toolbar-count {
@@ -1453,22 +1454,26 @@ textarea:focus-visible,
 }
 
 .library-list-header .library-content-toolbar .toolbar-icon-button.quiet {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 28px;
   border-radius: 8px;
+  box-shadow: none;
 }
 
 .library-list-header .library-content-toolbar .view-mode-toggle {
-  height: 32px;
+  height: 28px;
   padding: 2px;
   border-radius: 8px;
+  box-shadow: none;
 }
 
 .library-list-header .library-content-toolbar .view-mode-option {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
+  box-shadow: none;
 }
 
 .library-list-header .library-content-toolbar .library-batch-button {
@@ -2728,7 +2733,7 @@ textarea:focus-visible,
   justify-content: center;
   width: 24px;
   min-height: 24px;
-  margin-left: auto;
+  margin-left: 0;
   padding: 0 4px;
   color: var(--text-tertiary);
   font-size: 10px;
@@ -2744,6 +2749,44 @@ textarea:focus-visible,
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 20%, transparent);
   background: var(--accent-soft);
+}
+
+.sidebar-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.sidebar-footer-recycle:hover,
+.sidebar-footer-recycle.is-active {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 20%, transparent);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+
+.sidebar-footer-recycle {
+  position: relative;
+}
+
+.sidebar-footer-recycle-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  min-width: 14px;
+  height: 14px;
+  place-items: center;
+  padding: 0 3px;
+  color: #fff;
+  border: 1px solid var(--bg-primary);
+  border-radius: 999px;
+  background: var(--danger);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .sidebar-footer-dot {

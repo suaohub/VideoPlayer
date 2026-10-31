@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, RotateCcw, Download, X } from 'lucide-react';
+import { Trash2, RotateCcw, Download } from 'lucide-react';
 import { Video } from '../types';
 import { api } from '../api';
 import { VideoGrid } from './VideoGrid';
 import { useAppFeedback } from './AppFeedback';
+import './MarkedForDeletionManager.css';
 
 interface MarkedForDeletionManagerProps {
-  onClose: () => void;
   onRefresh: () => void;
 }
 
-export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeletionManagerProps) {
+export function MarkedForDeletionManager({ onRefresh }: MarkedForDeletionManagerProps) {
   const { confirm: confirmDialog, notify } = useAppFeedback();
   const [videos, setVideos] = useState<Video[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -105,202 +105,53 @@ export function MarkedForDeletionManager({ onClose, onRefresh }: MarkedForDeleti
   };
 
   return (
-    <div className="marked-deletion-page" style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      zIndex: 1000,
-      background: 'var(--bg-primary)',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      {/* 顶部工具栏 */}
-      <div className="marked-deletion-header" style={{
-        height: 60,
-        borderBottom: '1px solid var(--glass-border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 20px',
-        background: 'var(--glass-bg-medium)',
-        backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-        WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-        boxShadow: 'var(--glass-highlight)',
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-            标记删除的文件
-          </h2>
-          <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-            共 {videos.length} 个
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)', opacity: 0.78 }}>
-            最近标记在前
-          </span>
+    <div className="marked-deletion-page">
+      <header className="marked-deletion-header">
+        <div className="marked-deletion-heading">
+          <div className="marked-deletion-heading-icon"><Trash2 size={18} /></div>
+          <div>
+            <h1>回收站</h1>
+            <p>已标记删除的媒体会暂存在这里，可恢复或永久删除。</p>
+          </div>
         </div>
+        <div className="marked-deletion-total">
+          <strong>{loading ? '…' : videos.length.toLocaleString()}</strong>
+          <span>个文件</span>
+          <small>最近标记在前</small>
+        </div>
+      </header>
 
-        <button
-          onClick={onClose}
-          style={{
-            width: 32, height: 32,
-            borderRadius: '50%',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-        >
-          <X size={20} />
-        </button>
-      </div>
-
-      {/* 操作栏 */}
-      <div className="marked-deletion-actions" style={{
-        padding: '12px 20px',
-        borderBottom: '1px solid var(--glass-border)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        background: 'var(--glass-bg-light)',
-        backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-        WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-        flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          已选择 {selectedIds.size} 项
-        </span>
-
-        <button
-          onClick={() => setSelectedIds(new Set(videos.map(v => v.id)))}
-          style={{
-            padding: '6px 12px',
-            fontSize: 13,
-            background: 'var(--bg-card)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            cursor: 'pointer',
-          }}
-        >
+      <div className="marked-deletion-actions">
+        <span className="marked-deletion-selection-count">已选择 <strong>{selectedIds.size.toLocaleString()}</strong> 项</span>
+        <button type="button" className="marked-deletion-button" onClick={() => setSelectedIds(new Set(videos.map((video) => video.id)))} disabled={videos.length === 0}>
           全选
         </button>
-
-        <button
-          onClick={() => setSelectedIds(new Set())}
-          disabled={selectedIds.size === 0}
-          style={{
-            padding: '6px 12px',
-            fontSize: 13,
-            background: 'var(--bg-card)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-            opacity: selectedIds.size > 0 ? 1 : 0.5,
-          }}
-        >
+        <button type="button" className="marked-deletion-button" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>
           取消选择
         </button>
-
-        <div style={{ flex: 1 }} />
-
-        <button
-          onClick={handleExport}
-          disabled={videos.length === 0 || exporting}
-          style={{
-            padding: '8px 16px',
-            fontSize: 13,
-            background: videos.length > 0 ? 'var(--accent)' : 'var(--bg-card)',
-            color: videos.length > 0 ? '#fff' : 'var(--text-secondary)',
-            border: 'none',
-            borderRadius: 6,
-            cursor: videos.length > 0 && !exporting ? 'pointer' : 'not-allowed',
-            fontWeight: 500,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            opacity: videos.length > 0 && !exporting ? 1 : 0.5,
-          }}
-        >
-          <Download size={16} />
-          导出文件名列表
+        <span className="marked-deletion-actions-spacer" />
+        <button type="button" className="marked-deletion-button is-accent" onClick={handleExport} disabled={videos.length === 0 || exporting}>
+          <Download size={15} />
+          {exporting ? '导出中…' : '导出文件名列表'}
         </button>
-
-        <button
-          onClick={handleRestore}
-          disabled={selectedIds.size === 0}
-          style={{
-            padding: '8px 16px',
-            fontSize: 13,
-            background: selectedIds.size > 0 ? '#10b981' : 'var(--bg-card)',
-            color: selectedIds.size > 0 ? '#fff' : 'var(--text-secondary)',
-            border: 'none',
-            borderRadius: 6,
-            cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-            fontWeight: 500,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            opacity: selectedIds.size > 0 ? 1 : 0.5,
-          }}
-        >
-          <RotateCcw size={16} />
+        <button type="button" className="marked-deletion-button is-restore" onClick={handleRestore} disabled={selectedIds.size === 0}>
+          <RotateCcw size={15} />
           恢复
         </button>
-
-        <button
-          onClick={handleDelete}
-          disabled={selectedIds.size === 0}
-          style={{
-            padding: '8px 16px',
-            fontSize: 13,
-            background: selectedIds.size > 0 ? '#ef4444' : 'var(--bg-card)',
-            color: selectedIds.size > 0 ? '#fff' : 'var(--text-secondary)',
-            border: 'none',
-            borderRadius: 6,
-            cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-            fontWeight: 500,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            opacity: selectedIds.size > 0 ? 1 : 0.5,
-          }}
-        >
-          <Trash2 size={16} />
+        <button type="button" className="marked-deletion-button is-delete" onClick={handleDelete} disabled={selectedIds.size === 0}>
+          <Trash2 size={15} />
           彻底删除
         </button>
       </div>
 
-      {/* 文件列表 */}
-      <div className="marked-deletion-content" style={{ flex: 1, overflow: 'hidden' }}>
+      <div className="marked-deletion-content">
         {loading ? (
-          <div className="marked-deletion-state" style={{
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-secondary)',
-          }}>
-            加载中...
-          </div>
+          <div className="marked-deletion-state">加载回收站…</div>
         ) : videos.length === 0 ? (
-          <div className="marked-deletion-state marked-deletion-empty" style={{
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-secondary)',
-            gap: 12,
-          }}>
-            <Trash2 size={48} strokeWidth={1.5} />
-            <div>没有标记删除的文件</div>
+          <div className="marked-deletion-state marked-deletion-empty">
+            <Trash2 size={44} strokeWidth={1.5} />
+            <strong>回收站是空的</strong>
+            <span>媒体库中标记删除的文件会显示在这里。</span>
           </div>
         ) : (
           <VideoGrid

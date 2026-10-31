@@ -204,9 +204,10 @@ function resolveMpvBin() {
 function getMpvStyleArgs() {
   const dayTheme = getSetting('theme') === 'day';
   // 与主界面的主题令牌保持一致：日间使用暖金色强调，夜间使用低亮度金色。
-  const background = dayTheme ? '#ffffff' : '#101319';
-  const foreground = dayTheme ? '#181b22' : '#f0f1f3';
-  const accent = dayTheme ? '#a47738' : '#d3a966';
+  const background = dayTheme ? '#e8ecf2' : '#171b22';
+  const foreground = dayTheme ? '#252a33' : '#e8ebef';
+  const muted = dayTheme ? '#aeb6c1' : '#737d8a';
+  const border = dayTheme ? '#ffffff' : '#c9d1dc';
   const held = dayTheme ? '#89652f' : '#e3bd83';
   // 原生 OSC 是唯一的播放控制层。所有视觉参数通过启动参数注入，
   // 不修改用户机器上的 mpv.conf / osc.conf。
@@ -214,7 +215,7 @@ function getMpvStyleArgs() {
     '--osc=no',
     `--script=${OSC_SCRIPT}`,
     '--osd-level=1',
-    `--script-opts=osc-layout=medianest,osc-scalefullscreen=0.72,osc-scalewindowed=0.72,osc-background_color=${dayTheme ? '#f4f6fb' : '#1d2735'},osc-boxalpha=255,osc-timecode_color=#FFFFFF,osc-title_color=#FFFFFF,osc-time_pos_color=#FFFFFF,osc-seekrange_color=#FFFFFF,osc-buttons_color=#FFFFFF,osc-held_element_color=#FFFFFF,osc-seekbarstyle=knob,osc-seekbarhandlesize=0.45,osc-seekrangestyle=slider,osc-seekrangeseparate=yes,osc-seekrangealpha=255,osc-seekbarkeyframes=no,osc-fadeduration=240,osc-fadein=yes,osc-hidetimeout=3000,osc-deadzonesize=0,osc-visibility=auto,osc-timetotal=yes,osc-showfullscreenbutton=yes,osc-showwindowedbutton=no,osc-showontopbutton=no,osc-showinfo=yes,osc-showtitle=no,osc-playlist_prev_mbtn_left_command=script-message-to osc prev-item,osc-playlist_next_mbtn_left_command=script-message-to osc next-item,osc-chapter_prev_mbtn_left_command=script-message-to osc prev-item,osc-chapter_prev_mbtn_mid_command=script-message-to osc prev-item,osc-chapter_prev_mbtn_right_command=script-message-to osc prev-item,osc-chapter_next_mbtn_left_command=script-message-to osc next-item,osc-chapter_next_mbtn_mid_command=script-message-to osc next-item,osc-chapter_next_mbtn_right_command=script-message-to osc next-item`,
+    `--script-opts=osc-layout=medianest,osc-scalefullscreen=0.72,osc-scalewindowed=0.72,osc-background_color=${background},osc-glass_border_color=${border},osc-boxalpha=255,osc-timecode_color=${foreground},osc-title_color=${foreground},osc-time_pos_color=${foreground},osc-time_pos_outline_color=${dayTheme ? '#ffffff' : '#101319'},osc-seekrange_color=${muted},osc-buttons_color=${foreground},osc-held_element_color=${held},osc-seekbarstyle=knob,osc-seekbarhandlesize=0.45,osc-seekrangestyle=slider,osc-seekrangeseparate=yes,osc-seekrangealpha=255,osc-seekbarkeyframes=no,osc-fadeduration=240,osc-fadein=yes,osc-hidetimeout=3000,osc-deadzonesize=0,osc-visibility=auto,osc-timetotal=yes,osc-showfullscreenbutton=yes,osc-showwindowedbutton=no,osc-showontopbutton=no,osc-showinfo=yes,osc-showtitle=no,osc-playlist_prev_mbtn_left_command=script-message-to osc prev-item,osc-playlist_next_mbtn_left_command=script-message-to osc next-item,osc-chapter_prev_mbtn_left_command=script-message-to osc prev-item,osc-chapter_prev_mbtn_mid_command=script-message-to osc prev-item,osc-chapter_prev_mbtn_right_command=script-message-to osc prev-item,osc-chapter_next_mbtn_left_command=script-message-to osc next-item,osc-chapter_next_mbtn_mid_command=script-message-to osc next-item,osc-chapter_next_mbtn_right_command=script-message-to osc next-item`,
   ];
 }
 

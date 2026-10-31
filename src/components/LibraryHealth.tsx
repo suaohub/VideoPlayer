@@ -24,7 +24,7 @@ interface LibraryHealthProps {
   onRefresh: () => void;
   onGenerateThumbnails: () => void;
   onGenerateThumbnailsBoost: () => void;
-  onOpenMarkedForDeletion: () => void;
+  onOpenRecycleBin: () => void;
   onOpenOrganizePreview: () => void;
 }
 
@@ -89,7 +89,7 @@ export function LibraryHealth({
   onRefresh,
   onGenerateThumbnails,
   onGenerateThumbnailsBoost,
-  onOpenMarkedForDeletion,
+  onOpenRecycleBin,
   onOpenOrganizePreview,
 }: LibraryHealthProps) {
   const hasResult = health != null && !error;
@@ -129,7 +129,7 @@ export function LibraryHealth({
           <MetricCard label="媒体记录" value={pendingValue(health?.totalFiles)} note={hasResult ? formatBytes(health?.totalBytes ?? 0) : '等待检查结果'} icon={<Database size={17} />} tone="neutral" />
           <MetricCard label="文件可用性" value={hasResult ? (missing > 0 ? `${missing.toLocaleString()} 个` : '正常') : '—'} note={hasResult ? (missing > 0 ? `${formatBytes(health?.missingBytes ?? 0)} 无法访问` : '所有记录路径可访问') : '等待检查结果'} icon={hasResult && missing > 0 ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />} tone={hasResult && missing > 0 ? 'danger' : 'good'} />
           <MetricCard label="离线盘符" value={hasResult ? (offline > 0 ? `${offline} 个` : '均已连接') : '—'} note={hasResult ? (offline > 0 ? '相关媒体暂时保留在库内' : '未发现离线盘符') : '等待检查结果'} icon={<HardDrive size={17} />} tone={hasResult && offline > 0 ? 'warning' : 'good'} />
-          <MetricCard label="已标记删除" value={pendingValue(health?.markedForDeletion)} note={hasResult ? formatBytes(health?.markedForDeletionBytes ?? 0) : '等待检查结果'} icon={<Trash2 size={17} />} tone={hasResult && health?.markedForDeletion ? 'warning' : 'good'} />
+          <MetricCard label="回收站文件" value={pendingValue(health?.markedForDeletion)} note={hasResult ? formatBytes(health?.markedForDeletionBytes ?? 0) : '等待检查结果'} icon={<Trash2 size={17} />} tone={hasResult && health?.markedForDeletion ? 'warning' : 'good'} />
         </div>
       </section>
 
@@ -139,7 +139,7 @@ export function LibraryHealth({
           <IssueCard icon={<AlertTriangle size={17} />} title="文件无法访问" description={offline > 0 ? '包含离线盘符；连接后重新检查。' : '数据库中有记录，但当前路径不可访问。'} count={pendingValue(missing) === '0' ? '0 个' : pendingValue(missing) + ' 个'} action={missing > 0 ? '连接后重检' : undefined} onAction={missing > 0 ? onRefresh : undefined} tone={missing > 0 ? 'danger' : 'neutral'} />
           <IssueCard icon={<ImageOff size={17} />} title="缺少预览缩略图" description="不影响播放，可以后台重新生成预览。" count={`${pendingValue(health?.missingThumbnails)} 个`} action={health?.missingThumbnails ? (generatingThumbnails ? '生成中…' : '生成预览') : undefined} onAction={health?.missingThumbnails && !generatingThumbnails ? onGenerateThumbnails : undefined} secondaryAction={health?.missingThumbnails && !generatingThumbnails ? '全速生成' : undefined} onSecondaryAction={health?.missingThumbnails && !generatingThumbnails ? onGenerateThumbnailsBoost : undefined} tone={health?.missingThumbnails ? 'warning' : 'neutral'} />
           <IssueCard icon={<Tags size={17} />} title="待整理分类" description="已经标记分类，等待执行整理操作。" count={`${pendingValue(health?.organizePending)} 个`} action={health?.organizePending ? '打开整理预览' : undefined} onAction={health?.organizePending ? onOpenOrganizePreview : undefined} tone={health?.organizePending ? 'warning' : 'neutral'} />
-          <IssueCard icon={<Trash2 size={17} />} title="待处理删除" description="已标记删除，确认后可批量恢复或永久删除。" count={`${pendingValue(health?.markedForDeletion)} 个`} action={health?.markedForDeletion ? '打开待处理' : undefined} onAction={health?.markedForDeletion ? onOpenMarkedForDeletion : undefined} tone={health?.markedForDeletion ? 'warning' : 'neutral'} />
+          <IssueCard icon={<Trash2 size={17} />} title="回收站" description="可恢复已标记删除的文件，也可永久删除。" count={`${pendingValue(health?.markedForDeletion)} 个`} action={health?.markedForDeletion ? '打开回收站' : undefined} onAction={health?.markedForDeletion ? onOpenRecycleBin : undefined} tone={health?.markedForDeletion ? 'warning' : 'neutral'} />
           <IssueCard icon={<Sparkles size={17} />} title="目录结构" description="孤立记录或空目录建议刷新媒体库后再处理。" count={`${hasResult ? structureIssues : '—'} 项`} action={structureIssues > 0 ? '重新检查' : undefined} onAction={structureIssues > 0 ? onRefresh : undefined} tone={structureIssues > 0 ? 'warning' : 'neutral'} />
         </div>
       </section>
