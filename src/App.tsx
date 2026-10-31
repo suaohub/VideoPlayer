@@ -238,7 +238,6 @@ function App() {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [generatingHealthThumbnails, setGeneratingHealthThumbnails] = useState(false);
   const overviewRequestId = useRef(0);
-  const metadataOverviewRefreshTimer = useRef<number | null>(null);
   const videosRequestId = useRef(0);
   const loadedFolderKeyRef = useRef<string | null>(null);
   const [contentTransitionKey, setContentTransitionKey] = useState(0);
@@ -742,23 +741,6 @@ function App() {
       api.setMediaMetadataForegroundActivity(true);
     };
   }, [playingAudio, readingText, readingComic, feedVideos]);
-
-  useEffect(() => {
-    const offMetadata = api.onMediaMetadataReady(() => {
-      // 规格探测可能在渲染进程完成首次加载前就结束，事件不会被首次页面接收。
-      // 合并短时间内的通知，重新读取概览数据，确保这类后台更新最终可见。
-      if (metadataOverviewRefreshTimer.current != null) window.clearTimeout(metadataOverviewRefreshTimer.current);
-      metadataOverviewRefreshTimer.current = window.setTimeout(() => {
-        metadataOverviewRefreshTimer.current = null;
-        void loadOverview();
-      }, 700);
-    });
-    return () => {
-      offMetadata?.();
-      if (metadataOverviewRefreshTimer.current != null) window.clearTimeout(metadataOverviewRefreshTimer.current);
-      metadataOverviewRefreshTimer.current = null;
-    };
-  }, [loadOverview]);
 
   // 导入进度监听
   useEffect(() => {
