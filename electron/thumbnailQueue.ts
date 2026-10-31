@@ -46,6 +46,9 @@ export function setThumbnailGenerationBoost(value: boolean) {
 // 待处理队列（去重：已在队列或处理中的 id 不重复加入）
 const pending: number[] = [];
 const queued = new Set<number>();
+// 本轮进程中已经确认无法生成的记录不再被“刷新媒体库”反复加入队列。
+// 手动点击健康中心的“生成预览”会显式清除这组阻塞记录并重试。
+const blocked = new Map<number, 'missing' | 'failed' | 'skip'>();
 let active = 0;
 let paused = false;
 
@@ -64,6 +67,7 @@ export function enqueueThumbnails(ids: number[], priorityIds: number[] = []) {
 
   for (const id of ordered) {
     if (queued.has(id)) continue;
+    if (blocked.has(id)) continue;
     queued.add(id);
     pending.push(id);
     totalCount++;
@@ -128,7 +132,11 @@ async function processOne(id: number) {
   if (!row) return;
 
   // 音频/文本没有视频画面，漫画缩略图直接指向首图，都不启动 ffmpeg 生成缩略图。
-  if (isAudioFile(row.path) || isTextFile(row.path) || isComicExt(row.ext)) return;
+  // 记录为 skip，避免刷新扫描时每次都把这些记录重新计入缩略图队列。
+  if (isAudioFile(row.path) || isTextFile(row.path) || isComicExt(row.ext)) {
+    blocked.set(id, 'skip');
+    return;
+  }
 
   // 已有缩略图且文件仍在磁盘上：跳过（不重跑 ffprobe/ffmpeg，也不重复发事件）。
   // 覆盖重开补图 + 重新导入已导入文件夹两种场景。
@@ -139,7 +147,10 @@ async function processOne(id: number) {
 
   // 源视频当前够不着（比如所在磁盘/移动硬盘没挂载）：跳过，不 probe、不跑 ffmpeg。
   // 这类视频 thumbnail_path 仍为 NULL，下次盘插回来重启时会自然重试生成。
-  if (!fs.existsSync(row.path)) return;
+  if (!fs.existsSync(row.path)) {
+    blocked.set(id, 'missing');
+    return;
+  }
 
   try {
     // 健康中心补图时直接复用数据库里的媒体信息，避免为了生成一张图再次启动 ffprobe。
@@ -154,6 +165,10 @@ async function processOne(id: number) {
       ? storedMetadata
       : await probeVideoAsync(row.path);
     const thumbnail_path = await generateThumbnailAsync(row.path, metadata);
+    if (!thumbnail_path) {
+      blocked.set(id, 'failed');
+      return;
+    }
     const thumb = { ...metadata, thumbnail_path };
     db.prepare(`
       UPDATE videos
@@ -173,7 +188,9 @@ async function processOne(id: number) {
       height: thumb.height,
       aspect_ratio: thumb.aspect_ratio,
     });
+    blocked.delete(id);
   } catch (error) {
+    blocked.set(id, 'failed');
     console.warn('[thumbnailQueue] failed for id', id, error);
   }
 }
@@ -195,8 +212,14 @@ export function enqueueMissingThumbnails(priorityIds: number[] = [], includeBrok
     const file = thumbnailFilePathFromUrl(row.thumbnail_path);
     return Boolean(file && !fs.existsSync(file));
   });
-  enqueueThumbnails(
-    missing.filter((row) => !isAudioFile(row.path) && !isTextFile(row.path) && !isComicExt(row.ext)).map((r) => r.id),
-    priorityIds,
-  );
+  if (includeBroken) {
+    for (const row of missing) blocked.delete(row.id);
+  }
+  const candidateRows = missing.filter((row) => {
+    if (isAudioFile(row.path) || isTextFile(row.path) || isComicExt(row.ext)) return false;
+    // 健康中心的手动操作明确要求重试失败项；普通刷新不重复堆积同一批失败任务。
+    if (blocked.has(row.id)) return false;
+    return true;
+  });
+  enqueueThumbnails(candidateRows.map((row) => row.id), priorityIds);
 }

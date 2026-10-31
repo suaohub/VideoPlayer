@@ -74,7 +74,7 @@ function createWindow() {
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(`http://127.0.0.1:5173/?theme=${bootTheme}`);
-    mainWindow.webContents.openDevTools();
+    if (process.env.MEDIANEST_DEVTOOLS === '1') mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { theme: bootTheme } });
   }
@@ -195,8 +195,8 @@ app.whenReady().then(() => {
 
   initMpv(() => mainWindow);
   createWindow();
-  // 启动后异步补齐缺失缩略图（现为限并发队列，不再阻塞主进程）
-  setTimeout(() => backfillMissingThumbnails(), 1000);
+  // 不在启动时自动扫描历史缺图，避免单个异常文件让每次启动都显示补图进度。
+  // 新导入或内容发生变化的文件会在扫描时入队；历史缺图通过健康中心手动生成。
 });
 
 app.on('window-all-closed', () => {

@@ -1289,6 +1289,203 @@ textarea:focus-visible,
   }
 }
 
+/* 列表右侧操作区：按参考图整理成一组轻量的独立胶囊控件。 */
+.library-list-header .library-content-toolbar {
+  gap: 10px;
+}
+
+.library-list-header .library-content-toolbar .toolbar-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 14px;
+  color: var(--text-secondary);
+  border: 1px solid var(--line-default);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.library-list-header .library-content-toolbar .toolbar-count strong {
+  color: var(--text-primary);
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+.library-list-header .library-content-toolbar .toolbar-count-size {
+  margin-left: 4px;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.library-list-header .library-content-toolbar .toolbar-divider {
+  height: 22px;
+  background: var(--line-default);
+}
+
+.library-list-header .library-content-toolbar .sort-control > .toolbar-quiet-button,
+.library-list-header .library-content-toolbar .more-control > .toolbar-quiet-button {
+  min-height: 36px;
+  padding-inline: 14px;
+  gap: 8px;
+  color: var(--text-primary);
+  border: 1px solid var(--line-default);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px !important;
+}
+
+.library-list-header .library-content-toolbar .sort-control > .toolbar-quiet-button:hover,
+.library-list-header .library-content-toolbar .more-control > .toolbar-quiet-button:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-hover);
+}
+
+.library-list-header .library-content-toolbar .toolbar-icon-button.quiet {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border: 1px solid var(--line-default);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+
+.library-list-header .library-content-toolbar .toolbar-icon-button.quiet:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-hover);
+}
+
+.library-list-header .library-content-toolbar .toolbar-icon-button.quiet.is-active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line-default));
+  background: var(--accent-soft);
+}
+
+.library-list-header .library-content-toolbar .view-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--line-default);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.library-list-header .library-content-toolbar .view-mode-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.library-list-header .library-content-toolbar .view-mode-option:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.library-list-header .library-content-toolbar .view-mode-option.is-active {
+  color: var(--text-primary);
+  background: var(--surface-3);
+}
+
+.library-list-header .library-content-toolbar .library-batch-button {
+  min-height: 36px;
+  padding-inline: 16px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+/* 工具栏控件共用同一条 32px 控制线，避免窄窗口下右侧按钮撑高并挤压分类滑块。 */
+.library-list-header .library-content-toolbar {
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.library-list-header .library-content-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.library-list-header .library-content-toolbar .secondary-toolbar-spacer {
+  min-width: 0;
+}
+
+.library-list-header .library-content-toolbar .media-tabs,
+.library-list-header .library-content-toolbar .sort-control,
+.library-list-header .library-content-toolbar .more-control {
+  flex: 0 0 auto;
+}
+
+.library-list-header .library-content-toolbar .toolbar-count,
+.library-list-header .library-content-toolbar .sort-control > .toolbar-quiet-button,
+.library-list-header .library-content-toolbar .more-control > .toolbar-quiet-button,
+.library-list-header .library-content-toolbar .library-batch-button {
+  height: 32px;
+  min-height: 32px;
+  box-sizing: border-box;
+}
+
+.library-list-header .library-content-toolbar .toolbar-count {
+  flex: 0 0 auto;
+  padding-inline: 10px;
+}
+
+.library-list-header .library-content-toolbar .sort-control > .toolbar-quiet-button,
+.library-list-header .library-content-toolbar .more-control > .toolbar-quiet-button {
+  flex: 0 0 auto;
+  padding-inline: 10px;
+  gap: 6px;
+  border-radius: 8px;
+}
+
+.library-list-header .library-content-toolbar .toolbar-icon-button.quiet {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 8px;
+}
+
+.library-list-header .library-content-toolbar .view-mode-toggle {
+  height: 32px;
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.library-list-header .library-content-toolbar .view-mode-option {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.library-list-header .library-content-toolbar .library-batch-button {
+  padding-inline: 12px;
+  border-radius: 8px;
+}
+
+@media (max-width: 1120px) {
+  .library-list-header .library-content-toolbar {
+    gap: 6px;
+  }
+
+  .library-list-header .library-content-toolbar .toolbar-count-size {
+    display: none;
+  }
+}
+
 @media (max-width: 520px) {
   .app-main-layout > aside,
   .app-content > .app-body > aside,
@@ -1424,6 +1621,60 @@ textarea:focus-visible,
   padding: 6px 20px;
 }
 
+.library-content-toolbar {
+  border-top: 0;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.app-topbar .overview-toolbar-row {
+  display: none !important;
+}
+
+.library-list-header {
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 0 0 12px;
+}
+
+.library-list-header .library-content-toolbar {
+  min-height: 52px;
+  padding: 8px 24px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-subtle) 58%, transparent);
+  border-radius: 0;
+  background: transparent;
+}
+
+.library-list-header .content-heading {
+  display: none;
+}
+
+.library-batch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--accent-contrast);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 100ms ease, transform 100ms ease;
+}
+
+.library-batch-button:hover {
+  background: var(--accent-hover);
+}
+
+.library-batch-button:active {
+  transform: scale(.98);
+}
+
 .primary-toolbar-row {
   position: relative;
   z-index: 1;
@@ -1435,6 +1686,69 @@ textarea:focus-visible,
   padding-top: 4px;
   padding-bottom: 6px;
   border-top: 1px solid var(--line-subtle);
+}
+
+.overview-toolbar-row {
+  color: var(--text-tertiary);
+}
+
+.overview-toolbar-label,
+.overview-toolbar-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.overview-toolbar-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.overview-toolbar-label svg {
+  color: var(--accent);
+}
+
+.overview-toolbar-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 8px;
+  color: var(--text-tertiary);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+  transition: color 100ms ease, background-color 100ms ease, border-color 100ms ease;
+}
+
+.overview-toolbar-links button:hover {
+  color: var(--text-primary);
+  border-color: var(--line-subtle);
+  background: var(--surface-2);
+}
+
+.overview-toolbar-links button svg {
+  color: var(--accent);
+}
+
+.overview-toolbar-links strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-toolbar-links small {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.overview-toolbar-links > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
 }
 
 .sidebar-trigger,
@@ -2394,6 +2708,30 @@ textarea:focus-visible,
   color: var(--text-tertiary);
   font-size: 10px;
   border-top: 1px solid var(--line-subtle);
+}
+
+.sidebar-footer-health {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-height: 24px;
+  margin-left: auto;
+  padding: 0 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 100ms ease, background-color 100ms ease, border-color 100ms ease;
+}
+
+.sidebar-footer-health:hover,
+.sidebar-footer-health.is-active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  background: var(--accent-soft);
 }
 
 .sidebar-footer-dot {
@@ -3602,6 +3940,63 @@ button[aria-busy='true'] {
   border-radius: 999px;
 }
 
+/* 列表维度的分类滑块：保持一个完整的胶囊容器，当前项像滑块一样浮起。 */
+.library-content-toolbar .media-tabs {
+  position: relative;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-hover) 86%, transparent);
+  box-shadow: none;
+}
+
+.library-content-toolbar .media-tab-slider {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface-elevated) 92%, white 8%);
+  box-shadow: none;
+  pointer-events: none;
+  transition: transform 240ms cubic-bezier(.2, .8, .2, 1), width 180ms ease;
+}
+
+.library-content-toolbar .media-tab {
+  position: relative;
+  z-index: 1;
+  min-height: 24px;
+  padding-inline: 9px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: color 150ms ease, background-color 150ms ease,
+    transform 150ms ease;
+}
+
+.library-content-toolbar .media-tab:hover {
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.library-content-toolbar .media-tab.is-active {
+  color: var(--text-primary);
+  font-weight: 650;
+  background: transparent;
+  box-shadow: none;
+}
+
+.library-content-toolbar .media-tab.is-active::after {
+  display: none;
+}
+
+.library-content-toolbar .media-tab svg {
+  width: 14px;
+  height: 14px;
+}
+
 .import-button {
   min-height: 30px;
   padding-inline: 12px;
@@ -3658,7 +4053,7 @@ button[aria-busy='true'] {
   min-height: 34px;
   gap: 9px;
   border-radius: 9px;
-  transition: color 140ms ease, background 140ms ease, transform 140ms ease;
+  transition: color 100ms ease, background-color 100ms ease, border-color 100ms ease;
 }
 
 .sidebar-nav-item:hover {
@@ -3679,7 +4074,7 @@ button[aria-busy='true'] {
 .sidebar-nav-item:active,
 .sidebar-folder-tab:active,
 .sidebar-collapse-button:active {
-  transform: scale(.98);
+  transform: none;
 }
 
 .sidebar-folder-section {

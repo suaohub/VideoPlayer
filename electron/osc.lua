@@ -2897,7 +2897,7 @@ local function show_bar(label, showtime_key, visible_key, anitype_key, set_visib
         state.medianest_hide_timer = mp.add_timeout(user_opts.hidetimeout / 1000,
             function ()
                 state.medianest_hide_timer = nil
-                if state.active_element == nil then
+                if not state.pause and state.active_element == nil then
                     osc_visible(false)
                 end
             end)
@@ -2943,15 +2943,32 @@ local function hide_bar(label, visible_key, anitype_key, set_visible)
 end
 
 local function hide_osc()
+    -- Keep the full player controls available while paused. This also covers
+    -- the automatic pause near EOF, so the last frame never becomes a bare
+    -- black/video-only screen.
+    if user_opts.layout == "medianest" and state.pause and
+        user_opts.visibility ~= "never" then
+        if not state.osc_visible then
+            show_osc()
+        end
+        return
+    end
     hide_bar("osc", "osc_visible", "anitype", osc_visible)
 end
 
 local function hide_wc()
+    if user_opts.layout == "medianest" and state.pause and
+        user_opts.visibility ~= "never" then
+        if not state.wc_visible then
+            show_wc()
+        end
+        return
+    end
     hide_bar("wc", "wc_visible", "wc_anitype", set_wc_visible)
 end
 
 local function mouse_leave()
-    if get_hidetimeout() >= 0 and get_touchtimeout() <= 0 then
+    if not state.pause and get_hidetimeout() >= 0 and get_touchtimeout() <= 0 then
         hide_osc()
         hide_wc()
     end
@@ -3280,6 +3297,10 @@ local function render()
     -- autohide
     local function run_autohide(showtime_key, hide_fn, input_areas)
         if state[showtime_key] == nil or get_hidetimeout() < 0 then return end
+        if state.pause and
+            (showtime_key == "showtime" or showtime_key == "wc_showtime") then
+            return
+        end
         local timeout = state[showtime_key] + (get_hidetimeout() / 1000) - now
         if timeout <= 0 and get_touchtimeout() <= 0 then
             -- MediaNest deliberately hides after the timeout even when the
@@ -3522,7 +3543,21 @@ mp.add_hook("on_unload", 50, function()
 end)
 
 mp.observe_property("display-fps", "number", set_tick_delay)
-observe_cached("pause", request_tick)
+observe_cached("pause", function ()
+    if state.pause then
+        -- Paused video should always retain the full controls, including the
+        -- automatic pause that protects the final seconds of a file.
+        show_osc()
+        show_wc()
+    elseif state.osc_visible then
+        -- Resuming restarts the normal three-second autohide countdown.
+        show_osc()
+        if state.wc_visible then
+            show_wc()
+        end
+    end
+    request_tick()
+end)
 observe_cached("volume", request_tick)
 observe_cached("mute", request_tick)
 observe_cached("demuxer-cache-state", request_tick)

@@ -81,6 +81,7 @@ export function getFolderTree(mediaType?: MediaType) {
     FROM videos v
     WHERE v.folder_id IS NOT NULL
       AND v.folder_id NOT IN (SELECT id FROM hidden_folders)
+      AND v.marked_for_deletion = 0
       ${clause ? `AND ${clause}` : ''}
     GROUP BY v.folder_id
   `).all(...params) as Array<{ id: number; imported_at: number | null; total_size: number | null }>;
@@ -110,6 +111,7 @@ export function getFolderTree(mediaType?: MediaType) {
     SELECT DISTINCT v.folder_id as id FROM videos v
     WHERE v.folder_id IS NOT NULL
       AND v.folder_id NOT IN (SELECT id FROM hidden_folders)
+      AND v.marked_for_deletion = 0
       AND ${clause}
   `).all(...params) as Array<{ id: number }>;
 

@@ -3,6 +3,7 @@ import './themes.css';
 import { Video, Folder, Theme, ImportProgress, OperationProgress, VideoFilter, MediaType, SortBy, SortDir, FolderSortBy, OrganizeCategory, RecentPlayback, MediaLibraryHealth, LibraryViewMode } from './types';
 import { api, IS_MOCK } from './api';
 import { Toolbar } from './components/Toolbar';
+import { LibraryToolbar } from './components/LibraryToolbar';
 import { FolderTree } from './components/FolderTree';
 import { OrganizePreviewTree } from './components/OrganizePreviewTree';
 import { SettingsModal } from './components/SettingsModal';
@@ -326,12 +327,17 @@ function App() {
       ]);
       if (requestId !== videosRequestId.current) return;
       const folderKey = selectedFolderIds.join(',');
-      if (loadedFolderKeyRef.current !== null && loadedFolderKeyRef.current !== folderKey) {
-        setContentTransitionKey((value) => value + 1);
-      }
+      const shouldAnimateContentSwap = loadedFolderKeyRef.current !== null
+        && loadedFolderKeyRef.current !== folderKey;
       loadedFolderKeyRef.current = folderKey;
       // 目录选中态属于高优先级交互；大列表数据放进 transition，避免查询返回时卡住侧栏点击反馈。
       startTransition(() => {
+        // Keep the animation key and the new list in the same transition.
+        // Updating the key first briefly remounts the old list, which causes
+        // a second animation and visible jumps during directory switching.
+        if (shouldAnimateContentSwap) {
+          setContentTransitionKey((value) => value + 1);
+        }
         setVideos(list);
         setMarkedVideosInView(markedList.length > 0 ? 1 : 0);
         setLocallyHiddenVideoIds(new Set());
@@ -428,9 +434,11 @@ function App() {
     setOverviewLoading(true);
     try {
       const [recentPlayback, recentAdded, favorites, totalVideos, videoFolders, totalFavorites] = await Promise.all([
-        api.getRecentPlayback(20),
-        api.getVideos({ mediaType: 'video', sortBy: 'added', sortDir: 'desc', markedForDeletion: false, limit: 12 }),
-        api.getVideos({ mediaType: 'video', favorited: true, sortBy: 'added', sortDir: 'desc', markedForDeletion: false, limit: 12 }),
+        // Fetch a wider window before removing unavailable drives below;
+        // otherwise a handful of offline files can hide valid recent items.
+        api.getRecentPlayback(100),
+        api.getVideos({ mediaType: 'video', sortBy: 'added', sortDir: 'desc', markedForDeletion: false, limit: 100 }),
+        api.getVideos({ mediaType: 'video', favorited: true, sortBy: 'added', sortDir: 'desc', markedForDeletion: false, limit: 100 }),
         api.getVideoCount('video'),
         api.getFolderTree('video'),
         api.getFavoritedCount('video'),
@@ -462,7 +470,6 @@ function App() {
     setActivePage('library');
     setMediaType(type);
     setSortBy((current) => (type === 'video' || current !== 'duration' ? current : 'added'));
-    setSelectedFolderIds([]);
   }, []);
 
   useEffect(() => {
@@ -1518,44 +1525,58 @@ function App() {
 
   const openOverview = () => {
     setActivePage('overview');
-    setMediaType('video');
-    setShowMarkedForDeletion(false);
-    setShowFavorited(false);
-    setShowFavoritedInList(true);
-    setSelectedFolderIds([]);
-    setSearch('');
+    startTransition(() => {
+      setMediaType('video');
+      setShowMarkedForDeletion(false);
+      setShowFavorited(false);
+      setShowFavoritedInList(true);
+      setSelectedFolderIds([]);
+      setSearch('');
+    });
   };
+  const scrollOverviewSection = useCallback((section: 'continue' | 'recent' | 'favorites') => {
+    const target = document.getElementById(`overview-${section}`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
   const openHealth = () => {
     setActivePage('health');
-    setMediaType('all');
-    setShowMarkedForDeletion(false);
-    setShowFavorited(false);
-    setSelectedFolderIds([]);
-    setSearch('');
-    setSidebarFolderTab('source');
+    startTransition(() => {
+      setMediaType('all');
+      setShowMarkedForDeletion(false);
+      setShowFavorited(false);
+      setSelectedFolderIds([]);
+      setSearch('');
+      setSidebarFolderTab('source');
+    });
   };
   const openLibrary = () => {
     setActivePage('library');
-    setMediaType('video');
-    setShowMarkedForDeletion(false);
-    setShowFavorited(false);
-    setShowFavoritedInList(true);
-    setSelectedFolderIds([]);
+    startTransition(() => {
+      setMediaType('video');
+      setShowMarkedForDeletion(false);
+      setShowFavorited(false);
+      setShowFavoritedInList(true);
+      setSelectedFolderIds([]);
+    });
   };
   const openFavorites = () => {
     setActivePage('library');
-    setShowMarkedForDeletion(false);
-    setMediaType('video');
-    setShowFavoritedInList(true);
-    setShowFavorited(true);
-    setSelectedFolderIds([]);
+    startTransition(() => {
+      setShowMarkedForDeletion(false);
+      setMediaType('video');
+      setShowFavoritedInList(true);
+      setShowFavorited(true);
+      setSelectedFolderIds([]);
+    });
   };
   const openMarkedForDeletion = () => {
     setActivePage('library');
-    setMediaType('video');
-    setShowFavorited(false);
-    setShowFavoritedInList(true);
-    setShowMarkedForDeletion(true);
+    startTransition(() => {
+      setMediaType('video');
+      setShowFavorited(false);
+      setShowFavoritedInList(true);
+      setShowMarkedForDeletion(true);
+    });
   };
 
   const openHealthMarkedForDeletion = () => {
@@ -1658,7 +1679,7 @@ function App() {
           onSidebarOpenChange={setSidebarOpen}
           pageLabel={activePage === 'overview' ? '工作台' : activePage === 'health' ? '健康中心' : '媒体库'}
           pageCurrent={activePage === 'overview' ? '概览' : activePage === 'health' ? '诊断' : undefined}
-          isOverview={activePage !== 'library'}
+          isOverview
           mediaType={mediaType}
           onMediaTypeChange={changeMediaType}
           sortBy={sortBy}
@@ -1671,6 +1692,7 @@ function App() {
           search={search}
           onSearchChange={(value) => { if (value) setActivePage('library'); setSearch(value); }}
           videoCount={videoCount}
+          onOverviewSection={scrollOverviewSection}
           filteredCount={visibleVideos.length}
           importing={importing}
           importProgress={importProgress}
@@ -1718,9 +1740,6 @@ function App() {
                 </div>
                 <button className={`sidebar-nav-item${activePage === 'overview' ? ' is-active' : ''}`} onClick={openOverview}>
                   <Home size={17} /><span>概览</span>
-                </button>
-                <button className={`sidebar-nav-item${activePage === 'health' ? ' is-active' : ''}`} onClick={openHealth}>
-                  <Activity size={17} /><span>健康中心</span>
                 </button>
                 <button className={`sidebar-nav-item${activePage === 'library' && !showFavorited && !showMarkedForDeletion ? ' is-active' : ''}`} onClick={openLibrary}>
                   <LayoutGrid size={17} /><span>媒体库</span><span className="sidebar-nav-count">{(activePage === 'overview' ? overviewVideoCount : videoCount).toLocaleString()}</span>
@@ -1843,7 +1862,17 @@ function App() {
                   />
                 )}
               </div>
-              <div className="sidebar-footer"><span>本地媒体库</span><span className="sidebar-footer-dot" /> <span>Windows</span></div>
+              <div className="sidebar-footer">
+                <span>本地媒体库</span><span className="sidebar-footer-dot" /> <span>Windows</span>
+                <button
+                  className={`sidebar-footer-health${activePage === 'health' ? ' is-active' : ''}`}
+                  onClick={openHealth}
+                  title="健康中心"
+                  aria-label="健康中心"
+                >
+                  <Activity size={14} />
+                </button>
+              </div>
               <div
                 className="sidebar-resize-handle"
                 role="separator"
@@ -1892,7 +1921,36 @@ function App() {
               />
             ) : (
               <>
-                <div className="content-heading">
+                <div className="library-list-header">
+                  <LibraryToolbar
+                    mediaType={mediaType}
+                    onMediaTypeChange={changeMediaType}
+                    filteredCount={visibleVideos.length}
+                    videoCount={videoCount}
+                    currentSizeLabel={formatFileSize(currentViewSize)}
+                    sortBy={sortBy}
+                    onSortByChange={setSortBy}
+                    sortDir={sortDir}
+                    onSortDirChange={setSortDir}
+                    showFavorited={showFavorited}
+                    onShowFavoritedChange={(show) => { setShowMarkedForDeletion(false); setShowFavorited(show); }}
+                    favoritedCount={favoritedCount}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    onOpenFeed={handleOpenFeed}
+                    onShuffle={shuffleVideos}
+                    onClearFilter={clearFilter}
+                    showFavoritedInList={showFavoritedInList}
+                    onShowFavoritedInListChange={setShowFavoritedInList}
+                    fixedLayoutMode={fixedLayoutMode}
+                    onFixedLayoutModeChange={handleFixedLayoutModeChange}
+                    cardSize={cardSize}
+                    onCardSizeChange={setCardSize}
+                  batchActionAvailable={batchActionAvailable}
+                  batchSelectionMode={batchSelectionMode}
+                  onEnterBatchSelection={enterBatchSelection}
+                  />
+                  <div className="content-heading">
                   <div className="content-heading-copy">
                     <span className="content-eyebrow">{showFavorited ? 'YOUR COLLECTION' : 'LIBRARY'}</span>
                     <h1>{currentViewTitle}</h1>
@@ -1914,6 +1972,7 @@ function App() {
                         <span>{showFavorited ? '批量管理' : '批量整理'}</span>
                       </button>
                     )}
+                  </div>
                   </div>
                 </div>
                   {showCategorizedOnlyNotice && (

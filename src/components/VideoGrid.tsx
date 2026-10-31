@@ -808,6 +808,20 @@ export function VideoGrid({ videos, contentTransitionKey = '', cardSize, onCardS
     return () => ro.disconnect();
   }, []);
 
+  // A directory switch replaces the content behind the same scroll container.
+  // Reset it before paint so the new list never animates in from the previous
+  // directory's scroll position.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (scrollAnimation.current != null) {
+      cancelAnimationFrame(scrollAnimation.current);
+      scrollAnimation.current = null;
+    }
+    el.scrollTop = 0;
+    setScrollTop(0);
+  }, [contentTransitionKey]);
+
   // 追踪 scroll 位置（用于虚拟化窗口计算）
   useEffect(() => {
     const el = containerRef.current;

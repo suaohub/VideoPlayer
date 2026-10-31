@@ -593,7 +593,9 @@ function waitAndConnectSocket(
         playbackIpcConnected = true;
         setupIpcListeners(sock, expectedProcess, expectedSocketPath);
         // 订阅属性变化
-        observeProperty('time-pos', 0.1);
+        // mpv requires an integer observer id. A fractional id makes the
+        // subscription fail, leaving every persisted playback position at 0.
+        observeProperty('time-pos', 1);
         observeProperty('duration', 2);
         observeProperty('pause', 3);
         observeProperty('volume', 4);

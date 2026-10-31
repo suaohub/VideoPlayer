@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronDown,
   Clapperboard,
+  Clock3,
   Dices,
   Film,
   FilterX,
@@ -66,6 +67,7 @@ interface ToolbarProps {
   search: string;
   onSearchChange: (s: string) => void;
   videoCount: number;
+  onOverviewSection?: (section: 'continue' | 'recent' | 'favorites') => void;
   filteredCount: number;
   importing: boolean;
   importProgress: ImportProgress | null;
@@ -138,6 +140,7 @@ function Toolbar({
   search,
   onSearchChange,
   videoCount,
+  onOverviewSection = () => {},
   filteredCount,
   importing,
   importProgress,
@@ -294,7 +297,17 @@ function Toolbar({
         </div>
       </div>
 
-      {!isOverview && <div className="secondary-toolbar-row">
+      {isOverview ? (
+        <div className="secondary-toolbar-row overview-toolbar-row">
+          <div className="overview-toolbar-label"><Sparkles size={15} /><span>快速浏览</span></div>
+          <div className="secondary-toolbar-spacer" />
+          <div className="overview-toolbar-links" aria-label="概览内容导航">
+            <button type="button" onClick={() => onOverviewSection('continue')}><Clock3 size={14} /><span>继续播放</span></button>
+            <button type="button" onClick={() => onOverviewSection('recent')}><Sparkles size={14} /><span>最近添加</span></button>
+            <button type="button" onClick={() => onOverviewSection('favorites')}><Heart size={14} /><span>收藏</span></button>
+          </div>
+        </div>
+      ) : <div className="secondary-toolbar-row">
         <nav className="media-tabs" aria-label="媒体类型">
           {MEDIA_TABS.map(({ value, label, Icon }) => (
             <button

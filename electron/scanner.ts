@@ -310,8 +310,9 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
 
       // 获取 video id
       const videoRow = getVideoId.get(filePath) as { id: number };
-      // 只把新增、文件内容发生变化、或尚未生成缩略图的媒体加入队列。
-      if (!existing || changed || !existing.thumbnail_path) importedVideoIds.push(videoRow.id);
+      // 刷新时只处理新增或内容发生变化的媒体。
+      // 历史缺图记录由启动补图或健康中心手动生成处理，避免每次点刷新都重复入队。
+      if (!existing || changed) importedVideoIds.push(videoRow.id);
 
       // 扁平化标签：把该文件相对导入根的所有子目录名作为标签
       const relative = path.relative(importRootPath, dir);
@@ -716,8 +717,6 @@ export async function refreshImportedFolders(onProgress?: ProgressCallback): Pro
   deletedThumbnailUrls.push(...movedPathCleanup.deletedThumbnailUrls);
 
   cleanupEmptyFolders(rootPaths);
-  enqueueMissingThumbnails();
-
   return {
     roots: uniqueRoots.length,
     refreshedRoots,
@@ -809,8 +808,6 @@ export function refreshImportedSubfolders(
       ...cleanupRootPaths.map((rootPath) => pathKey(rootPath)),
     ],
   ));
-  enqueueMissingThumbnails();
-
   return {
     folders: effectivePaths.length,
     refreshedFolders: scanPlans.length,

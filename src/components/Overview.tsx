@@ -5,10 +5,12 @@ import {
   Film,
   FolderOpen,
   Heart,
+  Music2,
   Play,
   Sparkles,
 } from 'lucide-react';
 import { RecentPlayback, Video } from '../types';
+import { isAudioFile } from '../media';
 import './Overview.css';
 
 interface OverviewProps {
@@ -82,6 +84,15 @@ function Thumbnail({ video, compact = false }: { video: Video; compact?: boolean
   const thumbnail = video.thumbnail_path;
   const height = compact ? 232 : 196;
 
+  if (isAudioFile(video.path)) {
+    return (
+      <div className="overview-thumb overview-thumb-audio" style={{ height }}>
+        <Music2 size={compact ? 30 : 54} strokeWidth={1.35} />
+        <span>音频</span>
+      </div>
+    );
+  }
+
   if (thumbnail?.startsWith('gradient:')) {
     const [first, second] = thumbnail.replace('gradient:', '').split(',');
     return (
@@ -123,7 +134,7 @@ function MediaCard({
   const progressValue = progress != null ? Math.min(1, Math.max(0, progress)) : 0;
   return (
     <button className={`overview-media-card${className ? ` ${className}` : ''}`} onClick={() => onPlay(video, playlist)} title={`播放 ${video.name}`}>
-      <div className="overview-media-art">
+      <div className={`overview-media-art${isAudioFile(video.path) ? ' overview-media-art-audio' : ''}`}>
         <Thumbnail video={video} compact />
         {progress != null && <span className="overview-media-kind">{mediaKind(video)}</span>}
         <span className="overview-card-play"><Play size={15} fill="currentColor" /></span>
@@ -238,7 +249,7 @@ export function Overview({
       {loading && <div className="overview-loading"><span />正在整理你的媒体空间…</div>}
 
       {validContinue.length > 0 && (
-        <section className="overview-section">
+        <section id="overview-continue" className="overview-section">
           <SectionHeading icon={<Clock3 size={16} />} title="继续播放" />
           <div className="overview-card-row overview-continue-row">
             {validContinue.map(({ item, video }) => {
@@ -249,7 +260,7 @@ export function Overview({
         </section>
       )}
 
-      <section className="overview-section">
+      <section id="overview-recent" className="overview-section">
         <SectionHeading icon={<Sparkles size={16} />} title="最近添加" action="查看全部" onAction={onOpenLibrary} />
         {recentAdded.length > 0 ? (
           <div className="overview-poster-grid">{recentAdded.slice(0, 8).map((video) => <MediaCard key={video.id} video={video} className="overview-poster-grid-card" onPlay={onPlay} playlist={recentAdded} />)}</div>
@@ -259,7 +270,7 @@ export function Overview({
       </section>
 
       {favorites.length > 0 && (
-        <section className="overview-section">
+      <section id="overview-favorites" className="overview-section">
           <SectionHeading icon={<Heart size={16} />} title="收藏" count={totalFavorites} action="打开收藏" onAction={onOpenFavorites} />
           <div className="overview-card-row">{favorites.slice(0, 8).map((video) => <MediaCard key={video.id} video={video} onPlay={onPlay} playlist={favorites} />)}</div>
         </section>
