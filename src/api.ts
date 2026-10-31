@@ -475,6 +475,13 @@ export const api = {
   onThumbnailProgress(cb: (data: import('./types').ThumbnailProgress) => void) {
     if (!USE_MOCK && window.electronAPI) return window.electronAPI.onThumbnailProgress(cb);
   },
+  onMediaMetadataReady(cb: (data: import('./types').MediaMetadataReady) => void) {
+    if (!USE_MOCK && window.electronAPI) return window.electronAPI.onMediaMetadataReady(cb);
+    return () => undefined;
+  },
+  setMediaMetadataForegroundActivity(isActive: boolean) {
+    window.electronAPI?.setMediaMetadataForegroundActivity?.(isActive);
+  },
   onOperationProgress(cb: (data: import('./types').OperationProgress) => void) {
     if (!USE_MOCK && window.electronAPI) return window.electronAPI.onOperationProgress(cb);
   },

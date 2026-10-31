@@ -19,6 +19,12 @@ export interface Video {
   marked_for_deletion: number;
   /** 最近一次标记删除的时间；旧数据可能为空。 */
   marked_for_deletion_at?: number | null;
+  video_codec?: string | null;
+  video_bit_depth?: number | null;
+  audio_codec?: string | null;
+  audio_channels?: number | null;
+  audio_channel_layout?: string | null;
+  metadata_scanned_at?: number | null;
   organize_category_id?: number | null;
 }
 
@@ -50,6 +56,12 @@ export interface RecentPlayback extends PlaybackProgress {
   favorited: number | null;
   marked_for_deletion: number | null;
   marked_for_deletion_at: number | null;
+  video_codec?: string | null;
+  video_bit_depth?: number | null;
+  audio_codec?: string | null;
+  audio_channels?: number | null;
+  audio_channel_layout?: string | null;
+  metadata_scanned_at?: number | null;
   organize_category_id: number | null;
 }
 
@@ -231,6 +243,8 @@ export interface ElectronAPI {
   onImportDone: (cb: () => void) => (() => void) | void;
   onThumbnailReady: (cb: (data: ThumbnailReady) => void) => (() => void) | void;
   onThumbnailProgress: (cb: (data: ThumbnailProgress) => void) => (() => void) | void;
+  onMediaMetadataReady: (cb: (data: MediaMetadataReady) => void) => (() => void) | void;
+  setMediaMetadataForegroundActivity: (isActive: boolean) => void;
   onOperationProgress: (cb: (data: OperationProgress) => void) => (() => void) | void;
   clearCache: () => Promise<{ success: boolean; count?: number; error?: string }>;
   deleteFolder: (folderId: number) => Promise<{ success: boolean; videoCount?: number; thumbCount?: number; error?: string }>;
@@ -316,6 +330,18 @@ export interface ThumbnailReady {
 export interface ThumbnailProgress {
   done: number;
   total: number;
+}
+
+export interface MediaMetadataReady {
+  id: number;
+  width: number | null;
+  height: number | null;
+  aspect_ratio: number | null;
+  video_codec: string | null;
+  video_bit_depth: number | null;
+  audio_codec: string | null;
+  audio_channels: number | null;
+  audio_channel_layout: string | null;
 }
 
 declare global {

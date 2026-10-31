@@ -238,6 +238,7 @@ function App() {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [generatingHealthThumbnails, setGeneratingHealthThumbnails] = useState(false);
   const overviewRequestId = useRef(0);
+  const metadataOverviewRefreshTimer = useRef<number | null>(null);
   const videosRequestId = useRef(0);
   const loadedFolderKeyRef = useRef<string | null>(null);
   const [contentTransitionKey, setContentTransitionKey] = useState(0);
@@ -280,6 +281,19 @@ function App() {
       offFullscreenChanged?.();
       window.removeEventListener('resize', updateViewportMode);
     };
+  }, []);
+
+  // 深度规格由主进程逐文件低优先级探测，单条更新，避免刷新整个列表。
+  useEffect(() => {
+    const offMetadata = api.onMediaMetadataReady((data) => {
+      startTransition(() => {
+        setVideos((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
+        setOverviewRecentAdded((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
+        setOverviewFavorites((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
+        setOverviewRecentPlayback((prev) => prev.map((item) => item.id === data.id || item.video_id === data.id ? { ...item, ...data } : item));
+      });
+    });
+    return () => { offMetadata?.(); };
   }, []);
 
   // 刷新标签、目录、视频总数（跟随当前媒体类型分类）
@@ -684,6 +698,74 @@ function App() {
   useEffect(() => {
     const offStopped = api.onStopped(() => { void loadOverview(); });
     return () => { offStopped?.(); };
+  }, [loadOverview]);
+
+  // 规格探测只趁界面短暂无操作时运行；输入、滚动和窗口切换都会推迟任务。
+  useEffect(() => {
+    let idleTimer = 0;
+    let foregroundSignaled = false;
+    const markActive = () => {
+      if (!foregroundSignaled) {
+        foregroundSignaled = true;
+        api.setMediaMetadataForegroundActivity(true);
+      }
+      window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => {
+        if (document.visibilityState === 'visible' && !playingAudio && !readingText && !readingComic && !feedVideos) {
+          foregroundSignaled = false;
+          api.setMediaMetadataForegroundActivity(false);
+        }
+      }, 3500);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') {
+        window.clearTimeout(idleTimer);
+        foregroundSignaled = true;
+        api.setMediaMetadataForegroundActivity(true);
+      } else markActive();
+    };
+    const onWindowBlur = () => {
+      window.clearTimeout(idleTimer);
+      foregroundSignaled = true;
+      api.setMediaMetadataForegroundActivity(true);
+    };
+    const onWindowFocus = () => markActive();
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+    for (const name of events) window.addEventListener(name, markActive, { passive: true });
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('focus', onWindowFocus);
+    markActive();
+    return () => {
+      window.clearTimeout(idleTimer);
+      for (const name of events) window.removeEventListener(name, markActive);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('focus', onWindowFocus);
+      api.setMediaMetadataForegroundActivity(true);
+    };
+  }, [playingAudio, readingText, readingComic, feedVideos]);
+
+  useEffect(() => {
+    const offMetadata = api.onMediaMetadataReady((data) => {
+      startTransition(() => {
+        setOverviewRecentAdded((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
+        setOverviewFavorites((prev) => prev.map((video) => video.id === data.id ? { ...video, ...data } : video));
+        setOverviewRecentPlayback((prev) => prev.map((item) => item.id === data.id || item.video_id === data.id ? { ...item, ...data } : item));
+      });
+      // 规格探测可能在渲染进程完成首次加载前就结束，事件不会被首次页面接收。
+      // 合并短时间内的通知，重新读取概览数据，确保这类后台更新最终可见。
+      if (metadataOverviewRefreshTimer.current != null) window.clearTimeout(metadataOverviewRefreshTimer.current);
+      metadataOverviewRefreshTimer.current = window.setTimeout(() => {
+        metadataOverviewRefreshTimer.current = null;
+        void loadOverview();
+      }, 300);
+    });
+    return () => {
+      offMetadata?.();
+      if (metadataOverviewRefreshTimer.current != null) window.clearTimeout(metadataOverviewRefreshTimer.current);
+      metadataOverviewRefreshTimer.current = null;
+    };
   }, [loadOverview]);
 
   // 导入进度监听
@@ -1902,6 +1984,7 @@ function App() {
                 onPlay={handlePlay}
                 onOpenLibrary={openLibrary}
                 onOpenFavorites={openFavorites}
+                onOpenMediaType={changeMediaType}
                 onImport={handleImport}
               />
             ) : activePage === 'health' ? (

@@ -1,15 +1,20 @@
+import { useRef } from 'react';
 import {
   ArrowRight,
+  BookOpen,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   Film,
   FolderOpen,
   Heart,
+  Images,
   Music2,
   Play,
   Sparkles,
 } from 'lucide-react';
 import { RecentPlayback, Video } from '../types';
+import type { MediaType } from '../types';
 import { isAudioFile } from '../media';
 import './Overview.css';
 
@@ -24,6 +29,7 @@ interface OverviewProps {
   onPlay: (video: Video, playlist?: Video[]) => void;
   onOpenLibrary: () => void;
   onOpenFavorites: () => void;
+  onOpenMediaType: (type: MediaType) => void;
   onImport: () => void;
 }
 
@@ -37,9 +43,50 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
-function formatRelativeTime(timestamp: number): string {
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function getResolution(video: Video): string {
+  return video.width && video.height ? `${video.width} × ${video.height}` : '';
+}
+
+function getQualityLabel(video: Video): string {
+  if ((video.width ?? 0) >= 3840 || (video.height ?? 0) >= 2160) return '4K UHD';
+  if ((video.width ?? 0) >= 1920 || (video.height ?? 0) >= 1080) return '1080P';
+  return '';
+}
+
+function getMediaDetails(video: Video): string[] {
+  const codecNames: Record<string, string> = { hevc: 'HEVC', h265: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', avc: 'AVC', prores: 'ProRes' };
+  const audioNames: Record<string, string> = { aac: 'AAC', ac3: 'AC-3', eac3: 'E-AC-3', truehd: 'TrueHD', dts: 'DTS', dca: 'DTS', flac: 'FLAC', alac: 'ALAC', mp3: 'MP3', opus: 'Opus', pcm_s16le: 'PCM', pcm_s24le: 'PCM' };
+  const audioCodec = video.audio_codec?.toLowerCase() ?? '';
+  const channelLabel = video.audio_channels
+    ? (video.audio_channel_layout && /5\.1|7\.1|stereo|mono/i.test(video.audio_channel_layout)
+      ? video.audio_channel_layout.replace(/stereo/i, '2.0').replace(/mono/i, '1.0')
+      : ({ 1: '1.0', 2: '2.0', 6: '5.1', 8: '7.1' } as Record<number, string>)[video.audio_channels] ?? `${video.audio_channels}ch`)
+    : '';
+  const losslessCodecs = new Set(['flac', 'alac', 'ape', 'wavpack', 'truehd', 'mlp', 'pcm_s16le', 'pcm_s24le', 'pcm_s32le', 'pcm_f32le']);
+  return [
+    getResolution(video),
+    video.video_codec ? `${codecNames[video.video_codec.toLowerCase()] ?? video.video_codec.toUpperCase()}${video.video_bit_depth ? ` ${video.video_bit_depth}bit` : ''}` : '',
+    audioCodec ? `${audioNames[audioCodec] ?? video.audio_codec?.toUpperCase()}${channelLabel ? ` ${channelLabel}` : ''}` : '',
+    formatFileSize(video.size),
+    losslessCodecs.has(audioCodec) ? '无损音频' : '',
+  ].filter(Boolean);
+}
+
+function formatRelativeTime(timestamp: number, immediate = '刚刚播放'): string {
   const delta = Date.now() - timestamp;
-  if (!Number.isFinite(delta) || delta < 60_000) return '刚刚播放';
+  if (!Number.isFinite(delta) || delta < 60_000) return immediate;
   const minutes = Math.floor(delta / 60_000);
   if (minutes < 60) return `${minutes} 分钟前`;
   const hours = Math.floor(minutes / 60);
@@ -69,6 +116,11 @@ function toVideo(item: RecentPlayback): Video | null {
     width: item.width ?? null,
     height: item.height ?? null,
     aspect_ratio: item.aspect_ratio ?? null,
+    video_codec: item.video_codec ?? null,
+    video_bit_depth: item.video_bit_depth ?? null,
+    audio_codec: item.audio_codec ?? null,
+    audio_channels: item.audio_channels ?? null,
+    audio_channel_layout: item.audio_channel_layout ?? null,
     thumbnail_path: item.thumbnail_path ?? null,
     folder_id: item.folder_id ?? null,
     added_at: item.added_at ?? item.last_played_at,
@@ -82,11 +134,10 @@ function toVideo(item: RecentPlayback): Video | null {
 
 function Thumbnail({ video, compact = false }: { video: Video; compact?: boolean }) {
   const thumbnail = video.thumbnail_path;
-  const height = compact ? 232 : 196;
 
   if (isAudioFile(video.path)) {
     return (
-      <div className="overview-thumb overview-thumb-audio" style={{ height }}>
+      <div className="overview-thumb overview-thumb-audio">
         <Music2 size={compact ? 30 : 54} strokeWidth={1.35} />
         <span>音频</span>
       </div>
@@ -98,7 +149,7 @@ function Thumbnail({ video, compact = false }: { video: Video; compact?: boolean
     return (
       <div
         className="overview-thumb overview-thumb-gradient"
-        style={{ height, background: `linear-gradient(135deg, ${first}, ${second})` }}
+        style={{ background: `linear-gradient(135deg, ${first}, ${second})` }}
       >
         <Film size={compact ? 22 : 34} strokeWidth={1.5} />
       </div>
@@ -106,11 +157,11 @@ function Thumbnail({ video, compact = false }: { video: Video; compact?: boolean
   }
 
   if (thumbnail) {
-    return <img className="overview-thumb" style={{ height }} src={thumbnail} alt="" loading="lazy" />;
+    return <img className="overview-thumb" src={thumbnail} alt="" loading="lazy" />;
   }
 
   return (
-    <div className="overview-thumb overview-thumb-empty" style={{ height }}>
+    <div className="overview-thumb overview-thumb-empty">
       <Film size={compact ? 22 : 34} strokeWidth={1.5} />
     </div>
   );
@@ -136,6 +187,8 @@ function MediaCard({
     <button className={`overview-media-card${className ? ` ${className}` : ''}`} onClick={() => onPlay(video, playlist)} title={`播放 ${video.name}`}>
       <div className={`overview-media-art${isAudioFile(video.path) ? ' overview-media-art-audio' : ''}`}>
         <Thumbnail video={video} compact />
+        {progress == null && getQualityLabel(video) && <span className="overview-media-quality">{getQualityLabel(video)}</span>}
+        {progress == null && video.duration != null && video.duration > 0 && <span className="overview-media-duration">{formatDuration(video.duration)}</span>}
         {progress != null && <span className="overview-media-kind">{mediaKind(video)}</span>}
         <span className="overview-card-play"><Play size={15} fill="currentColor" /></span>
         {progress != null && progressValue > 0 && (
@@ -144,7 +197,7 @@ function MediaCard({
       </div>
       <div className="overview-media-copy">
         <span className="overview-media-name">{video.name}</span>
-        <span className="overview-media-meta">{meta ?? (formatDuration(video.duration) || '媒体文件')}</span>
+        <span className="overview-media-meta">{meta ?? formatRelativeTime(video.added_at, '刚刚入库')}</span>
       </div>
     </button>
   );
@@ -156,16 +209,21 @@ function SectionHeading({
   count,
   action,
   onAction,
+  subtitle,
+  controls,
 }: {
   icon: React.ReactNode;
   title: string;
   count?: number;
   action?: string;
   onAction?: () => void;
+  subtitle?: string;
+  controls?: React.ReactNode;
 }) {
   return (
     <div className="overview-section-heading">
-      <div className="overview-section-title"><span className="overview-section-icon">{icon}</span><h2>{title}</h2>{count != null && <span className="overview-section-count">{count}</span>}</div>
+      <div className="overview-section-title"><span className="overview-section-icon">{icon}</span><h2>{title}</h2>{count != null && <span className="overview-section-count">{count}</span>}{subtitle && <span className="overview-section-subtitle">{subtitle}</span>}</div>
+      {controls}
       {action && onAction && <button className="overview-section-action" onClick={onAction}>{action}<ArrowRight size={14} /></button>}
     </div>
   );
@@ -182,8 +240,15 @@ export function Overview({
   onPlay,
   onOpenLibrary,
   onOpenFavorites,
+  onOpenMediaType,
   onImport,
 }: OverviewProps) {
+  const continueRowRef = useRef<HTMLDivElement>(null);
+  const scrollContinue = (direction: number) => {
+    const row = continueRowRef.current;
+    if (!row) return;
+    row.scrollBy({ left: direction * row.clientWidth, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  };
   const validContinue = continueWatching
     .filter((item) => item.completed !== 1 && item.marked_for_deletion !== 1 && item.position > 0)
     .map((item) => ({ item, video: toVideo(item) }))
@@ -196,7 +261,9 @@ export function Overview({
     : null;
   const companionVideos = [...recentAdded, ...favorites]
     .filter((video, index, all) => video.id !== featuredVideo?.id && all.findIndex((item) => item.id === video.id) === index)
-    .slice(0, 3);
+    .slice(0, 4);
+  const featuredDetails = featuredVideo ? getMediaDetails(featuredVideo) : [];
+  const featuredQuality = featuredVideo ? getQualityLabel(featuredVideo) : '';
 
   return (
     <div className="overview-page">
@@ -207,15 +274,15 @@ export function Overview({
       <div className="overview-featured-layout">
       {featuredVideo ? (
         <button className="overview-hero-feature" onClick={() => onPlay(featuredVideo, hero ? validContinue.map(({ video }) => video) : recentAdded)} title={`${hero ? '继续播放' : '播放'} ${featuredVideo.name}`}>
-          <Thumbnail video={featuredVideo} />
           <div className="overview-hero-poster"><Thumbnail video={featuredVideo} compact /></div>
-          <div className="overview-hero-feature-overlay" />
           <span className="overview-hero-kicker"><b>01</b><span />{hero ? '接着上次继续' : '本月精选'}</span>
+          {featuredQuality && <span className="overview-hero-quality">{featuredQuality}</span>}
           <div className="overview-hero-feature-copy">
             <span className="overview-hero-feature-label">{hero ? `继续${mediaKind(hero.item)} · ${formatRelativeTime(hero.item.last_played_at)}` : '来自最近添加'}</span>
             <strong>{featuredVideo.name}</strong>
             <span>{hero ? '从上次离开的地方继续播放' : '打开这部作品'}</span>
-            {heroProgress != null && <span className="overview-hero-progress"><i style={{ width: `${heroProgress}%` }} /></span>}
+            {heroProgress != null && <div className="overview-hero-progress"><span className="overview-hero-progress-label">已观看 {formatDuration(hero.item.position)}</span><b>{heroProgress}%</b><span className="overview-hero-progress-track"><i style={{ width: `${heroProgress}%` }} /></span></div>}
+            {featuredDetails.length > 0 && <div className="overview-hero-meta">{featuredDetails.map((detail) => <span key={detail}>{detail}</span>)}</div>}
           </div>
           <span className="overview-hero-play"><Play size={20} fill="currentColor" /><span>播放</span></span>
         </button>
@@ -232,7 +299,7 @@ export function Overview({
           <button className="overview-pick-card" key={video.id} onClick={() => onPlay(video, companionVideos)} title={`播放 ${video.name}`}>
             <span className="overview-pick-index">0{index + 1}</span>
             <div className="overview-pick-art"><Thumbnail video={video} compact /></div>
-            <span className="overview-pick-copy"><strong>{video.name}</strong><small>{formatDuration(video.duration) || mediaKind(video)}</small></span>
+            <span className="overview-pick-copy"><strong>{video.name}</strong><small>{[formatDuration(video.duration), getQualityLabel(video) || mediaKind(video)].filter(Boolean).join(' · ')}</small></span>
             <ChevronRight size={14} />
           </button>
         )) : (
@@ -250,8 +317,8 @@ export function Overview({
 
       {validContinue.length > 0 && (
         <section id="overview-continue" className="overview-section">
-          <SectionHeading icon={<Clock3 size={16} />} title="继续播放" />
-          <div className="overview-card-row overview-continue-row">
+          <SectionHeading icon={<Clock3 size={14} />} title="继续播放" subtitle={`上次播放队列 (${validContinue.length} 部)`} controls={<div className="overview-shelf-controls"><button aria-label="向左浏览继续播放" onClick={() => scrollContinue(-1)}><ChevronLeft size={15} /></button><button aria-label="向右浏览继续播放" onClick={() => scrollContinue(1)}><ChevronRight size={15} /></button></div>} />
+          <div className="overview-card-row overview-continue-row" ref={continueRowRef}>
             {validContinue.map(({ item, video }) => {
               const progress = item.duration && item.duration > 0 ? item.position / item.duration : 0;
               return <MediaCard key={`${item.path}-${item.last_played_at}`} video={video} className="overview-continue-card" progress={progress} meta={`${mediaKind(item)} · ${Math.round(Math.min(1, progress) * 100)}% · ${formatRelativeTime(item.last_played_at)}`} onPlay={onPlay} playlist={validContinue.map((entry) => entry.video)} />;
@@ -260,8 +327,26 @@ export function Overview({
         </section>
       )}
 
+      <div className="overview-library-strip" aria-label="片库统计">
+        <div className="overview-library-stats">
+          <div className="overview-library-stat"><span className="overview-library-stat-copy"><small>库藏视频</small><strong>{loading ? '—' : totalVideos.toLocaleString()}</strong></span></div>
+          <div className="overview-library-stat"><span className="overview-library-stat-copy"><small>媒体目录</small><strong>{loading ? '—' : totalFolders.toLocaleString()}</strong></span></div>
+          <div className="overview-library-stat"><span className="overview-library-stat-copy"><small>收藏作品</small><strong>{loading ? '—' : totalFavorites.toLocaleString()}</strong></span></div>
+        </div>
+        <div className="overview-quick-filters">
+          <div className="overview-quick-heading"><strong>快速筛选</strong><span>进入片库</span></div>
+          <div className="overview-quick-actions" aria-label="按媒体类型浏览">
+            <button onClick={() => onOpenMediaType('all')}>全部</button>
+            <button onClick={() => onOpenMediaType('video')}>视频</button>
+            <button onClick={() => onOpenMediaType('audio')}><Music2 size={12} />音频</button>
+            <button onClick={() => onOpenMediaType('text')}><BookOpen size={12} />小说</button>
+            <button onClick={() => onOpenMediaType('comic')}><Images size={12} />漫画</button>
+          </div>
+        </div>
+      </div>
+
       <section id="overview-recent" className="overview-section">
-        <SectionHeading icon={<Sparkles size={16} />} title="最近添加" action="查看全部" onAction={onOpenLibrary} />
+        <SectionHeading icon={<Sparkles size={14} />} title="最近添加" subtitle="Recently Added" action="查看全部" onAction={onOpenLibrary} />
         {recentAdded.length > 0 ? (
           <div className="overview-poster-grid">{recentAdded.slice(0, 8).map((video) => <MediaCard key={video.id} video={video} className="overview-poster-grid-card" onPlay={onPlay} playlist={recentAdded} />)}</div>
         ) : (

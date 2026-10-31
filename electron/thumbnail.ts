@@ -61,6 +61,11 @@ export interface VideoMetadata {
   width: number | null;
   height: number | null;
   aspect_ratio: number | null;
+  video_codec?: string | null;
+  video_bit_depth?: number | null;
+  audio_codec?: string | null;
+  audio_channels?: number | null;
+  audio_channel_layout?: string | null;
 }
 
 export interface ThumbnailResult extends VideoMetadata {
@@ -118,7 +123,7 @@ export function probeVideo(videoPath: string): VideoMetadata {
   const result = spawnSync(ffprobe, [
     '-v', 'error',
     '-select_streams', 'v:0',
-    '-show_entries', 'stream=width,height:format=duration',
+    '-show_entries', 'stream=codec_type,width,height:format=duration',
     '-of', 'json',
     videoPath,
   ], { encoding: 'utf8' });
@@ -235,7 +240,7 @@ export async function probeVideoAsync(videoPath: string): Promise<VideoMetadata>
   const { code, stdout } = await runProcess(ffprobe, [
     '-v', 'error',
     '-select_streams', 'v:0',
-    '-show_entries', 'stream=width,height:format=duration',
+    '-show_entries', 'stream=codec_type,width,height:format=duration',
     '-of', 'json',
     videoPath,
   ]);

@@ -2,7 +2,8 @@ import { getDb } from './db';
 import { generateThumbnailAsync, probeVideoAsync, thumbnailFilePathFromUrl, VideoMetadata } from './thumbnail';
 import * as fs from 'fs';
 import * as os from 'os';
-import { isAudioFile, isTextFile, isComicExt } from './media';
+import { isAudioFile, isTextFile, isComicExt, VIDEO_EXTS, AUDIO_EXTS } from './media';
+import { probeMediaMetadata, MediaMetadata } from './mediaMetadata';
 
 // 缩略图后台生成队列：限并发、非阻塞，逐个生成后更新 DB 并通过事件通知渲染进程。
 
@@ -23,13 +24,18 @@ export interface ThumbnailProgress {
 // 事件回调由 main.ts 注册（解耦，队列不直接依赖 BrowserWindow）
 type ReadyListener = (payload: ThumbnailReadyPayload) => void;
 type ProgressListener = (progress: ThumbnailProgress) => void;
+export interface MediaMetadataReadyPayload extends MediaMetadata { id: number; }
+type MetadataListener = (payload: MediaMetadataReadyPayload) => void;
 
 let onReady: ReadyListener | null = null;
 let onProgress: ProgressListener | null = null;
+let onMetadataReady: MetadataListener | null = null;
 
-export function setThumbnailListeners(ready: ReadyListener, progress: ProgressListener) {
+export function setThumbnailListeners(ready: ReadyListener, progress: ProgressListener, metadataReady?: MetadataListener) {
   onReady = ready;
   onProgress = progress;
+  onMetadataReady = metadataReady ?? null;
+  scheduleMetadataProbe();
 }
 
 // 缩略图属于后台任务，不能与 mpv 播放争抢磁盘、CPU 和解码器。
@@ -40,6 +46,7 @@ let boostMode = false;
 
 export function setThumbnailGenerationBoost(value: boolean) {
   boostMode = value;
+  notifyActivity();
   if (!value) pump();
 }
 
@@ -51,6 +58,103 @@ const queued = new Set<number>();
 const blocked = new Map<number, 'missing' | 'failed' | 'skip'>();
 let active = 0;
 let paused = false;
+let foregroundWork = 0;
+let metadataTimer: ReturnType<typeof setTimeout> | null = null;
+let metadataAbort: AbortController | null = null;
+let metadataActive = false;
+let metadataUserIdle = false;
+let metadataStarted = false;
+const METADATA_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS];
+
+function notifyActivity() {
+  const busy = paused || foregroundWork > 0 || active > 0 || pending.length > 0 || !metadataUserIdle;
+  if (busy) {
+    if (metadataTimer) clearTimeout(metadataTimer);
+    metadataTimer = null;
+    metadataAbort?.abort();
+  } else {
+    scheduleMetadataProbe();
+  }
+}
+
+export function startBackgroundMetadataQueue() {
+  metadataStarted = true;
+  scheduleMetadataProbe();
+}
+
+export function stopBackgroundMetadataQueue() {
+  metadataStarted = false;
+  if (metadataTimer) clearTimeout(metadataTimer);
+  metadataTimer = null;
+  metadataAbort?.abort();
+}
+
+export function setMetadataForegroundActivity(isActive: boolean) {
+  metadataUserIdle = !isActive;
+  notifyActivity();
+}
+
+// 供同步的扫描/补图操作声明前台工作，低优先级规格探测会立即让路。
+export function beginThumbnailWork(): () => void {
+  foregroundWork++;
+  notifyActivity();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    foregroundWork = Math.max(0, foregroundWork - 1);
+    notifyActivity();
+  };
+}
+
+// 深度规格只在缩略图队列空闲时后台读取，一次一个文件；任务前留出空闲间隔，
+// 活跃的缩略图、导入扫描或播放会立即取消尚在进行的低优先级探测。
+function scheduleMetadataProbe() {
+  if (!metadataStarted || !metadataUserIdle || metadataTimer || metadataActive || paused || foregroundWork > 0 || active > 0 || pending.length > 0) return;
+  metadataTimer = setTimeout(() => {
+    metadataTimer = null;
+    void processOneMetadata().catch(() => { /* 后台失败不能影响主界面 */ });
+  }, 1800);
+}
+
+async function processOneMetadata() {
+  if (metadataActive || !metadataUserIdle || paused || foregroundWork > 0 || active > 0 || pending.length > 0) return;
+  const db = getDb();
+  const row = db.prepare(`SELECT id, path, size, mtime FROM videos
+    WHERE metadata_scanned_at IS NULL AND LOWER(ext) IN (${METADATA_EXTS.map(() => '?').join(',')})
+    ORDER BY added_at DESC, id DESC LIMIT 1`).get(...METADATA_EXTS) as { id: number; path: string; size: number; mtime: number } | undefined;
+  if (!row) return;
+  metadataActive = true;
+  metadataAbort = new AbortController();
+  const probeController = metadataAbort;
+  try {
+    const metadata = await probeMediaMetadata(row.path, probeController.signal);
+    if (probeController.signal.aborted) return;
+    if (!metadata) {
+      // 结果为空也缓存这次尝试，避免坏文件每次启动都反复读取。
+      db.prepare('UPDATE videos SET metadata_scanned_at = ? WHERE id = ? AND path = ? AND size IS ? AND mtime IS ?')
+        .run(Date.now(), row.id, row.path, row.size, row.mtime);
+      return;
+    }
+    const result = db.prepare(`UPDATE videos SET video_codec = ?, video_bit_depth = ?, audio_codec = ?,
+      audio_channels = ?, audio_channel_layout = ?, metadata_scanned_at = ?,
+      width = COALESCE(?, width), height = COALESCE(?, height), aspect_ratio = COALESCE(?, aspect_ratio)
+      WHERE id = ? AND path = ? AND size IS ? AND mtime IS ?`)
+      .run(metadata.video_codec, metadata.video_bit_depth, metadata.audio_codec, metadata.audio_channels,
+        metadata.audio_channel_layout, Date.now(), metadata.width, metadata.height, metadata.aspect_ratio,
+        row.id, row.path, row.size, row.mtime);
+    if (result.changes > 0) onMetadataReady?.({ id: row.id, ...metadata });
+  } catch {
+    if (!probeController.signal.aborted) {
+      db.prepare('UPDATE videos SET metadata_scanned_at = ? WHERE id = ? AND path = ? AND size IS ? AND mtime IS ?')
+        .run(Date.now(), row.id, row.path, row.size, row.mtime);
+    }
+  } finally {
+    metadataActive = false;
+    if (metadataAbort === probeController) metadataAbort = null;
+    scheduleMetadataProbe();
+  }
+}
 
 // 进度统计（一轮批次内累计）
 let doneCount = 0;
@@ -74,6 +178,7 @@ export function enqueueThumbnails(ids: number[], priorityIds: number[] = []) {
   }
 
   emitProgress();
+  notifyActivity();
   pump();
 }
 
@@ -102,6 +207,7 @@ function pump() {
       doneCount++;
       emitProgress();
       maybeResetCounters();
+      notifyActivity();
       pump();
     });
   }
@@ -110,6 +216,7 @@ function pump() {
 // 播放期间暂停启动新的缩略图任务，已运行任务会自然结束。
 export function setThumbnailGenerationPaused(value: boolean) {
   paused = value;
+  notifyActivity();
   if (!paused) pump();
 }
 

@@ -16,7 +16,7 @@ export interface MasonryResult {
 }
 
 // 卡片信息区固定高度（缩略图下方的文件名+元信息）
-const INFO_HEIGHT = 46;
+export const CARD_INFO_HEIGHT = 46;
 
 // 计算瀑布流布局：按"补到最短列"算每张卡片的 x/y。
 // targetColWidth 为期望列宽（滑块值），gap 为间距，containerWidth 为可用宽度。
@@ -43,7 +43,7 @@ export function computeMasonry(
     // 按宽高比算缩略图高度（无比例信息则按 16:9）
     const ratio = video.aspect_ratio && video.aspect_ratio > 0 ? video.aspect_ratio : 16 / 9;
     const thumbHeight = colWidth / ratio;
-    const cardHeight = thumbHeight + INFO_HEIGHT;
+    const cardHeight = thumbHeight + CARD_INFO_HEIGHT;
 
     // 找最短列
     let minCol = 0;

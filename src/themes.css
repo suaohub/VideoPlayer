@@ -3858,6 +3858,14 @@ button[aria-busy='true'] {
   font-size: 11px;
 }
 
+.video-list-specs {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .video-list-type,
 .video-list-size,
 .video-list-date,

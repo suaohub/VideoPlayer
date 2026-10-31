@@ -161,6 +161,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('thumbnail-progress', listener);
     return () => ipcRenderer.removeListener('thumbnail-progress', listener);
   },
+  onMediaMetadataReady: (callback: (data: {
+    id: number;
+    width: number | null;
+    height: number | null;
+    aspect_ratio: number | null;
+    video_codec: string | null;
+    video_bit_depth: number | null;
+    audio_codec: string | null;
+    audio_channels: number | null;
+    audio_channel_layout: string | null;
+  }) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: any) => callback(data);
+    ipcRenderer.on('media-metadata-ready', listener);
+    return () => ipcRenderer.removeListener('media-metadata-ready', listener);
+  },
+  setMediaMetadataForegroundActivity: (isActive: boolean) => ipcRenderer.send('media-metadata-activity', isActive),
   onOperationProgress: (callback: (data: { kind: 'delete' | 'organize'; current: number; total: number; detail?: string }) => void) => {
     const listener = (_: Electron.IpcRendererEvent, data: { kind: 'delete' | 'organize'; current: number; total: number; detail?: string }) => callback(data);
     ipcRenderer.on('operation-progress', listener);

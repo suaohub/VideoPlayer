@@ -5,7 +5,7 @@ import { Film, Music2, BookOpen, RefreshCw, FolderOpen, Heart, Plus } from 'luci
 import { OrganizeCategory, Video, LibraryViewMode } from '../types';
 import { api } from '../api';
 import { findTarget, keysToDir, Rect } from '../spatialNav';
-import { computeMasonry, CardLayout } from '../masonry';
+import { computeMasonry, CardLayout, CARD_INFO_HEIGHT } from '../masonry';
 import { computeListLayout, visibleListRange } from '../listLayout';
 import { isAudioFile, isTextFile, isComicExt } from '../media';
 
@@ -52,6 +52,26 @@ function formatSize(bytes: number): string {
   if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
   if (bytes >= 1e3) return (bytes / 1e3).toFixed(0) + ' KB';
   return bytes + ' B';
+}
+
+function formatMediaSpecs(video: Video): string[] {
+  const codecNames: Record<string, string> = {
+    hevc: 'HEVC', h265: 'HEVC', h264: 'H.264', avc: 'AVC', av1: 'AV1', vp9: 'VP9', prores: 'ProRes',
+  };
+  const audioNames: Record<string, string> = {
+    aac: 'AAC', ac3: 'AC-3', eac3: 'E-AC-3', truehd: 'TrueHD', dts: 'DTS', dca: 'DTS', flac: 'FLAC',
+    alac: 'ALAC', mp3: 'MP3', opus: 'Opus', pcm_s16le: 'PCM', pcm_s24le: 'PCM',
+  };
+  const channels = video.audio_channels
+    ? (video.audio_channel_layout && /5\.1|7\.1|stereo|mono/i.test(video.audio_channel_layout)
+      ? video.audio_channel_layout.replace(/stereo/i, '2.0').replace(/mono/i, '1.0')
+      : ({ 1: '1.0', 2: '2.0', 6: '5.1', 8: '7.1' } as Record<number, string>)[video.audio_channels] ?? `${video.audio_channels}ch`)
+    : '';
+  return [
+    video.width && video.height ? `${video.width}×${video.height}` : '',
+    video.video_codec ? `${codecNames[video.video_codec.toLowerCase()] ?? video.video_codec.toUpperCase()}${video.video_bit_depth ? ` ${video.video_bit_depth}bit` : ''}` : '',
+    video.audio_codec ? `${audioNames[video.audio_codec.toLowerCase()] ?? video.audio_codec.toUpperCase()}${channels ? ` ${channels}` : ''}` : '',
+  ].filter(Boolean);
 }
 
 function formatDuration(sec: number | null): string {
@@ -176,7 +196,8 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
   const [hover, setHover] = useState(false);
   const durLabel = formatDuration(video.duration);
   const comicItem = isComicExt(video.ext);
-  const thumbHeight = height - 46;
+  const mediaSpecs = formatMediaSpecs(video);
+  const thumbHeight = height - CARD_INFO_HEIGHT;
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     onFocus();
@@ -356,18 +377,8 @@ function VideoCard({ video, x, y, width, height, focused, animate, onFocus, onPl
         }} title={video.name}>
           {video.name}
         </div>
-        <div className="video-card-meta" style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 8 }}>
-          {comicItem ? (
-            <>
-              <span>漫画</span>
-              <span>{video.size} 页</span>
-            </>
-          ) : (
-            <>
-              <span>{video.ext.replace('.', '').toUpperCase()}</span>
-              <span>{formatSize(video.size)}</span>
-            </>
-          )}
+        <div className="video-card-meta" style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={comicItem ? `漫画 · ${video.size} 页` : [video.ext.replace('.', '').toUpperCase(), formatSize(video.size), ...mediaSpecs].join(' · ')}>
+          {comicItem ? `漫画 · ${video.size} 页` : [video.ext.replace('.', '').toUpperCase(), formatSize(video.size), ...mediaSpecs].join(' · ')}
         </div>
       </div>
       </div>
@@ -404,6 +415,7 @@ const VideoListRow = memo(function VideoListRow({
   const setRowRef = useCallback((el: HTMLDivElement | null) => cardRef(video.id, el), [cardRef, video.id]);
   const category = organizeCategories.find((item) => item.id === video.organize_category_id);
   const modified = video.mtime ? new Date(video.mtime).toLocaleDateString() : '—';
+  const mediaSpecs = formatMediaSpecs(video);
   return (
     <div
       ref={setRowRef}
@@ -431,6 +443,7 @@ const VideoListRow = memo(function VideoListRow({
       <div className="video-list-main">
         <strong className="video-list-name" title={video.name}>{video.name}</strong>
         <span className="video-list-path" title={video.path}>{video.path}</span>
+        {mediaSpecs.length > 0 && <span className="video-list-specs" title={mediaSpecs.join(' · ')}>{mediaSpecs.join(' · ')}</span>}
       </div>
       <span className="video-list-type">{video.ext.replace('.', '').toUpperCase()}</span>
       <span className="video-list-size">{formatSize(video.size)}</span>

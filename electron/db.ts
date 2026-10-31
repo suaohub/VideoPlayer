@@ -21,6 +21,12 @@ export interface VideoRecord {
   favorited: number;
   marked_for_deletion: number;
   marked_for_deletion_at: number | null;
+  video_codec: string | null;
+  video_bit_depth: number | null;
+  audio_codec: string | null;
+  audio_channels: number | null;
+  audio_channel_layout: string | null;
+  metadata_scanned_at: number | null;
 }
 
 // 文件夹记录类型（原始目录树）
@@ -199,6 +205,23 @@ export function initDatabase() {
     db.exec(`ALTER TABLE videos ADD COLUMN marked_for_deletion_at INTEGER;`);
     console.log('[db] Migration: added marked_for_deletion_at column');
   }
+
+  // 深度媒体规格是低优先级后台信息，和缩略图分开缓存，避免导入时阻塞首屏。
+  const metadataColumns = [
+    ['video_codec', 'TEXT'],
+    ['video_bit_depth', 'INTEGER'],
+    ['audio_codec', 'TEXT'],
+    ['audio_channels', 'INTEGER'],
+    ['audio_channel_layout', 'TEXT'],
+    ['metadata_scanned_at', 'INTEGER'],
+  ] as const;
+  for (const [name, type] of metadataColumns) {
+    if (!columns.some((column) => column.name === name)) {
+      db.exec(`ALTER TABLE videos ADD COLUMN ${name} ${type};`);
+    }
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_videos_metadata_pending
+    ON videos(metadata_scanned_at, added_at);`);
   // 旧版本只保存了删除标记，没有标记时间；用导入时间作为兼容排序依据，
   // 新的标记会在 toggleMarkedForDeletion 中写入精确时间戳。
   db.exec(`

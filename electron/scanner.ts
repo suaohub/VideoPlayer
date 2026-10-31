@@ -303,7 +303,9 @@ function importVideoFiles(importRootPath: string, videoFiles: string[], onProgre
         }
         db.prepare(`
           UPDATE videos
-          SET thumbnail_path = NULL, duration = NULL, width = NULL, height = NULL, aspect_ratio = NULL
+          SET thumbnail_path = NULL, duration = NULL, width = NULL, height = NULL, aspect_ratio = NULL,
+              video_codec = NULL, video_bit_depth = NULL, audio_codec = NULL, audio_channels = NULL,
+              audio_channel_layout = NULL, metadata_scanned_at = NULL
           WHERE path = ?
         `).run(filePath);
       }

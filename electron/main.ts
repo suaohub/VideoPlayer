@@ -9,7 +9,7 @@ import {
 } from './mpv';
 import { backfillMissingThumbnails, importFiles, importFolder, listComicPages, refreshImportedFolders, refreshImportedSubfolders } from './scanner';
 import { thumbnailFilePathFromUrl, getThumbnailDir, generateThumbnailAsync, probeVideoAsync } from './thumbnail';
-import { setThumbnailListeners, setThumbnailGenerationPaused, setThumbnailGenerationBoost } from './thumbnailQueue';
+import { setThumbnailListeners, setThumbnailGenerationPaused, setThumbnailGenerationBoost, startBackgroundMetadataQueue, setMetadataForegroundActivity, beginThumbnailWork } from './thumbnailQueue';
 import { getMediaLibraryHealth } from './health';
 import { getAllTags, getFolderTree, getHiddenFolders, setFolderHidden, setFolderLocked, isFolderLocked, getVideos, getVideoCount, getSetting, setSetting, deleteFolderCascade, getFolderDeleteTargets, deleteTag, toggleFavorite, getFavoritedCount, batchUnfavorite, toggleMarkedForDeletion, getMarkedForDeletionCount, batchUnmarkForDeletion, exportMarkedForDeletionList, getUnfavoritedFileCandidatesInFolder, deleteVideoRecords, getVideoDeleteTargets, getOrganizeCategories, createOrganizeCategory, renameOrganizeCategory, deleteOrganizeCategory, reorderOrganizeCategories, setOrganizeCategoryEnabled, setVideoOrganizeCategory, batchSetVideoOrganizeCategory, getAllOrganizeCandidates, getOrganizeCandidatesInFolders, getOrCreateOrganizeFolder, updateVideoPath, getPlaybackProgress, getPlaybackProgressForVideo, savePlaybackProgress, savePlaybackProgressForVideo, clearPlaybackProgress, clearPlaybackProgressForVideo, getRecentPlayback, VideoFilter } from './queries';
 import { isAudioFile, isVideoFile, MediaType, comicFilePathFromUrl, VIDEO_MIME } from './media';
@@ -102,6 +102,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ipcMain.on('media-metadata-activity', (event, isActive: boolean) => {
+    if (event.sender === mainWindow?.webContents) setMetadataForegroundActivity(Boolean(isActive));
+  });
   console.log('[shortcut] rotate registered:', globalShortcut.register('CommandOrControl+Alt+R', () => rotateVideo()));
   console.log('[shortcut] mirror registered:', globalShortcut.register('CommandOrControl+Alt+M', () => toggleVideoMirror()));
   protocol.handle('thumb', async (request) => {
@@ -191,10 +194,12 @@ app.whenReady().then(() => {
   setThumbnailListeners(
     (payload) => mainWindow?.webContents.send('thumbnail-ready', payload),
     (progress) => mainWindow?.webContents.send('thumbnail-progress', progress),
+    (payload) => mainWindow?.webContents.send('media-metadata-ready', payload),
   );
 
   initMpv(() => mainWindow);
   createWindow();
+  startBackgroundMetadataQueue();
   // 不在启动时自动扫描历史缺图，避免单个异常文件让每次启动都显示补图进度。
   // 新导入或内容发生变化的文件会在扫描时入队；历史缺图通过健康中心手动生成。
 });
@@ -508,12 +513,17 @@ ipcMain.handle('select-video-files', async () => {
 
 // 导入文件夹（扫描 + 入库），带进度推送
 ipcMain.handle('import-folders', async (event, folderPaths: string[]) => {
+  const releaseMetadata = beginThumbnailWork();
   const results = [];
-  for (const folderPath of folderPaths) {
-    const result = importFolder(folderPath, (current, total, file) => {
-      mainWindow?.webContents.send('import-progress', { current, total, file, folderPath });
-    });
-    results.push(result);
+  try {
+    for (const folderPath of folderPaths) {
+      const result = importFolder(folderPath, (current, total, file) => {
+        mainWindow?.webContents.send('import-progress', { current, total, file, folderPath });
+      });
+      results.push(result);
+    }
+  } finally {
+    releaseMetadata();
   }
   mainWindow?.webContents.send('import-done');
   return results;
@@ -556,9 +566,15 @@ ipcMain.handle('refresh-imported-folders', async () => {
 
 // 导入直接选择的视频文件，带进度推送
 ipcMain.handle('import-video-files', async (event, filePaths: string[]) => {
-  const result = importFiles(filePaths, (current, total, file) => {
-    mainWindow?.webContents.send('import-progress', { current, total, file, folderPath: '' });
-  });
+  const releaseMetadata = beginThumbnailWork();
+  let result;
+  try {
+    result = importFiles(filePaths, (current, total, file) => {
+      mainWindow?.webContents.send('import-progress', { current, total, file, folderPath: '' });
+    });
+  } finally {
+    releaseMetadata();
+  }
   mainWindow?.webContents.send('import-done');
   return [result];
 });
