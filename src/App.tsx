@@ -247,7 +247,11 @@ function App() {
   const checkDrives = useCallback(async () => {
     const result = await api.checkRemovableDrives();
     const unmounted = result.drives.filter(d => !result.mounted.includes(d));
-    setUnmountedDrives(unmounted);
+    setUnmountedDrives((previous) => (
+      previous.length === unmounted.length && previous.every((drive, index) => drive === unmounted[index])
+        ? previous
+        : unmounted
+    ));
   }, []);
 
   const isUnmountedPath = useCallback((filePath: string | null | undefined) => {
